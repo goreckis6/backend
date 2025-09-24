@@ -1,0 +1,35 @@
+{
+  "name": "morphy-backend",
+  "version": "1.0.0",
+  "description": "RAW-aware conversion API for Morphy",
+  "type": "module",
+  "main": "dist/server.js",
+  "scripts": {
+    "dev": "node --watch src/server.js",
+    "build": "npm run clean && tsc",
+    "start": "node dist/server.js",
+    "clean": "rimraf dist",
+    "test": "echo \"No tests specified\" && exit 0"
+  },
+  "engines": {
+    "node": ">=18.0.0",
+    "npm": ">=8.0.0"
+  },
+  "dependencies": {
+    "cors": "^2.8.5",
+    "express": "^4.19.2",
+    "express-rate-limit": "^7.1.5",
+    "helmet": "^7.1.0",
+    "multer": "^1.4.5-lts.1",
+    "sharp": "^0.33.3"
+  },
+  "devDependencies": {
+    "@types/cors": "^2.8.17",
+    "@types/express": "^4.17.21",
+    "@types/express-rate-limit": "^6.0.2",
+    "@types/multer": "^1.4.11",
+    "rimraf": "^5.0.5",
+    "typescript": "^5.6.3"
+  }
+}
+
