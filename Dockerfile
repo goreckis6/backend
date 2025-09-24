@@ -1,15 +1,12 @@
 # Backend Dockerfile
-FROM node:18-alpine
+FROM node:18-bullseye-slim
 
 # Install system dependencies
-RUN apk add --no-cache \
-    vips-dev \
-    libraw \
+RUN apt-get update && apt-get install -y \
+    libvips-dev \
+    libraw-bin \
     dcraw \
-    build-base \
-    python3 \
-    make \
-    g++
+    && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 
@@ -31,8 +28,8 @@ RUN npm prune --production && \
     rm -rf src tsconfig.json
 
 # Create non-root user
-RUN addgroup -g 1001 -S nodejs && \
-    adduser -S nodejs -u 1001
+RUN groupadd -r nodejs && useradd -r -g nodejs nodejs
+RUN chown -R nodejs:nodejs /app
 
 USER nodejs
 
