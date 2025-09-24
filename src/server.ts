@@ -373,7 +373,7 @@ app.post('/api/convert/batch', upload.array('files', 10), async (req, res) => {
 
     // Check total size and reject if too large
     const totalSize = files.reduce((sum, file) => sum + file.size, 0);
-    const maxBatchSize = 50 * 1024 * 1024; // 50MB limit for batch processing
+    const maxBatchSize = 100 * 1024 * 1024; // 100MB limit for batch processing
     
     if (totalSize > maxBatchSize) {
       return res.status(400).json({ 
