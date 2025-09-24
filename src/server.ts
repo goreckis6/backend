@@ -76,7 +76,7 @@ const processRAWFile = async (inputBuffer: Buffer, filename: string): Promise<Bu
         console.log('Sharp metadata for RAW:', metadata);
         
         // If we get a valid color image, use it
-        if (metadata.format && metadata.channels >= 3) {
+        if (metadata.format && metadata.channels && metadata.channels >= 3) {
           console.log('Using extracted preview with', metadata.channels, 'channels');
           return await sharpInstance.png().toBuffer();
         }
@@ -90,14 +90,12 @@ const processRAWFile = async (inputBuffer: Buffer, filename: string): Promise<Bu
           raw: {
             width: metadata.width || 1000,
             height: metadata.height || 1000,
-            channels: 3, // Force RGB
-            bitDepth: 8
+            channels: 3 // Force RGB
           }
         });
         
         // Ensure we maintain color information
         return await sharpInstance
-          .ensureAlpha(false) // Remove alpha channel if present
           .png({ 
             quality: 90,
             compressionLevel: 6,
@@ -250,15 +248,12 @@ app.post('/api/convert', upload.single('file'), async (req, res) => {
 
     switch (format.toLowerCase()) {
       case 'webp':
-        sharpInstance = sharpInstance
-          .ensureAlpha(false) // Remove alpha channel if present
-          .webp({ 
-            quality: Number(qualityValue), 
-            lossless: isLossless,
-            effort: 6, // Higher effort for better quality
-            smartSubsample: true, // Better color handling
-            reductionEffort: 6 // Better compression
-          });
+        sharpInstance = sharpInstance.webp({ 
+          quality: Number(qualityValue), 
+          lossless: isLossless,
+          effort: 6, // Higher effort for better quality
+          smartSubsample: true // Better color handling
+        });
         contentType = 'image/webp';
         fileExtension = 'webp';
         break;
