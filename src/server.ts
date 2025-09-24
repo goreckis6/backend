@@ -767,12 +767,15 @@ app.post('/api/convert/batch', uploadBatch.array('files', 20), async (req, res) 
         console.log('Batch result - fixed originalName:', fixedOriginalName);
         console.log('Batch result - fixed outputFilename:', fixedOutputFilename);
         
+        const encodedDownloadPath = `/download/${encodeURIComponent(uniqueFilename)}`;
+
         results.push({
           originalName: fixedOriginalName,
           outputFilename: fixedOutputFilename,
           size: outputBuffer.length,
           success: true,
-          downloadPath: `/download/${uniqueFilename}` // Add download path for frontend
+          downloadPath: encodedDownloadPath,
+          storedFilename: uniqueFilename
         });
 
         // Force garbage collection to free memory
