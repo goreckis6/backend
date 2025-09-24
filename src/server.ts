@@ -141,6 +141,9 @@ const processRAWFile = async (inputBuffer: Buffer, filename: string): Promise<Bu
 const app = express();
 const PORT = process.env.PORT || 3000;
 
+// Enable trust proxy for Render (required for rate limiting)
+app.set('trust proxy', 1);
+
 // Monitor memory usage
 setInterval(() => {
   const memUsage = process.memoryUsage();
