@@ -727,6 +727,12 @@ app.post('/api/convert/batch', uploadBatch.array('files', 20), async (req, res) 
           }
         }, 5 * 60 * 1000);
 
+        // Log the filenames for debugging
+        console.log('Batch result - originalName:', file.originalname);
+        console.log('Batch result - outputFilename:', outputFilename);
+        console.log('Batch result - originalName hex:', Buffer.from(file.originalname, 'utf8').toString('hex'));
+        console.log('Batch result - outputFilename hex:', Buffer.from(outputFilename, 'utf8').toString('hex'));
+        
         results.push({
           originalName: file.originalname,
           outputFilename,
@@ -754,6 +760,10 @@ app.post('/api/convert/batch', uploadBatch.array('files', 20), async (req, res) 
     }
 
     clearTimeout(timeout);
+    
+    // Log final results for debugging
+    console.log('Final batch results:', JSON.stringify(results, null, 2));
+    
     res.json({
       success: true,
       processed: results.length,
