@@ -29,6 +29,12 @@ FRONTEND_URL=https://morphy-1-ulvv.onrender.com
    - **Start Command**: `npm start`
    - **Environment**: `Node`
    - **Node Version**: `18`
+   - **Dockerfile Path**: `./Dockerfile` (if using Docker deployment)
+
+### Docker Deployment (Recommended)
+- Render will automatically detect and use the Dockerfile
+- The Dockerfile includes all necessary system dependencies for image processing
+- Optimized for production with security best practices
 
 ## API Endpoints
 
