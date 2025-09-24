@@ -25,47 +25,66 @@ const isRAWFile = (filename: string): boolean => {
   return RAW_EXTENSIONS.includes(ext || '');
 };
 
-// Function to process RAW file with dcraw
+// Function to process RAW file with dcraw or fallback to Sharp
 const processRAWFile = async (inputBuffer: Buffer, filename: string): Promise<Buffer> => {
   const tempDir = os.tmpdir();
   const inputPath = path.join(tempDir, `input_${Date.now()}_${filename}`);
   
   try {
     // Check if dcraw is available
+    let dcrawAvailable = false;
     try {
+      await execAsync('which dcraw');
       await execAsync('dcraw -h');
+      dcrawAvailable = true;
+      console.log('dcraw is available, using dcraw for RAW processing');
     } catch (dcrawError) {
-      console.error('dcraw not available:', dcrawError);
-      throw new Error('RAW processing not available in this environment');
+      console.log('dcraw not available, trying Sharp fallback');
+      dcrawAvailable = false;
     }
 
-    // Write input buffer to temporary file
-    await fs.writeFile(inputPath, inputBuffer);
-    
-    // Use dcraw to convert RAW to TIFF with timeout and memory limits
-    // -T: write TIFF instead of PPM
-    // -w: use camera white balance
-    // -6: 16-bit output
-    // -c: write to stdout
-    // -h: half-size (reduce memory usage)
-    const dcrawCommand = `timeout 30s dcraw -T -w -6 -h -c "${inputPath}"`;
-    
-    const { stdout } = await execAsync(dcrawCommand, { 
-      timeout: 30000, // 30 second timeout
-      maxBuffer: 50 * 1024 * 1024 // 50MB buffer limit
-    });
-    
-    if (!stdout || stdout.length === 0) {
-      throw new Error('dcraw produced no output');
+    if (dcrawAvailable) {
+      // Use dcraw for RAW processing
+      await fs.writeFile(inputPath, inputBuffer);
+      
+      const dcrawCommand = `timeout 30s dcraw -T -w -6 -h -c "${inputPath}"`;
+      
+      const { stdout } = await execAsync(dcrawCommand, { 
+        timeout: 30000,
+        maxBuffer: 50 * 1024 * 1024
+      });
+      
+      if (!stdout || stdout.length === 0) {
+        throw new Error('dcraw produced no output');
+      }
+      
+      return Buffer.from(stdout, 'binary');
+    } else {
+      // Fallback: Try to process with Sharp directly (some RAW formats might work)
+      console.log('Attempting Sharp fallback for RAW file');
+      
+      try {
+        // Some RAW files have embedded JPEG previews that Sharp can extract
+        const sharpInstance = sharp(inputBuffer, { 
+          failOn: 'truncated',
+          unlimited: true,
+          raw: {
+            width: 1000, // Default width, will be overridden by metadata
+            height: 1000, // Default height, will be overridden by metadata
+            channels: 3
+          }
+        });
+        
+        const metadata = await sharpInstance.metadata();
+        console.log('Sharp metadata for RAW:', metadata);
+        
+        // Convert to PNG first, then return as buffer
+        return await sharpInstance.png().toBuffer();
+      } catch (sharpError) {
+        console.error('Sharp fallback failed:', sharpError);
+        throw new Error('RAW file format not supported. Please try a different RAW file or convert to JPEG/PNG first.');
+      }
     }
-    
-    const convertedBuffer = Buffer.from(stdout, 'binary');
-    
-    if (convertedBuffer.length === 0) {
-      throw new Error('Converted buffer is empty');
-    }
-    
-    return convertedBuffer;
   } catch (error) {
     console.error('RAW processing error:', error);
     throw new Error(`RAW processing failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
@@ -74,7 +93,7 @@ const processRAWFile = async (inputBuffer: Buffer, filename: string): Promise<Bu
     try {
       await fs.unlink(inputPath);
     } catch (cleanupError) {
-      console.warn('Failed to clean up temporary file:', cleanupError);
+      // Ignore cleanup errors for files that might not exist
     }
   }
 };
