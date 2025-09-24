@@ -747,8 +747,8 @@ app.post('/api/convert/batch', uploadBatch.array('files', 20), async (req, res) 
         }
 
         const rawOriginalName = file.originalname.replace(/\.[^.]+$/, '');
-        const fixedOriginalName = fixUTF8Encoding(rawOriginalName);
-        const sanitizedName = sanitizeFilename(fixedOriginalName);
+        const normalizedOriginalName = fixUTF8Encoding(rawOriginalName);
+        const sanitizedName = sanitizeFilename(normalizedOriginalName);
         const outputFilename = `${sanitizedName}.${fileExtension}`;
 
         // Save file to disk for batch processing
@@ -775,17 +775,17 @@ app.post('/api/convert/batch', uploadBatch.array('files', 20), async (req, res) 
         console.log('Batch result - outputFilename hex:', Buffer.from(outputFilename, 'utf8').toString('hex'));
         
         // Fix UTF-8 encoding issues before sending to frontend
-        const fixedOriginalName = fixUTF8Encoding(file.originalname);
-        const fixedOutputFilename = fixUTF8Encoding(outputFilename);
+        const responseOriginalName = sanitizeFilename(fixUTF8Encoding(file.originalname));
+        const responseOutputFilename = outputFilename;
         
-        console.log('Batch result - fixed originalName:', fixedOriginalName);
-        console.log('Batch result - fixed outputFilename:', fixedOutputFilename);
+        console.log('Batch result - response originalName:', responseOriginalName);
+        console.log('Batch result - response outputFilename:', responseOutputFilename);
         
         const encodedDownloadPath = `/download/${encodeURIComponent(uniqueFilename)}`;
 
         results.push({
-          originalName: fixedOriginalName,
-          outputFilename: fixedOutputFilename,
+          originalName: responseOriginalName,
+          outputFilename: responseOutputFilename,
           size: outputBuffer.length,
           success: true,
           downloadPath: encodedDownloadPath,
