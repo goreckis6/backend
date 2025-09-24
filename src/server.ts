@@ -55,8 +55,17 @@ setInterval(cleanupOldFiles, 2 * 60 * 1000);
 
 // Utility function to sanitize filenames for better compatibility
 const sanitizeFilename = (filename: string): string => {
+  // Ensure the filename is properly decoded if it was URL encoded
+  let decodedFilename = filename;
+  try {
+    decodedFilename = decodeURIComponent(filename);
+  } catch (e) {
+    // If decoding fails, keep original filename
+    console.log('Could not decode filename in sanitize:', filename);
+  }
+  
   // Remove or replace problematic characters while preserving international characters
-  return filename
+  return decodedFilename
     .replace(/[<>:"/\\|?*]/g, '_') // Replace problematic characters with underscore
     .replace(/\s+/g, '_') // Replace spaces with underscore
     .replace(/_{2,}/g, '_') // Replace multiple underscores with single underscore
@@ -247,6 +256,13 @@ const limiter = rateLimit({
 app.use('/api/', limiter);
 
 // Body parsing
+// Middleware to handle UTF-8 encoding properly
+app.use((req, res, next) => {
+  // Set proper UTF-8 encoding headers
+  res.setHeader('Content-Type', 'application/json; charset=utf-8');
+  next();
+});
+
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
@@ -268,9 +284,22 @@ const fileFilter = (req: any, file: any, cb: any) => {
   }
 };
 
-// Configure multer for single file uploads
+// Configure multer for single file uploads with UTF-8 filename preservation
 const uploadSingle = multer({
-  storage: multer.memoryStorage(),
+  storage: multer.memoryStorage({
+    // Preserve UTF-8 encoding of filenames
+    filename: (req, file, cb) => {
+      // Decode the filename if it's URL encoded
+      try {
+        const decodedFilename = decodeURIComponent(file.originalname);
+        file.originalname = decodedFilename;
+      } catch (e) {
+        // If decoding fails, keep original filename
+        console.log('Could not decode filename:', file.originalname);
+      }
+      cb(null, file.originalname);
+    }
+  }),
   limits: {
     fileSize: 200 * 1024 * 1024, // 200MB limit per file
     files: 1
@@ -278,9 +307,22 @@ const uploadSingle = multer({
   fileFilter
 });
 
-// Configure multer for batch file uploads
+// Configure multer for batch file uploads with UTF-8 filename preservation
 const uploadBatch = multer({
-  storage: multer.memoryStorage(),
+  storage: multer.memoryStorage({
+    // Preserve UTF-8 encoding of filenames
+    filename: (req, file, cb) => {
+      // Decode the filename if it's URL encoded
+      try {
+        const decodedFilename = decodeURIComponent(file.originalname);
+        file.originalname = decodedFilename;
+      } catch (e) {
+        // If decoding fails, keep original filename
+        console.log('Could not decode filename:', file.originalname);
+      }
+      cb(null, file.originalname);
+    }
+  }),
   limits: {
     fileSize: 200 * 1024 * 1024, // 200MB limit per file
     files: 20 // Allow up to 20 files for batch processing
@@ -356,6 +398,10 @@ app.get('/download/:filename', async (req, res) => {
 app.post('/api/convert', uploadSingle.single('file'), async (req, res) => {
   try {
     const file = req.file;
+    
+    // Log original filename for debugging
+    console.log('Original filename:', file.originalname);
+    console.log('Filename encoding check:', Buffer.from(file.originalname, 'utf8').toString('hex'));
     const { 
       quality = 'high', 
       lossless = 'false',
@@ -567,6 +613,12 @@ app.post('/api/convert/batch', uploadBatch.array('files', 20), async (req, res) 
     }
 
     console.log(`Processing batch: ${files.length} files, total size: ${files.reduce((sum, f) => sum + f.size, 0) / 1024 / 1024}MB`);
+    
+    // Log filenames for debugging
+    files.forEach((file, index) => {
+      console.log(`File ${index + 1} filename:`, file.originalname);
+      console.log(`File ${index + 1} encoding:`, Buffer.from(file.originalname, 'utf8').toString('hex'));
+    });
 
     // Check total size and reject if too large
     const totalSize = files.reduce((sum, file) => sum + file.size, 0);
