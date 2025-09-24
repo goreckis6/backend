@@ -1,5 +1,5 @@
-# Use Node.js 18 with Debian base for better package support
-FROM node:18-bullseye-slim
+# Use Render's mirrored Node.js 18 image to avoid Docker Hub rate limits
+FROM us-west1-docker.pkg.dev/render-legacy/docker/node:18-bullseye-slim
 
 # Install system dependencies for image processing
 RUN apt-get update && apt-get install -y \
