@@ -1,57 +1,77 @@
-# Morphy Backend
+# Morphy Backend API
 
-RAW-aware image conversion API for Morphy.
+A Docker-based backend service for file conversion, specifically optimized for RAW image processing.
 
 ## Features
 
-- RAW image format support (CR2, CR3, NEF, ARW, DNG, etc.)
-- Image format conversion (WebP, PNG, JPEG, ICO)
-- Image resizing and quality adjustment
-- Rate limiting and security headers
-- Docker support
-
-## Environment Variables
-
-Set these environment variables in your deployment:
-
-```bash
-PORT=3000
-NODE_ENV=production
-FRONTEND_URL=https://morphy-1-ulvv.onrender.com
-```
-
-## Deployment on Render.com
-
-1. Connect your GitHub repository to Render
-2. Create a new Web Service
-3. Set the following:
-   - **Build Command**: `npm install && npm run build`
-   - **Start Command**: `npm start`
-   - **Environment**: `Node`
-   - **Node Version**: `18`
-   - **Dockerfile Path**: `./Dockerfile` (if using Docker deployment)
-
-### Docker Deployment (Recommended)
-- Render will automatically detect and use the Dockerfile
-- The Dockerfile includes all necessary system dependencies for image processing
-- Optimized for production with security best practices
+- **RAW Image Support**: Handles CR2, DNG, NEF, ARW, and other RAW formats
+- **Multiple Output Formats**: WebP, PNG, JPEG, ICO
+- **Batch Processing**: Convert multiple files at once
+- **High Performance**: Uses Sharp for fast image processing
+- **Docker Ready**: Optimized container with all dependencies
 
 ## API Endpoints
 
-- `GET /health` - Health check with system info
-- `GET /api/status` - Simple status check
-- `POST /api/convert` - Convert image files
+### Health Check
+```
+GET /health
+```
+
+### Single File Conversion
+```
+POST /api/convert
+Content-Type: multipart/form-data
+
+Parameters:
+- file: The image file to convert
+- quality: 'high' | 'medium' | 'low' (default: 'high')
+- lossless: 'true' | 'false' (default: 'false')
+- format: 'webp' | 'png' | 'jpeg' | 'ico' (default: 'webp')
+- width: Optional width for resizing
+- height: Optional height for resizing
+- iconSize: Size for ICO conversion (default: '16')
+```
+
+### Batch Conversion
+```
+POST /api/convert/batch
+Content-Type: multipart/form-data
+
+Parameters:
+- files: Array of image files (max 10)
+- quality: 'high' | 'medium' | 'low' (default: 'high')
+- lossless: 'true' | 'false' (default: 'false')
+- format: 'webp' | 'png' | 'jpeg' (default: 'webp')
+```
 
 ## Development
 
 ```bash
+# Install dependencies
 npm install
+
+# Run in development mode
 npm run dev
-```
 
-## Build
-
-```bash
+# Build for production
 npm run build
+
+# Start production server
 npm start
 ```
+
+## Docker
+
+```bash
+# Build image
+docker build -t morphy-backend .
+
+# Run container
+docker run -p 3000:3000 morphy-backend
+```
+
+## Environment Variables
+
+- `PORT`: Server port (default: 3000)
+- `FRONTEND_URL`: Frontend URL for CORS (default: http://localhost:5173)
+- `NODE_ENV`: Environment (development/production)
