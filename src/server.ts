@@ -97,7 +97,7 @@ const upload = multer({
     if (allowedMimes.includes(file.mimetype) || file.originalname.match(/\.(cr2|crw|nef|arw|dng|raw|orf|pef|erf)$/i)) {
       cb(null, true);
     } else {
-      cb(new Error('Unsupported file type'), false);
+      cb(new Error('Unsupported file type') as any, false);
     }
   }
 });
@@ -250,7 +250,7 @@ app.post('/api/convert', upload.single('file'), async (req, res) => {
 
     res.status(500).json({ 
       error: 'Conversion failed', 
-      details: process.env.NODE_ENV === 'development' ? error.message : 'Internal server error'
+      details: process.env.NODE_ENV === 'development' ? (error instanceof Error ? error.message : String(error)) : 'Internal server error'
     });
   }
 });
@@ -357,7 +357,7 @@ app.post('/api/convert/batch', upload.array('files', 10), async (req, res) => {
     console.error('Batch conversion error:', error);
     res.status(500).json({ 
       error: 'Batch conversion failed',
-      details: process.env.NODE_ENV === 'development' ? error.message : 'Internal server error'
+      details: process.env.NODE_ENV === 'development' ? (error instanceof Error ? error.message : String(error)) : 'Internal server error'
     });
   }
 });
@@ -387,7 +387,7 @@ app.use('*', (req, res) => {
 });
 
 // Start server
-app.listen(PORT, '0.0.0.0', () => {
+app.listen(Number(PORT), '0.0.0.0', () => {
   console.log(`🚀 Server running on port ${PORT}`);
   console.log(`📁 Health check: http://localhost:${PORT}/health`);
   console.log(`🔄 Convert endpoint: http://localhost:${PORT}/api/convert`);
