@@ -16,6 +16,43 @@ const execAsync = promisify(exec);
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
+// Create converted files directory
+const CONVERTED_FILES_DIR = path.join(__dirname, '..', 'converted_files');
+
+// Ensure the converted files directory exists
+const ensureConvertedFilesDir = async () => {
+  try {
+    await fs.access(CONVERTED_FILES_DIR);
+  } catch {
+    await fs.mkdir(CONVERTED_FILES_DIR, { recursive: true });
+    console.log('Created converted_files directory');
+  }
+};
+
+// Clean up old files (older than 5 minutes)
+const cleanupOldFiles = async () => {
+  try {
+    const files = await fs.readdir(CONVERTED_FILES_DIR);
+    const now = Date.now();
+    const fiveMinutesAgo = now - (5 * 60 * 1000);
+
+    for (const file of files) {
+      const filePath = path.join(CONVERTED_FILES_DIR, file);
+      const stats = await fs.stat(filePath);
+      
+      if (stats.mtime.getTime() < fiveMinutesAgo) {
+        await fs.unlink(filePath);
+        console.log(`Cleaned up old file: ${file}`);
+      }
+    }
+  } catch (error) {
+    console.error('Error cleaning up old files:', error);
+  }
+};
+
+// Schedule cleanup every 2 minutes
+setInterval(cleanupOldFiles, 2 * 60 * 1000);
+
 // RAW file extensions
 const RAW_EXTENSIONS = ['dng', 'cr2', 'cr3', 'nef', 'arw', 'rw2', 'pef', 'orf', 'raf', 'x3f', 'raw'];
 
@@ -45,8 +82,8 @@ const processRAWFile = async (inputBuffer: Buffer, filename: string): Promise<Bu
 
     if (dcrawAvailable) {
       // Use dcraw for RAW processing
-      await fs.writeFile(inputPath, inputBuffer);
-      
+    await fs.writeFile(inputPath, inputBuffer);
+    
       const dcrawCommand = `timeout 30s dcraw -T -w -6 -h -c "${inputPath}"`;
       
       const { stdout } = await execAsync(dcrawCommand, { 
@@ -144,10 +181,44 @@ const PORT = process.env.PORT || 3000;
 // Enable trust proxy for Render (required for rate limiting)
 app.set('trust proxy', 1);
 
-// Monitor memory usage
+// Handle process signals gracefully
+process.on('SIGTERM', () => {
+  console.log('SIGTERM received, shutting down gracefully');
+  process.exit(0);
+});
+
+process.on('SIGINT', () => {
+  console.log('SIGINT received, shutting down gracefully');
+  process.exit(0);
+});
+
+// Handle uncaught exceptions
+process.on('uncaughtException', (error) => {
+  console.error('Uncaught Exception:', error);
+  // Don't exit immediately, log and continue
+});
+
+process.on('unhandledRejection', (reason, promise) => {
+  console.error('Unhandled Rejection at:', promise, 'reason:', reason);
+  // Don't exit immediately, log and continue
+});
+
+// Monitor memory usage with warnings
 setInterval(() => {
   const memUsage = process.memoryUsage();
-  console.log(`Memory: ${Math.round(memUsage.heapUsed / 1024 / 1024)}MB used, ${Math.round(memUsage.heapTotal / 1024 / 1024)}MB total`);
+  const heapUsedMB = Math.round(memUsage.heapUsed / 1024 / 1024);
+  const heapTotalMB = Math.round(memUsage.heapTotal / 1024 / 1024);
+  
+  console.log(`Memory: ${heapUsedMB}MB used, ${heapTotalMB}MB total`);
+  
+  // Warn if memory usage is getting high
+  if (heapUsedMB > 400) { // 400MB warning threshold
+    console.warn(`⚠️ High memory usage: ${heapUsedMB}MB. Consider garbage collection.`);
+    if (global.gc) {
+      global.gc();
+      console.log('🧹 Forced garbage collection');
+    }
+  }
 }, 30000); // Log every 30 seconds
 
 // Security middleware
@@ -171,18 +242,18 @@ app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
 // File filter function
 const fileFilter = (req: any, file: any, cb: any) => {
-  // Allow common image formats and RAW formats
-  const allowedMimes = [
-    'image/jpeg', 'image/jpg', 'image/png', 'image/bmp', 'image/tiff', 'image/tif',
-    'image/webp', 'image/gif', 'image/avif', 'image/heic', 'image/heif',
-    'image/x-canon-cr2', 'image/x-canon-crw', 'image/x-nikon-nef', 'image/x-sony-arw',
-    'image/x-adobe-dng', 'image/x-panasonic-raw', 'image/x-olympus-orf',
-    'image/x-pentax-pef', 'image/x-epson-erf', 'image/x-raw'
-  ];
-  
-  if (allowedMimes.includes(file.mimetype) || file.originalname.match(/\.(cr2|crw|nef|arw|dng|raw|orf|pef|erf)$/i)) {
-    cb(null, true);
-  } else {
+    // Allow common image formats and RAW formats
+    const allowedMimes = [
+      'image/jpeg', 'image/jpg', 'image/png', 'image/bmp', 'image/tiff', 'image/tif',
+      'image/webp', 'image/gif', 'image/avif', 'image/heic', 'image/heif',
+      'image/x-canon-cr2', 'image/x-canon-crw', 'image/x-nikon-nef', 'image/x-sony-arw',
+      'image/x-adobe-dng', 'image/x-panasonic-raw', 'image/x-olympus-orf',
+      'image/x-pentax-pef', 'image/x-epson-erf', 'image/x-raw'
+    ];
+    
+    if (allowedMimes.includes(file.mimetype) || file.originalname.match(/\.(cr2|crw|nef|arw|dng|raw|orf|pef|erf)$/i)) {
+      cb(null, true);
+    } else {
     cb(new Error('Unsupported file type') as any, false);
   }
 };
@@ -210,6 +281,59 @@ const uploadBatch = multer({
 // Health check endpoint
 app.get('/health', (req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });
+});
+
+// Download endpoint for converted files
+app.get('/download/:filename', async (req, res) => {
+  try {
+    const filename = req.params.filename;
+    const filePath = path.join(CONVERTED_FILES_DIR, filename);
+    
+    // Check if file exists
+    try {
+      await fs.access(filePath);
+    } catch {
+      return res.status(404).json({ error: 'File not found or expired' });
+    }
+
+    // Get file stats
+    const stats = await fs.stat(filePath);
+    const ext = path.extname(filename).toLowerCase();
+    
+    // Determine content type
+    let contentType = 'application/octet-stream';
+    switch (ext) {
+      case '.webp':
+        contentType = 'image/webp';
+        break;
+      case '.png':
+        contentType = 'image/png';
+        break;
+      case '.jpg':
+      case '.jpeg':
+        contentType = 'image/jpeg';
+        break;
+      case '.ico':
+        contentType = 'image/x-icon';
+        break;
+    }
+
+    // Set headers
+    res.set({
+      'Content-Type': contentType,
+      'Content-Length': stats.size.toString(),
+      'Cache-Control': 'no-cache'
+    });
+
+    // Stream the file
+    const fileStream = await fs.readFile(filePath);
+    res.send(fileStream);
+    
+    console.log(`File downloaded: ${filename}`);
+  } catch (error) {
+    console.error('Download error:', error);
+    res.status(500).json({ error: 'Failed to download file' });
+  }
 });
 
 // Main conversion endpoint
@@ -331,16 +455,55 @@ app.post('/api/convert', uploadSingle.single('file'), async (req, res) => {
 
     console.log(`Conversion successful: ${outputFilename}, size: ${outputBuffer.length} bytes`);
 
+    // Ensure converted files directory exists
+    await ensureConvertedFilesDir();
+
+    // Generate unique filename to avoid conflicts
+    const timestamp = Date.now();
+    const uniqueFilename = `${timestamp}_${outputFilename}`;
+    const filePath = path.join(CONVERTED_FILES_DIR, uniqueFilename);
+
+    // Save file to disk
+    await fs.writeFile(filePath, outputBuffer);
+    console.log(`File saved to disk: ${uniqueFilename}`);
+
     // Set response headers
     res.set({
       'Content-Type': contentType,
       'Content-Disposition': `attachment; filename="${outputFilename}"`,
       'Content-Length': outputBuffer.length.toString(),
-      'Cache-Control': 'no-cache'
+      'Cache-Control': 'no-cache',
+      'Connection': 'keep-alive'
     });
 
     // Send the converted file
+    try {
     res.send(outputBuffer);
+      console.log('File sent successfully');
+    } catch (sendError) {
+      console.error('Error sending file:', sendError);
+      if (!res.headersSent) {
+        res.status(500).json({ error: 'Failed to send converted file' });
+      }
+    }
+
+    // Schedule cleanup of the file after 5 minutes
+    setTimeout(async () => {
+      try {
+        await fs.unlink(filePath);
+        console.log(`Cleaned up converted file: ${uniqueFilename}`);
+      } catch (cleanupError) {
+        console.error('Error cleaning up file:', cleanupError);
+      }
+    }, 5 * 60 * 1000); // 5 minutes
+
+    // Clean up memory after sending
+    setTimeout(() => {
+      if (global.gc) {
+        global.gc();
+      }
+      console.log('Memory cleanup completed after conversion');
+    }, 1000);
 
   } catch (error) {
     console.error('Conversion error:', error);
@@ -464,11 +627,29 @@ app.post('/api/convert/batch', uploadBatch.array('files', 20), async (req, res) 
         const originalName = file.originalname.replace(/\.[^.]+$/, '');
         const outputFilename = `${originalName}.${fileExtension}`;
 
+        // Save file to disk for batch processing
+        await ensureConvertedFilesDir();
+        const timestamp = Date.now();
+        const uniqueFilename = `${timestamp}_${outputFilename}`;
+        const filePath = path.join(CONVERTED_FILES_DIR, uniqueFilename);
+        await fs.writeFile(filePath, outputBuffer);
+
+        // Schedule cleanup after 5 minutes
+        setTimeout(async () => {
+          try {
+            await fs.unlink(filePath);
+            console.log(`Cleaned up batch file: ${uniqueFilename}`);
+          } catch (cleanupError) {
+            console.error('Error cleaning up batch file:', cleanupError);
+          }
+        }, 5 * 60 * 1000);
+
         results.push({
           originalName: file.originalname,
           outputFilename,
           size: outputBuffer.length,
-          success: true
+          success: true,
+          downloadPath: `/download/${uniqueFilename}` // Add download path for frontend
         });
 
         // Force garbage collection to free memory
@@ -530,18 +711,29 @@ app.use('*', (req, res) => {
   res.status(404).json({ error: 'Endpoint not found' });
 });
 
-// Start server with error handling
-try {
-  app.listen(Number(PORT), '0.0.0.0', () => {
-    console.log(`🚀 Server running on port ${PORT}`);
-    console.log(`📁 Health check: http://localhost:${PORT}/health`);
-    console.log(`🔄 Convert endpoint: http://localhost:${PORT}/api/convert`);
-    console.log(`🌍 Environment: ${process.env.NODE_ENV || 'development'}`);
-    console.log(`📊 Memory usage: ${Math.round(process.memoryUsage().heapUsed / 1024 / 1024)}MB`);
-  });
-} catch (error) {
-  console.error('Failed to start server:', error);
-  process.exit(1);
-}
+// Initialize server
+const startServer = async () => {
+  try {
+    // Ensure converted files directory exists
+    await ensureConvertedFilesDir();
+
+// Start server
+    app.listen(Number(PORT), '0.0.0.0', () => {
+  console.log(`🚀 Server running on port ${PORT}`);
+  console.log(`📁 Health check: http://localhost:${PORT}/health`);
+  console.log(`🔄 Convert endpoint: http://localhost:${PORT}/api/convert`);
+      console.log(`📥 Download endpoint: http://localhost:${PORT}/download/:filename`);
+      console.log(`📂 Converted files directory: ${CONVERTED_FILES_DIR}`);
+      console.log(`🌍 Environment: ${process.env.NODE_ENV || 'development'}`);
+      console.log(`📊 Memory usage: ${Math.round(process.memoryUsage().heapUsed / 1024 / 1024)}MB`);
+    });
+  } catch (error) {
+    console.error('Failed to start server:', error);
+    process.exit(1);
+  }
+};
+
+// Start the server
+startServer();
 
 export default app;
