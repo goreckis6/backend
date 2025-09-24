@@ -64,25 +64,67 @@ const processRAWFile = async (inputBuffer: Buffer, filename: string): Promise<Bu
       console.log('Attempting Sharp fallback for RAW file');
       
       try {
-        // Some RAW files have embedded JPEG previews that Sharp can extract
-        const sharpInstance = sharp(inputBuffer, { 
+        // Try to extract the embedded JPEG preview first (usually has full color)
+        console.log('Attempting to extract JPEG preview from RAW file');
+        
+        let sharpInstance = sharp(inputBuffer, { 
           failOn: 'truncated',
-          unlimited: true,
-          raw: {
-            width: 1000, // Default width, will be overridden by metadata
-            height: 1000, // Default height, will be overridden by metadata
-            channels: 3
-          }
+          unlimited: true
         });
         
         const metadata = await sharpInstance.metadata();
         console.log('Sharp metadata for RAW:', metadata);
         
-        // Convert to PNG first, then return as buffer
-        return await sharpInstance.png().toBuffer();
+        // If we get a valid color image, use it
+        if (metadata.format && metadata.channels >= 3) {
+          console.log('Using extracted preview with', metadata.channels, 'channels');
+          return await sharpInstance.png().toBuffer();
+        }
+        
+        // If no preview, try to process as RAW with proper color handling
+        console.log('No preview found, attempting RAW processing with color preservation');
+        
+        sharpInstance = sharp(inputBuffer, { 
+          failOn: 'truncated',
+          unlimited: true,
+          raw: {
+            width: metadata.width || 1000,
+            height: metadata.height || 1000,
+            channels: 3, // Force RGB
+            bitDepth: 8
+          }
+        });
+        
+        // Ensure we maintain color information
+        return await sharpInstance
+          .ensureAlpha(false) // Remove alpha channel if present
+          .png({ 
+            quality: 90,
+            compressionLevel: 6,
+            adaptiveFiltering: true
+          })
+          .toBuffer();
+          
       } catch (sharpError) {
         console.error('Sharp fallback failed:', sharpError);
-        throw new Error('RAW file format not supported. Please try a different RAW file or convert to JPEG/PNG first.');
+        
+        // Final fallback: try with different RAW parameters
+        try {
+          console.log('Attempting final fallback with different RAW settings');
+          
+          const fallbackInstance = sharp(inputBuffer, { 
+            unlimited: true,
+            sequentialRead: true
+          });
+          
+          return await fallbackInstance
+            .jpeg({ quality: 90, progressive: true })
+            .toBuffer();
+            
+        } catch (finalError) {
+          console.error('Final fallback failed:', finalError);
+          throw new Error('RAW file format not supported. Please try a different RAW file or convert to JPEG/PNG first.');
+        }
       }
     }
   } catch (error) {
@@ -208,10 +250,15 @@ app.post('/api/convert', upload.single('file'), async (req, res) => {
 
     switch (format.toLowerCase()) {
       case 'webp':
-        sharpInstance = sharpInstance.webp({ 
-          quality: Number(qualityValue), 
-          lossless: isLossless 
-        });
+        sharpInstance = sharpInstance
+          .ensureAlpha(false) // Remove alpha channel if present
+          .webp({ 
+            quality: Number(qualityValue), 
+            lossless: isLossless,
+            effort: 6, // Higher effort for better quality
+            smartSubsample: true, // Better color handling
+            reductionEffort: 6 // Better compression
+          });
         contentType = 'image/webp';
         fileExtension = 'webp';
         break;
