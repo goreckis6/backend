@@ -78,21 +78,36 @@ const fixUTF8Encoding = (text: string): string => {
 
 // Utility function to sanitize filenames for better compatibility
 const sanitizeFilename = (filename: string): string => {
-  // Ensure the filename is properly decoded if it was URL encoded
-  let decodedFilename = filename;
+  if (!filename) {
+    return 'file';
+  }
+
+  let workingName = filename;
   try {
-    decodedFilename = decodeURIComponent(filename);
-  } catch (e) {
-    // If decoding fails, keep original filename
+    workingName = decodeURIComponent(filename);
+  } catch (error) {
     console.log('Could not decode filename in sanitize:', filename);
   }
-  
-  // Remove or replace problematic characters while preserving international characters
-  return decodedFilename
-    .replace(/[<>:"/\\|?*]/g, '_') // Replace problematic characters with underscore
-    .replace(/\s+/g, '_') // Replace spaces with underscore
-    .replace(/_{2,}/g, '_') // Replace multiple underscores with single underscore
+
+  // Normalize to decompose accents, then remove combining marks
+  workingName = workingName.normalize('NFKD').replace(/[\u0300-\u036f]/g, '');
+
+  // Replace long dashes with regular hyphens
+  workingName = workingName.replace(/[\u2012-\u2015]/g, '-');
+
+  // Replace any remaining unsafe characters with underscores
+  workingName = workingName
+    .replace(/[<>:"/\\|?*]/g, '_')
+    .replace(/[^0-9A-Za-z._-]+/g, '_')
+    .replace(/_{2,}/g, '_')
+    .replace(/^-+|-+$/g, '')
     .trim();
+
+  if (!workingName.length) {
+    workingName = 'file';
+  }
+
+  return workingName;
 };
 
 // RAW file extensions
@@ -548,14 +563,12 @@ app.post('/api/convert', uploadSingle.single('file'), async (req, res) => {
     outputBuffer = await sharpInstance.toBuffer();
 
     // Generate output filename with proper sanitization
-    const originalName = file.originalname.replace(/\.[^.]+$/, '');
-    const sanitizedName = sanitizeFilename(originalName);
+    const rawOriginalName = file.originalname.replace(/\.[^.]+$/, '');
+    const fixedOriginalName = fixUTF8Encoding(rawOriginalName);
+    const sanitizedName = sanitizeFilename(fixedOriginalName);
     const outputFilename = `${sanitizedName}.${fileExtension}`;
-
-    // Fix UTF-8 encoding issues for display
-    const fixedOutputFilename = fixUTF8Encoding(outputFilename);
     
-    console.log(`Conversion successful: ${fixedOutputFilename}, size: ${outputBuffer.length} bytes`);
+    console.log(`Conversion successful: ${outputFilename}, size: ${outputBuffer.length} bytes`);
 
     // Ensure converted files directory exists
     await ensureConvertedFilesDir();
@@ -570,7 +583,7 @@ app.post('/api/convert', uploadSingle.single('file'), async (req, res) => {
     console.log(`File saved to disk: ${uniqueFilename}`);
 
     // Set response headers with proper UTF-8 encoding for filenames
-    const encodedFilename = encodeURIComponent(fixedOutputFilename);
+    const encodedFilename = encodeURIComponent(outputFilename);
     res.set({
       'Content-Type': contentType,
       'Content-Disposition': `attachment; filename*=UTF-8''${encodedFilename}`,
@@ -733,8 +746,9 @@ app.post('/api/convert/batch', uploadBatch.array('files', 20), async (req, res) 
             throw new Error('Unsupported format');
         }
 
-        const originalName = file.originalname.replace(/\.[^.]+$/, '');
-        const sanitizedName = sanitizeFilename(originalName);
+        const rawOriginalName = file.originalname.replace(/\.[^.]+$/, '');
+        const fixedOriginalName = fixUTF8Encoding(rawOriginalName);
+        const sanitizedName = sanitizeFilename(fixedOriginalName);
         const outputFilename = `${sanitizedName}.${fileExtension}`;
 
         // Save file to disk for batch processing
