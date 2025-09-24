@@ -266,9 +266,27 @@ app.use((req, res, next) => {
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
-// File filter function
-const fileFilter = (req: any, file: any, cb: any) => {
-    // Allow common image formats and RAW formats
+// File filter function (moved inline to multer configurations for UTF-8 handling)
+
+// Configure multer for single file uploads with UTF-8 filename preservation
+const uploadSingle = multer({
+  storage: multer.memoryStorage(),
+  limits: {
+    fileSize: 200 * 1024 * 1024, // 200MB limit per file
+    files: 1
+  },
+  fileFilter: (req: any, file: any, cb: any) => {
+    // Decode the filename if it's URL encoded before file filter
+    try {
+      const decodedFilename = decodeURIComponent(file.originalname);
+      file.originalname = decodedFilename;
+      console.log('Decoded filename:', decodedFilename);
+    } catch (e) {
+      // If decoding fails, keep original filename
+      console.log('Could not decode filename:', file.originalname);
+    }
+    
+    // Apply the original file filter logic
     const allowedMimes = [
       'image/jpeg', 'image/jpg', 'image/png', 'image/bmp', 'image/tiff', 'image/tif',
       'image/webp', 'image/gif', 'image/avif', 'image/heic', 'image/heif',
@@ -280,54 +298,44 @@ const fileFilter = (req: any, file: any, cb: any) => {
     if (allowedMimes.includes(file.mimetype) || file.originalname.match(/\.(cr2|crw|nef|arw|dng|raw|orf|pef|erf)$/i)) {
       cb(null, true);
     } else {
-    cb(new Error('Unsupported file type') as any, false);
-  }
-};
-
-// Configure multer for single file uploads with UTF-8 filename preservation
-const uploadSingle = multer({
-  storage: multer.memoryStorage({
-    // Preserve UTF-8 encoding of filenames
-    filename: (req, file, cb) => {
-      // Decode the filename if it's URL encoded
-      try {
-        const decodedFilename = decodeURIComponent(file.originalname);
-        file.originalname = decodedFilename;
-      } catch (e) {
-        // If decoding fails, keep original filename
-        console.log('Could not decode filename:', file.originalname);
-      }
-      cb(null, file.originalname);
+      cb(new Error('Unsupported file type') as any, false);
     }
-  }),
-  limits: {
-    fileSize: 200 * 1024 * 1024, // 200MB limit per file
-    files: 1
-  },
-  fileFilter
+  }
 });
 
 // Configure multer for batch file uploads with UTF-8 filename preservation
 const uploadBatch = multer({
-  storage: multer.memoryStorage({
-    // Preserve UTF-8 encoding of filenames
-    filename: (req, file, cb) => {
-      // Decode the filename if it's URL encoded
-      try {
-        const decodedFilename = decodeURIComponent(file.originalname);
-        file.originalname = decodedFilename;
-      } catch (e) {
-        // If decoding fails, keep original filename
-        console.log('Could not decode filename:', file.originalname);
-      }
-      cb(null, file.originalname);
-    }
-  }),
+  storage: multer.memoryStorage(),
   limits: {
     fileSize: 200 * 1024 * 1024, // 200MB limit per file
     files: 20 // Allow up to 20 files for batch processing
   },
-  fileFilter
+  fileFilter: (req: any, file: any, cb: any) => {
+    // Decode the filename if it's URL encoded before file filter
+    try {
+      const decodedFilename = decodeURIComponent(file.originalname);
+      file.originalname = decodedFilename;
+      console.log('Decoded batch filename:', decodedFilename);
+    } catch (e) {
+      // If decoding fails, keep original filename
+      console.log('Could not decode batch filename:', file.originalname);
+    }
+    
+    // Apply the original file filter logic
+    const allowedMimes = [
+      'image/jpeg', 'image/jpg', 'image/png', 'image/bmp', 'image/tiff', 'image/tif',
+      'image/webp', 'image/gif', 'image/avif', 'image/heic', 'image/heif',
+      'image/x-canon-cr2', 'image/x-canon-crw', 'image/x-nikon-nef', 'image/x-sony-arw',
+      'image/x-adobe-dng', 'image/x-panasonic-raw', 'image/x-olympus-orf',
+      'image/x-pentax-pef', 'image/x-epson-erf', 'image/x-raw'
+    ];
+    
+    if (allowedMimes.includes(file.mimetype) || file.originalname.match(/\.(cr2|crw|nef|arw|dng|raw|orf|pef|erf)$/i)) {
+      cb(null, true);
+    } else {
+      cb(new Error('Unsupported file type') as any, false);
+    }
+  }
 });
 
 // Health check endpoint
@@ -398,6 +406,10 @@ app.get('/download/:filename', async (req, res) => {
 app.post('/api/convert', uploadSingle.single('file'), async (req, res) => {
   try {
     const file = req.file;
+    
+    if (!file) {
+      return res.status(400).json({ error: 'No file uploaded' });
+    }
     
     // Log original filename for debugging
     console.log('Original filename:', file.originalname);
