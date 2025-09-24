@@ -31,20 +31,44 @@ const processRAWFile = async (inputBuffer: Buffer, filename: string): Promise<Bu
   const inputPath = path.join(tempDir, `input_${Date.now()}_${filename}`);
   
   try {
+    // Check if dcraw is available
+    try {
+      await execAsync('dcraw -h');
+    } catch (dcrawError) {
+      console.error('dcraw not available:', dcrawError);
+      throw new Error('RAW processing not available in this environment');
+    }
+
     // Write input buffer to temporary file
     await fs.writeFile(inputPath, inputBuffer);
     
-    // Use dcraw to convert RAW to TIFF
+    // Use dcraw to convert RAW to TIFF with timeout and memory limits
     // -T: write TIFF instead of PPM
     // -w: use camera white balance
     // -6: 16-bit output
     // -c: write to stdout
-    const dcrawCommand = `dcraw -T -w -6 -c "${inputPath}"`;
+    // -h: half-size (reduce memory usage)
+    const dcrawCommand = `timeout 30s dcraw -T -w -6 -h -c "${inputPath}"`;
     
-    const { stdout } = await execAsync(dcrawCommand);
+    const { stdout } = await execAsync(dcrawCommand, { 
+      timeout: 30000, // 30 second timeout
+      maxBuffer: 50 * 1024 * 1024 // 50MB buffer limit
+    });
+    
+    if (!stdout || stdout.length === 0) {
+      throw new Error('dcraw produced no output');
+    }
+    
     const convertedBuffer = Buffer.from(stdout, 'binary');
     
+    if (convertedBuffer.length === 0) {
+      throw new Error('Converted buffer is empty');
+    }
+    
     return convertedBuffer;
+  } catch (error) {
+    console.error('RAW processing error:', error);
+    throw new Error(`RAW processing failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
   } finally {
     // Clean up temporary files
     try {
@@ -57,6 +81,12 @@ const processRAWFile = async (inputBuffer: Buffer, filename: string): Promise<Bu
 
 const app = express();
 const PORT = process.env.PORT || 3000;
+
+// Monitor memory usage
+setInterval(() => {
+  const memUsage = process.memoryUsage();
+  console.log(`Memory: ${Math.round(memUsage.heapUsed / 1024 / 1024)}MB used, ${Math.round(memUsage.heapTotal / 1024 / 1024)}MB total`);
+}, 30000); // Log every 30 seconds
 
 // Security middleware
 app.use(helmet());
@@ -386,11 +416,18 @@ app.use('*', (req, res) => {
   res.status(404).json({ error: 'Endpoint not found' });
 });
 
-// Start server
-app.listen(Number(PORT), '0.0.0.0', () => {
-  console.log(`🚀 Server running on port ${PORT}`);
-  console.log(`📁 Health check: http://localhost:${PORT}/health`);
-  console.log(`🔄 Convert endpoint: http://localhost:${PORT}/api/convert`);
-});
+// Start server with error handling
+try {
+  app.listen(Number(PORT), '0.0.0.0', () => {
+    console.log(`🚀 Server running on port ${PORT}`);
+    console.log(`📁 Health check: http://localhost:${PORT}/health`);
+    console.log(`🔄 Convert endpoint: http://localhost:${PORT}/api/convert`);
+    console.log(`🌍 Environment: ${process.env.NODE_ENV || 'development'}`);
+    console.log(`📊 Memory usage: ${Math.round(process.memoryUsage().heapUsed / 1024 / 1024)}MB`);
+  });
+} catch (error) {
+  console.error('Failed to start server:', error);
+  process.exit(1);
+}
 
 export default app;
