@@ -53,6 +53,16 @@ const cleanupOldFiles = async () => {
 // Schedule cleanup every 2 minutes
 setInterval(cleanupOldFiles, 2 * 60 * 1000);
 
+// Utility function to sanitize filenames for better compatibility
+const sanitizeFilename = (filename: string): string => {
+  // Remove or replace problematic characters while preserving international characters
+  return filename
+    .replace(/[<>:"/\\|?*]/g, '_') // Replace problematic characters with underscore
+    .replace(/\s+/g, '_') // Replace spaces with underscore
+    .replace(/_{2,}/g, '_') // Replace multiple underscores with single underscore
+    .trim();
+};
+
 // RAW file extensions
 const RAW_EXTENSIONS = ['dng', 'cr2', 'cr3', 'nef', 'arw', 'rw2', 'pef', 'orf', 'raf', 'x3f', 'raw'];
 
@@ -318,9 +328,15 @@ app.get('/download/:filename', async (req, res) => {
         break;
     }
 
-    // Set headers
+    // Extract original filename from the stored filename (remove timestamp prefix)
+    const originalFilename = filename.replace(/^\d+_/, '');
+    const sanitizedFilename = sanitizeFilename(originalFilename);
+    const encodedFilename = encodeURIComponent(sanitizedFilename);
+    
+    // Set headers with proper UTF-8 encoding for filenames
     res.set({
       'Content-Type': contentType,
+      'Content-Disposition': `attachment; filename*=UTF-8''${encodedFilename}`,
       'Content-Length': stats.size.toString(),
       'Cache-Control': 'no-cache'
     });
@@ -449,9 +465,10 @@ app.post('/api/convert', uploadSingle.single('file'), async (req, res) => {
     // Process the image
     outputBuffer = await sharpInstance.toBuffer();
 
-    // Generate output filename
+    // Generate output filename with proper sanitization
     const originalName = file.originalname.replace(/\.[^.]+$/, '');
-    const outputFilename = `${originalName}.${fileExtension}`;
+    const sanitizedName = sanitizeFilename(originalName);
+    const outputFilename = `${sanitizedName}.${fileExtension}`;
 
     console.log(`Conversion successful: ${outputFilename}, size: ${outputBuffer.length} bytes`);
 
@@ -467,10 +484,11 @@ app.post('/api/convert', uploadSingle.single('file'), async (req, res) => {
     await fs.writeFile(filePath, outputBuffer);
     console.log(`File saved to disk: ${uniqueFilename}`);
 
-    // Set response headers
+    // Set response headers with proper UTF-8 encoding for filenames
+    const encodedFilename = encodeURIComponent(outputFilename);
     res.set({
       'Content-Type': contentType,
-      'Content-Disposition': `attachment; filename="${outputFilename}"`,
+      'Content-Disposition': `attachment; filename*=UTF-8''${encodedFilename}`,
       'Content-Length': outputBuffer.length.toString(),
       'Cache-Control': 'no-cache',
       'Connection': 'keep-alive'
@@ -625,7 +643,8 @@ app.post('/api/convert/batch', uploadBatch.array('files', 20), async (req, res) 
         }
 
         const originalName = file.originalname.replace(/\.[^.]+$/, '');
-        const outputFilename = `${originalName}.${fileExtension}`;
+        const sanitizedName = sanitizeFilename(originalName);
+        const outputFilename = `${sanitizedName}.${fileExtension}`;
 
         // Save file to disk for batch processing
         await ensureConvertedFilesDir();
