@@ -53,6 +53,29 @@ const cleanupOldFiles = async () => {
 // Schedule cleanup every 2 minutes
 setInterval(cleanupOldFiles, 2 * 60 * 1000);
 
+// Utility function to fix UTF-8 encoding issues
+const fixUTF8Encoding = (text: string): string => {
+  if (!text) return text;
+  
+  // Handle the specific pattern we're seeing: â\x80\x94 (which should be —)
+  // This is the UTF-8 encoding of em dash being displayed incorrectly
+  let fixed = text
+    .replace(/â\\x80\\x94/g, '—') // Replace â\x80\x94 with proper em dash
+    .replace(/â\x80\x94/g, '—')   // Replace â\x80\x94 with proper em dash
+    .replace(/\\x80\\x94/g, '—')  // Replace literal \x80\x94 with em dash
+    .replace(/\x80\x94/g, '—')    // Replace actual UTF-8 bytes with em dash
+    .replace(/\\x80\\x93/g, '–')  // Replace literal \x80\x93 with en dash
+    .replace(/\x80\x93/g, '–')    // Replace actual UTF-8 bytes with en dash
+    .replace(/\\x80\\x99/g, '')   // Replace literal \x80\x99 with apostrophe
+    .replace(/\x80\x99/g, '')     // Replace actual UTF-8 bytes with apostrophe
+    .replace(/\\x80\\x9c/g, '"')  // Replace literal \x80\x9c with left quote
+    .replace(/\x80\x9c/g, '"')    // Replace actual UTF-8 bytes with left quote
+    .replace(/\\x80\\x9d/g, '"')  // Replace literal \x80\x9d with right quote
+    .replace(/\x80\x9d/g, '"');   // Replace actual UTF-8 bytes with right quote
+  
+  return fixed;
+};
+
 // Utility function to sanitize filenames for better compatibility
 const sanitizeFilename = (filename: string): string => {
   // Ensure the filename is properly decoded if it was URL encoded
@@ -381,7 +404,8 @@ app.get('/download/:filename', async (req, res) => {
     // Extract original filename from the stored filename (remove timestamp prefix)
     const originalFilename = filename.replace(/^\d+_/, '');
     const sanitizedFilename = sanitizeFilename(originalFilename);
-    const encodedFilename = encodeURIComponent(sanitizedFilename);
+    const fixedFilename = fixUTF8Encoding(sanitizedFilename);
+    const encodedFilename = encodeURIComponent(fixedFilename);
     
     // Set headers with proper UTF-8 encoding for filenames
     res.set({
@@ -528,12 +552,15 @@ app.post('/api/convert', uploadSingle.single('file'), async (req, res) => {
     const sanitizedName = sanitizeFilename(originalName);
     const outputFilename = `${sanitizedName}.${fileExtension}`;
 
-    console.log(`Conversion successful: ${outputFilename}, size: ${outputBuffer.length} bytes`);
+    // Fix UTF-8 encoding issues for display
+    const fixedOutputFilename = fixUTF8Encoding(outputFilename);
+    
+    console.log(`Conversion successful: ${fixedOutputFilename}, size: ${outputBuffer.length} bytes`);
 
     // Ensure converted files directory exists
     await ensureConvertedFilesDir();
 
-    // Generate unique filename to avoid conflicts
+    // Generate unique filename to avoid conflicts (use original for file system, fixed for display)
     const timestamp = Date.now();
     const uniqueFilename = `${timestamp}_${outputFilename}`;
     const filePath = path.join(CONVERTED_FILES_DIR, uniqueFilename);
@@ -543,7 +570,7 @@ app.post('/api/convert', uploadSingle.single('file'), async (req, res) => {
     console.log(`File saved to disk: ${uniqueFilename}`);
 
     // Set response headers with proper UTF-8 encoding for filenames
-    const encodedFilename = encodeURIComponent(outputFilename);
+    const encodedFilename = encodeURIComponent(fixedOutputFilename);
     res.set({
       'Content-Type': contentType,
       'Content-Disposition': `attachment; filename*=UTF-8''${encodedFilename}`,
@@ -733,9 +760,16 @@ app.post('/api/convert/batch', uploadBatch.array('files', 20), async (req, res) 
         console.log('Batch result - originalName hex:', Buffer.from(file.originalname, 'utf8').toString('hex'));
         console.log('Batch result - outputFilename hex:', Buffer.from(outputFilename, 'utf8').toString('hex'));
         
+        // Fix UTF-8 encoding issues before sending to frontend
+        const fixedOriginalName = fixUTF8Encoding(file.originalname);
+        const fixedOutputFilename = fixUTF8Encoding(outputFilename);
+        
+        console.log('Batch result - fixed originalName:', fixedOriginalName);
+        console.log('Batch result - fixed outputFilename:', fixedOutputFilename);
+        
         results.push({
-          originalName: file.originalname,
-          outputFilename,
+          originalName: fixedOriginalName,
+          outputFilename: fixedOutputFilename,
           size: outputBuffer.length,
           success: true,
           downloadPath: `/download/${uniqueFilename}` // Add download path for frontend
