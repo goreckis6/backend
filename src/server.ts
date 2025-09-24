@@ -346,8 +346,17 @@ app.post('/api/convert', upload.single('file'), async (req, res) => {
   }
 });
 
-// Batch conversion endpoint
+// Batch conversion endpoint with timeout
 app.post('/api/convert/batch', upload.array('files', 10), async (req, res) => {
+  // Set timeout for batch processing (2 minutes)
+  const timeout = setTimeout(() => {
+    if (!res.headersSent) {
+      res.status(408).json({ 
+        error: 'Batch processing timeout. Please try with fewer files or smaller files.' 
+      });
+    }
+  }, 120000); // 2 minutes
+
   try {
     const files = req.files as Express.Multer.File[];
     const { 
@@ -360,14 +369,32 @@ app.post('/api/convert/batch', upload.array('files', 10), async (req, res) => {
       return res.status(400).json({ error: 'No files uploaded' });
     }
 
-    console.log(`Processing batch: ${files.length} files`);
+    console.log(`Processing batch: ${files.length} files, total size: ${files.reduce((sum, f) => sum + f.size, 0) / 1024 / 1024}MB`);
+
+    // Check total size and reject if too large
+    const totalSize = files.reduce((sum, file) => sum + file.size, 0);
+    const maxBatchSize = 50 * 1024 * 1024; // 50MB limit for batch processing
+    
+    if (totalSize > maxBatchSize) {
+      return res.status(400).json({ 
+        error: `Batch too large. Total size: ${Math.round(totalSize / 1024 / 1024)}MB, maximum allowed: ${Math.round(maxBatchSize / 1024 / 1024)}MB. Please process fewer files at once.` 
+      });
+    }
 
     const results = [];
     const qualityValue = quality === 'high' ? 95 : quality === 'medium' ? 80 : 60;
     const isLossless = lossless === 'true';
 
-    for (const file of files) {
+    // Process files sequentially to avoid memory issues
+    for (let i = 0; i < files.length; i++) {
+      const file = files[i];
+      console.log(`Processing file ${i + 1}/${files.length}: ${file.originalname} (${Math.round(file.size / 1024)}KB)`);
+      
       try {
+        // Check memory usage before processing
+        const memUsage = process.memoryUsage();
+        console.log(`Memory before processing: ${Math.round(memUsage.heapUsed / 1024 / 1024)}MB`);
+        
         // Check if this is a RAW file and process it first
         let imageBuffer = file.buffer;
         if (isRAWFile(file.originalname)) {
@@ -428,6 +455,14 @@ app.post('/api/convert/batch', upload.array('files', 10), async (req, res) => {
           success: true
         });
 
+        // Force garbage collection to free memory
+        if (global.gc) {
+          global.gc();
+        }
+        
+        // Small delay between files to prevent memory buildup
+        await new Promise(resolve => setTimeout(resolve, 100));
+
       } catch (fileError) {
         console.error(`Error processing ${file.originalname}:`, fileError);
         results.push({
@@ -438,6 +473,7 @@ app.post('/api/convert/batch', upload.array('files', 10), async (req, res) => {
       }
     }
 
+    clearTimeout(timeout);
     res.json({
       success: true,
       processed: results.length,
@@ -445,6 +481,7 @@ app.post('/api/convert/batch', upload.array('files', 10), async (req, res) => {
     });
 
   } catch (error) {
+    clearTimeout(timeout);
     console.error('Batch conversion error:', error);
     res.status(500).json({ 
       error: 'Batch conversion failed',
