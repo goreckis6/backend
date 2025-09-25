@@ -435,10 +435,12 @@ const uploadBatch = multer({
       'image/webp', 'image/gif', 'image/avif', 'image/heic', 'image/heif',
       'image/x-canon-cr2', 'image/x-canon-crw', 'image/x-nikon-nef', 'image/x-sony-arw',
       'image/x-adobe-dng', 'image/x-panasonic-raw', 'image/x-olympus-orf',
-      'image/x-pentax-pef', 'image/x-epson-erf', 'image/x-raw'
+      'image/x-pentax-pef', 'image/x-epson-erf', 'image/x-raw',
+      // EPS/PostScript
+      'application/postscript', 'application/eps', 'application/x-eps', 'image/eps'
     ];
     
-    if (allowedMimes.includes(file.mimetype) || file.originalname.match(/\.(cr2|crw|nef|arw|dng|raw|orf|pef|erf)$/i)) {
+    if (allowedMimes.includes(file.mimetype) || file.originalname.match(/\.(cr2|crw|nef|arw|dng|raw|orf|pef|erf|eps|ps)$/i)) {
       cb(null, true);
     } else {
       cb(new Error('Unsupported file type') as any, false);
@@ -645,7 +647,7 @@ app.post('/api/convert', uploadSingle.single('file'), async (req, res) => {
   } catch (epsEarlyErr) {
     console.error('EPS early handling error:', epsEarlyErr);
     return res.status(500).json({ error: 'EPS to ICO conversion failed', details: epsEarlyErr instanceof Error ? epsEarlyErr.message : String(epsEarlyErr) });
-  }
+    }
 
     let sharpInstance = sharp(imageBuffer, { 
       failOn: 'truncated',
@@ -1015,7 +1017,7 @@ app.post('/api/convert/batch', uploadBatch.array('files', 20), async (req, res) 
             break;
           default:
             throw new Error('Unsupported format');
-          }
+        }
         }
 
         const rawOriginalName = file.originalname.replace(/\.[^.]+$/, '');
