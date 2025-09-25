@@ -283,7 +283,7 @@ const processEPUBToCSV = async (
       try {
         // Get chapter content
         const chapterText = await new Promise<string>((resolve, reject) => {
-          epub.getChapter(chapter.id, (error: any, text: string) => {
+          epub.getChapter(chapter.id || chapter.href || `chapter_${i}`, (error: any, text: string) => {
             if (error) reject(error);
             else resolve(text || '');
           });
@@ -764,12 +764,16 @@ app.post('/api/convert', uploadSingle.single('file'), async (req, res) => {
       extractTables = 'true'
     } = req.body;
 
-  // Early format-specific handling before Sharp metadata
-  try {
+    // Calculate common variables
     const targetFormat = String(format || '').toLowerCase();
     const iconSizeNum = parseInt(iconSize) || 16;
+    const qualityValue = quality === 'high' ? 95 : quality === 'medium' ? 80 : 60;
+    const isLossless = lossless === 'true';
     const isEPS = isEPSFile(file.originalname) || file.mimetype === 'application/postscript';
     const isEPUB = file.originalname.toLowerCase().endsWith('.epub');
+
+  // Early format-specific handling before Sharp metadata
+  try {
 
     if (isEPS && (targetFormat === 'ico' || targetFormat === 'webp')) {
       let outputBuffer: Buffer;
@@ -805,7 +809,7 @@ app.post('/api/convert', uploadSingle.single('file'), async (req, res) => {
     return res.status(500).json({ error: 'Conversion failed', details: earlyError instanceof Error ? earlyError.message : String(earlyError) });
     }
 
-    let sharpInstance = sharp(imageBuffer, { 
+    let sharpInstance = sharp(file.buffer, { 
       failOn: 'truncated',
       unlimited: true // Allow very large images
     });
