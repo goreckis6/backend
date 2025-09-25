@@ -530,7 +530,7 @@ const uploadSingle = multer({
     fileSize: 200 * 1024 * 1024, // 200MB limit per file
     files: 1
   },
-  fileFilter: (req: any, file: any, cb: any) => {
+  fileFilter: (req, file, cb) => {
     // Decode the filename if it's URL encoded before file filter
     try {
       const decodedFilename = decodeURIComponent(file.originalname);
@@ -555,7 +555,7 @@ const uploadSingle = multer({
     if (allowedMimes.includes(file.mimetype) || file.originalname.match(/\.(cr2|crw|nef|arw|dng|raw|orf|pef|erf|eps|ps)$/i)) {
       cb(null, true);
     } else {
-      cb(new Error('Unsupported file type') as any, false);
+      cb(new Error('Unsupported file type'), false);
     }
   }
 });
@@ -567,7 +567,7 @@ const uploadBatch = multer({
     fileSize: 200 * 1024 * 1024, // 200MB limit per file
     files: 20 // Allow up to 20 files for batch processing
   },
-  fileFilter: (req: any, file: any, cb: any) => {
+  fileFilter: (req, file, cb) => {
     // Decode the filename if it's URL encoded before file filter
     try {
       const decodedFilename = decodeURIComponent(file.originalname);
@@ -592,7 +592,7 @@ const uploadBatch = multer({
     if (allowedMimes.includes(file.mimetype) || file.originalname.match(/\.(cr2|crw|nef|arw|dng|raw|orf|pef|erf|eps|ps)$/i)) {
       cb(null, true);
     } else {
-      cb(new Error('Unsupported file type') as any, false);
+      cb(new Error('Unsupported file type'), false);
     }
   }
 });
@@ -1275,9 +1275,17 @@ const startServer = async () => {
     // Ensure converted files directory exists
     await ensureConvertedFilesDir();
 
-// Start server
+    // Start server
     app.listen(Number(PORT), '0.0.0.0', () => {
-  console.log(`🚀 Server running on port ${PORT}`);
-  console.log(`📁 Health check: http://localhost:${PORT}/health`);
-  console.log(`🔧 API status: http://localhost:${PORT}/api/status`);
-});
+      console.log(`🚀 Server running on port ${PORT}`);
+      console.log(`📁 Health check: http://localhost:${PORT}/health`);
+      console.log(`🔧 API status: http://localhost:${PORT}/api/status`);
+    });
+  } catch (error) {
+    console.error('Failed to start server:', error);
+    process.exit(1);
+  }
+};
+
+// Start the server
+startServer();
