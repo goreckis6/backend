@@ -11,6 +11,7 @@ import { exec } from 'child_process';
 import { promisify } from 'util';
 import os from 'os';
 import { randomUUID } from 'crypto';
+import epub from 'epub-importer';
 
 const execAsync = promisify(exec);
 
@@ -235,6 +236,61 @@ const processEPSRaster = async (
   }
 };
 
+const processEPUBToCSV = async (
+  inputBuffer: Buffer,
+  options: { delimiter: string; includeMetadata: boolean; extractTables: boolean }
+): Promise<Buffer> => {
+  console.log('Parsing EPUB for CSV conversion...');
+  const book = await epub(inputBuffer);
+
+  const rows: string[][] = [];
+  const headers: string[] = ['Chapter', 'Section', 'Content'];
+  if (options.includeMetadata) {
+    headers.unshift('Author', 'Title');
+  }
+  rows.push(headers);
+
+  const delimiter = options.delimiter || ',';
+  const sanitize = (value: string) =>
+    value
+      .replace(/\r?\n|\r/g, ' ')
+      .replace(/"/g, '""');
+
+  for (const chapter of book.chapters) {
+    const chapterTitle = chapter.title || 'Untitled';
+    const sections = chapter.sections?.length ? chapter.sections : [{ title: '', text: chapter.text }];
+
+    for (const section of sections) {
+      let content = section.text || '';
+      if (options.extractTables) {
+        const tables = chapter.tables || [];
+        content = tables
+          .map((table, tableIndex) => {
+            const tableRows = table.rows || [];
+            const tableCSV = tableRows
+              .map(row => (row.cells || []).map(cell => sanitize(cell.text || '')).join(delimiter))
+              .join('\n');
+            return `Table ${tableIndex + 1} (Chapter: ${chapterTitle}):\n${tableCSV}`;
+          })
+          .join('\n');
+      }
+
+      const dataRow: string[] = [];
+      if (options.includeMetadata) {
+        dataRow.push(sanitize(book.metadata.author || 'Unknown')); // Author
+        dataRow.push(sanitize(book.metadata.title || 'Untitled')); // Title
+      }
+      dataRow.push(sanitize(chapterTitle)); // Chapter
+      dataRow.push(sanitize(section.title || '')); // Section
+      dataRow.push(sanitize(content)); // Content
+      rows.push(dataRow);
+    }
+  }
+
+  const csv = rows.map(row => `"${row.join(`"${delimiter}"`)}"`).join('\n');
+  return Buffer.from(csv, 'utf8');
+};
+
 // Function to process RAW file with dcraw or fallback to Sharp
 const processRAWFile = async (inputBuffer: Buffer, filename: string): Promise<Buffer> => {
   const tempDir = os.tmpdir();
@@ -346,6 +402,51 @@ const processRAWFile = async (inputBuffer: Buffer, filename: string): Promise<Bu
       // Ignore cleanup errors for files that might not exist
     }
   }
+};
+
+const sendBufferAsDownload = async (
+  res: express.Response,
+  file: Express.Multer.File,
+  outputBuffer: Buffer,
+  fileExtension: string,
+  contentType: string
+) => {
+  const rawOriginalName = file.originalname.replace(/\.[^.]+$/, '');
+  const fixedOriginalName = fixUTF8Encoding(rawOriginalName);
+  const sanitizedName = sanitizeFilename(fixedOriginalName);
+  const outputFilename = `${sanitizedName}.${fileExtension}`;
+
+  await ensureConvertedFilesDir();
+  const timestamp = Date.now();
+  const uniqueFilename = `${timestamp}_${outputFilename}`;
+  const filePath = path.join(CONVERTED_FILES_DIR, uniqueFilename);
+  await fs.writeFile(filePath, outputBuffer);
+
+  const encodedFilename = encodeURIComponent(outputFilename);
+  res.set({
+    'Content-Type': contentType,
+    'Content-Disposition': `attachment; filename*=UTF-8''${encodedFilename}`,
+    'Content-Length': outputBuffer.length.toString(),
+    'Cache-Control': 'no-cache',
+    'Connection': 'keep-alive'
+  });
+
+  try {
+    res.send(outputBuffer);
+  } catch (sendError) {
+    console.error('Error sending file:', sendError);
+    if (!res.headersSent) {
+      res.status(500).json({ error: 'Failed to send converted file', details: String(sendError) });
+    }
+  }
+
+  setTimeout(async () => {
+    try { await fs.unlink(filePath); } catch {}
+  }, 5 * 60 * 1000);
+
+  setTimeout(() => {
+    if (global.gc) { global.gc(); }
+  }, 1000);
 };
 
 const app = express();
@@ -619,37 +720,18 @@ app.post('/api/convert', uploadSingle.single('file'), async (req, res) => {
       format = 'webp',
       width,
       height,
-      iconSize = '16'
+      iconSize = '16',
+      delimiter = ',',
+      includeMetadata = 'true',
+      extractTables = 'true'
     } = req.body;
 
-    if (!file) {
-      return res.status(400).json({ error: 'No file uploaded' });
-    }
-
-    console.log(`Processing file: ${file.originalname}, size: ${file.size} bytes`);
-
-    // Parse quality value
-    const qualityValue = quality === 'high' ? 95 : quality === 'medium' ? 80 : 60;
-    const isLossless = lossless === 'true';
-
-    // Check if this is a RAW file and process it first
-    let imageBuffer = file.buffer;
-    if (isRAWFile(file.originalname)) {
-      console.log(`Detected RAW file: ${file.originalname}, processing with dcraw...`);
-      try {
-        imageBuffer = await processRAWFile(file.buffer, file.originalname);
-        console.log(`RAW file processed successfully, converted buffer size: ${imageBuffer.length} bytes`);
-      } catch (rawError) {
-        console.error('RAW processing error:', rawError);
-        return res.status(400).json({ error: 'Failed to process RAW file. Please ensure the file is a valid RAW format.' });
-      }
-    }
-
-  // Early EPS handling before Sharp metadata (Sharp can't read EPS)
+  // Early format-specific handling before Sharp metadata
   try {
     const targetFormat = String(format || '').toLowerCase();
     const iconSizeNum = parseInt(iconSize) || 16;
     const isEPS = isEPSFile(file.originalname) || file.mimetype === 'application/postscript';
+    const isEPUB = file.originalname.toLowerCase().endsWith('.epub');
 
     if (isEPS && (targetFormat === 'ico' || targetFormat === 'webp')) {
       let outputBuffer: Buffer;
@@ -657,56 +739,32 @@ app.post('/api/convert', uploadSingle.single('file'), async (req, res) => {
       let fileExtension: string;
 
       if (targetFormat === 'ico') {
-        // EPS → ICO
         outputBuffer = await processEPSFile(file.buffer, file.originalname, iconSizeNum);
         contentType = 'image/x-icon';
         fileExtension = 'ico';
       } else {
-        // EPS → WebP (rasterize EPS to PNG then encode to WebP)
         const rasterPng = await processEPSRaster(file.buffer, file.originalname);
         outputBuffer = await sharp(rasterPng, { failOn: 'truncated', unlimited: true })
-          .webp({ quality: qualityValue, lossless: isLossless, effort: 6, smartSubsample: true })
+          .webp({ quality: qualityValue, lossless: lossless === 'true', effort: 6, smartSubsample: true })
           .toBuffer();
         contentType = 'image/webp';
         fileExtension = 'webp';
       }
 
-      const rawOriginalName = file.originalname.replace(/\.[^.]+$/, '');
-      const fixedOriginalName = fixUTF8Encoding(rawOriginalName);
-      const sanitizedName = sanitizeFilename(fixedOriginalName);
-      const outputFilename = `${sanitizedName}.${fileExtension}`;
-
-      await ensureConvertedFilesDir();
-      const timestamp = Date.now();
-      const uniqueFilename = `${timestamp}_${outputFilename}`;
-      const filePath = path.join(CONVERTED_FILES_DIR, uniqueFilename);
-      await fs.writeFile(filePath, outputBuffer);
-
-      const encodedFilename = encodeURIComponent(outputFilename);
-      res.set({
-        'Content-Type': contentType,
-        'Content-Disposition': `attachment; filename*=UTF-8''${encodedFilename}`,
-        'Content-Length': outputBuffer.length.toString(),
-        'Cache-Control': 'no-cache',
-        'Connection': 'keep-alive'
-      });
-
-      try { res.send(outputBuffer); }
-      catch (sendError) {
-        console.error('Error sending EPS file:', sendError);
-        if (!res.headersSent) return res.status(500).json({ error: 'Failed to send converted file', details: String(sendError) });
-      }
-
-      setTimeout(async () => {
-        try { await fs.unlink(filePath); } catch {}
-      }, 5 * 60 * 1000);
-
-      setTimeout(() => { if (global.gc) { global.gc(); } }, 1000);
-      return;
+      return await sendBufferAsDownload(res, file, outputBuffer, fileExtension, contentType);
     }
-  } catch (epsEarlyErr) {
-    console.error('EPS early handling error:', epsEarlyErr);
-    return res.status(500).json({ error: 'EPS conversion failed', details: epsEarlyErr instanceof Error ? epsEarlyErr.message : String(epsEarlyErr) });
+
+    if (isEPUB && targetFormat === 'csv') {
+      const outputBuffer = await processEPUBToCSV(file.buffer, {
+        delimiter,
+        includeMetadata: includeMetadata === 'true',
+        extractTables: extractTables === 'true'
+      });
+      return await sendBufferAsDownload(res, file, outputBuffer, 'csv', 'text/csv');
+    }
+  } catch (earlyError) {
+    console.error('Early format handling error:', earlyError);
+    return res.status(500).json({ error: 'Conversion failed', details: earlyError instanceof Error ? earlyError.message : String(earlyError) });
     }
 
     let sharpInstance = sharp(imageBuffer, { 
@@ -794,25 +852,14 @@ app.post('/api/convert', uploadSingle.single('file'), async (req, res) => {
 
     switch (targetFormat) {
       case 'webp':
-        if (isEPS) {
-          // EPS → PNG raster, then encode to WebP
-          const rasterPng = await processEPSRaster(file.buffer, file.originalname);
-          outputBuffer = await sharp(rasterPng, { failOn: 'truncated', unlimited: true })
-            .webp({ quality: Number(qualityValue), lossless: isLossless, effort: 6, smartSubsample: true })
-            .toBuffer();
-          contentType = 'image/webp';
-          fileExtension = 'webp';
-        } else {
         sharpInstance = sharpInstance.webp({ 
           quality: Number(qualityValue), 
-            lossless: isLossless,
-            effort: 6,
-            smartSubsample: true
+          lossless: isLossless,
+          effort: 6, // Higher effort for better quality
+          smartSubsample: true // Better color handling
         });
         contentType = 'image/webp';
         fileExtension = 'webp';
-          outputBuffer = await sharpInstance.toBuffer();
-        }
         break;
 
       case 'ico':
@@ -960,7 +1007,10 @@ app.post('/api/convert/batch', uploadBatch.array('files', 20), async (req, res) 
       quality = 'high', 
       lossless = 'false',
       format = 'webp',
-      iconSize = '16'
+      iconSize = '16',
+      delimiter = ',',
+      includeMetadata = 'true',
+      extractTables = 'true'
     } = req.body;
 
     if (!files || files.length === 0) {
@@ -1019,18 +1069,16 @@ app.post('/api/convert/batch', uploadBatch.array('files', 20), async (req, res) 
         const targetFormat = String(format || '').toLowerCase();
         const iconSizeNum = parseInt(iconSize) || 16;
         const fileIsEPS = isEPSFile(file.originalname) || file.mimetype === 'application/postscript';
+        const fileIsEPUB = file.originalname.toLowerCase().endsWith('.epub');
 
         let outputBuffer: Buffer;
         let fileExtension: string;
 
-        // Special handling for ICO (supports both EPS and bitmap inputs)
         if (targetFormat === 'ico') {
           if (fileIsEPS) {
-            // EPS → ICO via Ghostscript + ImageMagick
             outputBuffer = await processEPSFile(file.buffer, file.originalname, iconSizeNum);
             fileExtension = 'ico';
           } else {
-            // Bitmap → resize to PNG then ImageMagick to ICO
             const tmpDir = os.tmpdir();
             const uid = randomUUID();
             const tmpPng = path.join(tmpDir, `ico_src_${uid}.png`);
@@ -1058,6 +1106,19 @@ app.post('/api/convert/batch', uploadBatch.array('files', 20), async (req, res) 
             try { await fs.unlink(tmpPng); } catch {}
             try { await fs.unlink(tmpIco); } catch {}
           }
+        } else if (targetFormat === 'webp' && fileIsEPS) {
+          const rasterPng = await processEPSRaster(file.buffer, file.originalname);
+          outputBuffer = await sharp(rasterPng, { failOn: 'truncated', unlimited: true })
+            .webp({ quality: Number(qualityValue), lossless: isLossless })
+            .toBuffer();
+          fileExtension = 'webp';
+        } else if (targetFormat === 'csv' && fileIsEPUB) {
+          outputBuffer = await processEPUBToCSV(file.buffer, {
+            delimiter,
+            includeMetadata: includeMetadata === 'true',
+            extractTables: extractTables === 'true'
+          });
+          fileExtension = 'csv';
         } else {
           // Standard bitmap formats handled by Sharp
           let sharpInstance = sharp(imageBuffer, { 
@@ -1068,7 +1129,6 @@ app.post('/api/convert/batch', uploadBatch.array('files', 20), async (req, res) 
           switch (targetFormat) {
           case 'webp':
             if (fileIsEPS) {
-              // EPS → WebP: rasterize then encode to WebP
               const rasterPng = await processEPSRaster(file.buffer, file.originalname);
               outputBuffer = await sharp(rasterPng, { failOn: 'truncated', unlimited: true })
                 .webp({ quality: Number(qualityValue), lossless: isLossless })
@@ -1219,19 +1279,4 @@ const startServer = async () => {
     app.listen(Number(PORT), '0.0.0.0', () => {
   console.log(`🚀 Server running on port ${PORT}`);
   console.log(`📁 Health check: http://localhost:${PORT}/health`);
-  console.log(`🔄 Convert endpoint: http://localhost:${PORT}/api/convert`);
-      console.log(`📥 Download endpoint: http://localhost:${PORT}/download/:filename`);
-      console.log(`📂 Converted files directory: ${CONVERTED_FILES_DIR}`);
-      console.log(`🌍 Environment: ${process.env.NODE_ENV || 'development'}`);
-      console.log(`📊 Memory usage: ${Math.round(process.memoryUsage().heapUsed / 1024 / 1024)}MB`);
-    });
-  } catch (error) {
-    console.error('Failed to start server:', error);
-    process.exit(1);
-  }
-};
-
-// Start the server
-startServer();
-
-export default app;
+  console.log(`
