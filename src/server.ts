@@ -187,6 +187,54 @@ const processEPSFile = async (inputBuffer: Buffer, filename: string, size: numbe
   }
 };
 
+// Rasterize EPS to PNG buffer using Ghostscript. Optionally constrain output size via Sharp.
+const processEPSRaster = async (
+  inputBuffer: Buffer,
+  filename: string,
+  targetWidth?: number,
+  targetHeight?: number
+): Promise<Buffer> => {
+  const tempDir = os.tmpdir();
+  const uniqueId = randomUUID();
+  const inputPath = path.join(tempDir, `eps_r_input_${uniqueId}.eps`);
+  const outputPngPath = path.join(tempDir, `eps_r_output_${uniqueId}.png`);
+
+  try {
+    // Ensure Ghostscript is present
+    await execAsync('gs -version', { timeout: 3000 });
+
+    await fs.writeFile(inputPath, inputBuffer);
+
+    // Use a reasonable DPI; if explicit target sizes provided, still rasterize with decent base quality
+    const dpi = 300;
+    const gsCommand = `gs -dSAFER -dBATCH -dNOPAUSE -dEPSCrop -r${dpi} -sDEVICE=pngalpha -sOutputFile="${outputPngPath}" "${inputPath}"`;
+    console.log('GS raster (web):', gsCommand);
+    await execAsync(gsCommand, { timeout: 60000, maxBuffer: 50 * 1024 * 1024 });
+
+    let pngBuffer = await fs.readFile(outputPngPath);
+
+    // Optionally resize with Sharp to requested dimensions
+    if (targetWidth || targetHeight) {
+      pngBuffer = await sharp(pngBuffer, { failOn: 'truncated', unlimited: true })
+        .resize(targetWidth || undefined, targetHeight || undefined, {
+          fit: 'inside',
+          withoutEnlargement: true,
+          background: { r: 0, g: 0, b: 0, alpha: 0 }
+        })
+        .png()
+        .toBuffer();
+    }
+
+    return pngBuffer;
+  } catch (error) {
+    console.error('EPS raster error:', error);
+    throw new Error(error instanceof Error ? error.message : 'EPS rasterization failed');
+  } finally {
+    try { await fs.unlink(inputPath); } catch {}
+    try { await fs.unlink(outputPngPath); } catch {}
+  }
+};
+
 // Function to process RAW file with dcraw or fallback to Sharp
 const processRAWFile = async (inputBuffer: Buffer, filename: string): Promise<Buffer> => {
   const tempDir = os.tmpdir();
@@ -734,14 +782,25 @@ app.post('/api/convert', uploadSingle.single('file'), async (req, res) => {
 
     switch (targetFormat) {
       case 'webp':
+        if (isEPS) {
+          // EPS → PNG raster, then encode to WebP
+          const rasterPng = await processEPSRaster(file.buffer, file.originalname);
+          outputBuffer = await sharp(rasterPng, { failOn: 'truncated', unlimited: true })
+            .webp({ quality: Number(qualityValue), lossless: isLossless, effort: 6, smartSubsample: true })
+            .toBuffer();
+          contentType = 'image/webp';
+          fileExtension = 'webp';
+        } else {
         sharpInstance = sharpInstance.webp({ 
           quality: Number(qualityValue), 
-          lossless: isLossless,
-          effort: 6, // Higher effort for better quality
-          smartSubsample: true // Better color handling
+            lossless: isLossless,
+            effort: 6,
+            smartSubsample: true
         });
         contentType = 'image/webp';
         fileExtension = 'webp';
+          outputBuffer = await sharpInstance.toBuffer();
+        }
         break;
 
       case 'ico':
