@@ -1067,10 +1067,18 @@ app.post('/api/convert/batch', uploadBatch.array('files', 20), async (req, res) 
 
           switch (targetFormat) {
           case 'webp':
-            outputBuffer = await sharpInstance.webp({ 
-              quality: Number(qualityValue), 
-              lossless: isLossless 
-            }).toBuffer();
+            if (fileIsEPS) {
+              // EPS → WebP: rasterize then encode to WebP
+              const rasterPng = await processEPSRaster(file.buffer, file.originalname);
+              outputBuffer = await sharp(rasterPng, { failOn: 'truncated', unlimited: true })
+                .webp({ quality: Number(qualityValue), lossless: isLossless })
+                .toBuffer();
+            } else {
+              outputBuffer = await sharpInstance.webp({ 
+                quality: Number(qualityValue), 
+                lossless: isLossless 
+              }).toBuffer();
+            }
             fileExtension = 'webp';
             break;
           case 'png':
