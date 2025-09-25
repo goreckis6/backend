@@ -10,6 +10,7 @@ import { fileURLToPath } from 'url';
 import { exec } from 'child_process';
 import { promisify } from 'util';
 import os from 'os';
+import { randomUUID } from 'crypto';
 
 const execAsync = promisify(exec);
 
@@ -112,11 +113,57 @@ const sanitizeFilename = (filename: string): string => {
 
 // RAW file extensions
 const RAW_EXTENSIONS = ['dng', 'cr2', 'cr3', 'nef', 'arw', 'rw2', 'pef', 'orf', 'raf', 'x3f', 'raw'];
+const EPS_EXTENSIONS = ['eps', 'ps'];
 
 // Function to check if file is RAW
 const isRAWFile = (filename: string): boolean => {
   const ext = filename.split('.').pop()?.toLowerCase();
   return RAW_EXTENSIONS.includes(ext || '');
+};
+
+const isEPSFile = (filename: string): boolean => {
+  const ext = filename.split('.').pop()?.toLowerCase();
+  return EPS_EXTENSIONS.includes(ext || '');
+};
+
+const processEPSFile = async (inputBuffer: Buffer, filename: string, size: number): Promise<Buffer> => {
+  const tempDir = os.tmpdir();
+  const uniqueId = randomUUID();
+  const inputPath = path.join(tempDir, `eps_input_${uniqueId}.eps`);
+  const outputPngPath = path.join(tempDir, `eps_output_${uniqueId}.png`);
+  const outputIcoPath = path.join(tempDir, `eps_output_${uniqueId}.ico`);
+
+  try {
+    await fs.writeFile(inputPath, inputBuffer);
+
+    const gsCommand = `gs -dSAFER -dBATCH -dNOPAUSE -dEPSCrop -r${size * 8} -sDEVICE=pngalpha -sOutputFile="${outputPngPath}" "${inputPath}"`;
+    console.log('Running Ghostscript:', gsCommand);
+    await execAsync(gsCommand, {
+      timeout: 60000,
+      maxBuffer: 50 * 1024 * 1024
+    });
+
+    await sharp(outputPngPath)
+      .resize(size, size, {
+        fit: 'contain',
+        background: { r: 0, g: 0, b: 0, alpha: 0 }
+      })
+      .toFile(outputIcoPath);
+
+    return await fs.readFile(outputIcoPath);
+  } catch (error) {
+    console.error('EPS processing error:', error);
+    throw new Error('EPS processing failed');
+  } finally {
+    const cleanupFiles = [inputPath, outputPngPath, outputIcoPath];
+    for (const filePath of cleanupFiles) {
+      try {
+        await fs.unlink(filePath);
+      } catch (cleanupError) {
+        // ignore
+      }
+    }
+  }
 };
 
 // Function to process RAW file with dcraw or fallback to Sharp
@@ -494,12 +541,78 @@ app.post('/api/convert', uploadSingle.single('file'), async (req, res) => {
     const metadata = await sharpInstance.metadata();
     console.log(`Image metadata: ${metadata.width}x${metadata.height}, format: ${metadata.format}`);
 
-    // Handle different output formats
+    const targetFormat = format.toLowerCase();
+    const iconSizeNum = parseInt(iconSize) || 16;
+    const isEPS = isEPSFile(file.originalname) || file.mimetype === 'application/postscript';
+
+    if (isEPS && targetFormat === 'ico') {
+      try {
+        const outputBuffer = await processEPSFile(file.buffer, file.originalname, iconSizeNum);
+        const contentType = 'image/x-icon';
+        const fileExtension = 'ico';
+
+        const rawOriginalName = file.originalname.replace(/\.[^.]+$/, '');
+        const fixedOriginalName = fixUTF8Encoding(rawOriginalName);
+        const sanitizedName = sanitizeFilename(fixedOriginalName);
+        const outputFilename = `${sanitizedName}.${fileExtension}`;
+
+        console.log(`EPS conversion successful: ${outputFilename}, size: ${outputBuffer.length} bytes`);
+
+        await ensureConvertedFilesDir();
+        const timestamp = Date.now();
+        const uniqueFilename = `${timestamp}_${outputFilename}`;
+        const filePath = path.join(CONVERTED_FILES_DIR, uniqueFilename);
+        await fs.writeFile(filePath, outputBuffer);
+        console.log(`File saved to disk: ${uniqueFilename}`);
+
+        const encodedFilename = encodeURIComponent(outputFilename);
+        res.set({
+          'Content-Type': contentType,
+          'Content-Disposition': `attachment; filename*=UTF-8''${encodedFilename}`,
+          'Content-Length': outputBuffer.length.toString(),
+          'Cache-Control': 'no-cache',
+          'Connection': 'keep-alive'
+        });
+
+        try {
+          res.send(outputBuffer);
+          console.log('EPS file sent successfully');
+        } catch (sendError) {
+          console.error('Error sending EPS file:', sendError);
+          if (!res.headersSent) {
+            res.status(500).json({ error: 'Failed to send converted file' });
+          }
+        }
+
+        setTimeout(async () => {
+          try {
+            await fs.unlink(filePath);
+            console.log(`Cleaned up EPS converted file: ${uniqueFilename}`);
+          } catch (cleanupError) {
+            console.error('Error cleaning up EPS file:', cleanupError);
+          }
+        }, 5 * 60 * 1000);
+
+        setTimeout(() => {
+          if (global.gc) {
+            global.gc();
+          }
+          console.log('Memory cleanup completed after EPS conversion');
+        }, 1000);
+
+        return;
+      } catch (epsError) {
+        console.error('EPS conversion error:', epsError);
+        return res.status(500).json({ error: 'EPS to ICO conversion failed. Please ensure the EPS file is valid.' });
+      }
+    }
+
+    // Handle different output formats for standard bitmap flows
     let outputBuffer: Buffer;
     let contentType: string;
     let fileExtension: string;
 
-    switch (format.toLowerCase()) {
+    switch (targetFormat) {
       case 'webp':
         sharpInstance = sharpInstance.webp({ 
           quality: Number(qualityValue), 
@@ -512,8 +625,6 @@ app.post('/api/convert', uploadSingle.single('file'), async (req, res) => {
         break;
 
       case 'ico':
-        // For ICO, we need to create a PNG first, then convert to ICO format
-        const iconSizeNum = parseInt(iconSize) || 16;
         sharpInstance = sharpInstance
           .resize(iconSizeNum, iconSizeNum, { 
             fit: 'contain',

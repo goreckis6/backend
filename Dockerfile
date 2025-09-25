@@ -6,6 +6,7 @@ RUN apt-get update && apt-get install -y \
     libvips-dev \
     libraw-bin \
     dcraw \
+    ghostscript \
     imagemagick \
     libmagick++-dev \
     && rm -rf /var/lib/apt/lists/*
