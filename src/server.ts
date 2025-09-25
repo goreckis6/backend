@@ -595,6 +595,58 @@ app.post('/api/convert', uploadSingle.single('file'), async (req, res) => {
       }
     }
 
+  // Early EPS→ICO handling before Sharp metadata (Sharp can't read EPS)
+  try {
+    const targetFormat = String(format || '').toLowerCase();
+    const iconSizeNum = parseInt(iconSize) || 16;
+    const isEPS = isEPSFile(file.originalname) || file.mimetype === 'application/postscript';
+
+    if (isEPS && targetFormat === 'ico') {
+      const outputBuffer = await processEPSFile(file.buffer, file.originalname, iconSizeNum);
+      const contentType = 'image/x-icon';
+      const fileExtension = 'ico';
+
+      const rawOriginalName = file.originalname.replace(/\.[^.]+$/, '');
+      const fixedOriginalName = fixUTF8Encoding(rawOriginalName);
+      const sanitizedName = sanitizeFilename(fixedOriginalName);
+      const outputFilename = `${sanitizedName}.${fileExtension}`;
+
+      await ensureConvertedFilesDir();
+      const timestamp = Date.now();
+      const uniqueFilename = `${timestamp}_${outputFilename}`;
+      const filePath = path.join(CONVERTED_FILES_DIR, uniqueFilename);
+      await fs.writeFile(filePath, outputBuffer);
+
+      const encodedFilename = encodeURIComponent(outputFilename);
+      res.set({
+        'Content-Type': contentType,
+        'Content-Disposition': `attachment; filename*=UTF-8''${encodedFilename}`,
+        'Content-Length': outputBuffer.length.toString(),
+        'Cache-Control': 'no-cache',
+        'Connection': 'keep-alive'
+      });
+
+      try {
+        res.send(outputBuffer);
+      } catch (sendError) {
+        console.error('Error sending EPS file:', sendError);
+        if (!res.headersSent) {
+          return res.status(500).json({ error: 'Failed to send converted file', details: String(sendError) });
+        }
+      }
+
+      setTimeout(async () => {
+        try { await fs.unlink(filePath); } catch {}
+      }, 5 * 60 * 1000);
+
+      setTimeout(() => { if (global.gc) { global.gc(); } }, 1000);
+      return;
+    }
+  } catch (epsEarlyErr) {
+    console.error('EPS early handling error:', epsEarlyErr);
+    return res.status(500).json({ error: 'EPS to ICO conversion failed', details: epsEarlyErr instanceof Error ? epsEarlyErr.message : String(epsEarlyErr) });
+  }
+
     let sharpInstance = sharp(imageBuffer, { 
       failOn: 'truncated',
       unlimited: true // Allow very large images
