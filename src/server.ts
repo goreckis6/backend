@@ -435,6 +435,46 @@ app.get('/health', (req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });
 });
 
+// Operational status endpoint
+app.get('/api/status', async (req, res) => {
+  try {
+    const gsAvailable = await execAsync('gs -version', { timeout: 2000 })
+      .then(() => true)
+      .catch(() => false);
+
+    const dcrawAvailable = await execAsync('dcraw -h', { timeout: 2000 })
+      .then(() => true)
+      .catch(() => false);
+
+    const mem = process.memoryUsage();
+    const heapUsedMB = Math.round(mem.heapUsed / 1024 / 1024);
+    const heapTotalMB = Math.round(mem.heapTotal / 1024 / 1024);
+
+    res.json({
+      ok: true,
+      timestamp: new Date().toISOString(),
+      uptimeSec: Math.round(process.uptime()),
+      versions: {
+        node: process.version
+      },
+      tools: {
+        ghostscript: gsAvailable,
+        dcraw: dcrawAvailable
+      },
+      memory: {
+        heapUsedMB,
+        heapTotalMB
+      }
+    });
+  } catch (error) {
+    res.status(500).json({
+      ok: false,
+      error: 'Status probe failed',
+      details: error instanceof Error ? error.message : String(error)
+    });
+  }
+});
+
 // Download endpoint for converted files
 app.get('/download/:filename', async (req, res) => {
   try {
