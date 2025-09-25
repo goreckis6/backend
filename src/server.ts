@@ -134,6 +134,13 @@ const processEPSFile = async (inputBuffer: Buffer, filename: string, size: numbe
   const outputIcoPath = path.join(tempDir, `eps_output_${uniqueId}.ico`);
 
   try {
+    // Verify Ghostscript availability early with a short timeout
+    try {
+      await execAsync('gs -version', { timeout: 3000 });
+    } catch (gsErr) {
+      throw new Error('Ghostscript (gs) is not available on the server runtime');
+    }
+
     await fs.writeFile(inputPath, inputBuffer);
 
     const gsCommand = `gs -dSAFER -dBATCH -dNOPAUSE -dEPSCrop -r${size * 8} -sDEVICE=pngalpha -sOutputFile="${outputPngPath}" "${inputPath}"`;
