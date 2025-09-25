@@ -1009,6 +1009,8 @@ app.post('/api/convert/batch', uploadBatch.array('files', 20), async (req, res) 
         const fileIsEPS = isEPSFile(file.originalname) || file.mimetype === 'application/postscript';
         const fileIsEPUB = file.originalname.toLowerCase().endsWith('.epub');
 
+        const targetFormat = String(format || '').toLowerCase();
+        const iconSizeNum = parseInt(iconSize) || 16;
         let outputBuffer: Buffer;
         let fileExtension: string;
 
