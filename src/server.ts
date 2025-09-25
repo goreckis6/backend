@@ -645,16 +645,31 @@ app.post('/api/convert', uploadSingle.single('file'), async (req, res) => {
       }
     }
 
-  // Early EPS→ICO handling before Sharp metadata (Sharp can't read EPS)
+  // Early EPS handling before Sharp metadata (Sharp can't read EPS)
   try {
     const targetFormat = String(format || '').toLowerCase();
     const iconSizeNum = parseInt(iconSize) || 16;
     const isEPS = isEPSFile(file.originalname) || file.mimetype === 'application/postscript';
 
-    if (isEPS && targetFormat === 'ico') {
-      const outputBuffer = await processEPSFile(file.buffer, file.originalname, iconSizeNum);
-      const contentType = 'image/x-icon';
-      const fileExtension = 'ico';
+    if (isEPS && (targetFormat === 'ico' || targetFormat === 'webp')) {
+      let outputBuffer: Buffer;
+      let contentType: string;
+      let fileExtension: string;
+
+      if (targetFormat === 'ico') {
+        // EPS → ICO
+        outputBuffer = await processEPSFile(file.buffer, file.originalname, iconSizeNum);
+        contentType = 'image/x-icon';
+        fileExtension = 'ico';
+      } else {
+        // EPS → WebP (rasterize EPS to PNG then encode to WebP)
+        const rasterPng = await processEPSRaster(file.buffer, file.originalname);
+        outputBuffer = await sharp(rasterPng, { failOn: 'truncated', unlimited: true })
+          .webp({ quality: qualityValue, lossless: isLossless, effort: 6, smartSubsample: true })
+          .toBuffer();
+        contentType = 'image/webp';
+        fileExtension = 'webp';
+      }
 
       const rawOriginalName = file.originalname.replace(/\.[^.]+$/, '');
       const fixedOriginalName = fixUTF8Encoding(rawOriginalName);
@@ -676,13 +691,10 @@ app.post('/api/convert', uploadSingle.single('file'), async (req, res) => {
         'Connection': 'keep-alive'
       });
 
-      try {
-        res.send(outputBuffer);
-      } catch (sendError) {
+      try { res.send(outputBuffer); }
+      catch (sendError) {
         console.error('Error sending EPS file:', sendError);
-        if (!res.headersSent) {
-          return res.status(500).json({ error: 'Failed to send converted file', details: String(sendError) });
-        }
+        if (!res.headersSent) return res.status(500).json({ error: 'Failed to send converted file', details: String(sendError) });
       }
 
       setTimeout(async () => {
@@ -694,7 +706,7 @@ app.post('/api/convert', uploadSingle.single('file'), async (req, res) => {
     }
   } catch (epsEarlyErr) {
     console.error('EPS early handling error:', epsEarlyErr);
-    return res.status(500).json({ error: 'EPS to ICO conversion failed', details: epsEarlyErr instanceof Error ? epsEarlyErr.message : String(epsEarlyErr) });
+    return res.status(500).json({ error: 'EPS conversion failed', details: epsEarlyErr instanceof Error ? epsEarlyErr.message : String(epsEarlyErr) });
     }
 
     let sharpInstance = sharp(imageBuffer, { 
