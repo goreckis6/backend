@@ -11,7 +11,6 @@ import { exec } from 'child_process';
 import { promisify } from 'util';
 import os from 'os';
 import { randomUUID } from 'crypto';
-import EPub from 'epub2';
 
 const execAsync = promisify(exec);
 
@@ -236,104 +235,7 @@ const processEPSRaster = async (
   }
 };
 
-const processEPUBToCSV = async (
-  inputBuffer: Buffer,
-  options: { delimiter: string; includeMetadata: boolean; extractTables: boolean }
-): Promise<Buffer> => {
-  console.log('Parsing EPUB for CSV conversion...');
-  
-  // Create temporary file for epub2 library
-  const tempDir = os.tmpdir();
-  const tempEpubPath = path.join(tempDir, `temp_epub_${Date.now()}.epub`);
-  
-  try {
-    // Write buffer to temporary file
-    await fs.writeFile(tempEpubPath, inputBuffer);
-    
-    // Parse EPUB using epub2
-    const epub = new EPub(tempEpubPath);
-    
-    // Parse the EPUB
-    await new Promise((resolve, reject) => {
-      epub.on('end', resolve);
-      epub.on('error', reject);
-      epub.parse();
-    });
-
-    const rows: string[][] = [];
-    const headers: string[] = ['Chapter', 'Section', 'Content'];
-    if (options.includeMetadata) {
-      headers.unshift('Author', 'Title');
-    }
-    rows.push(headers);
-
-    const delimiter = options.delimiter || ',';
-    const sanitize = (value: string) =>
-      value
-        .replace(/\r?\n|\r/g, ' ')
-        .replace(/"/g, '""');
-
-    // Get chapters from epub
-    const chapters = epub.flow || [];
-    
-    for (let i = 0; i < chapters.length; i++) {
-      const chapter = chapters[i];
-      const chapterTitle = chapter.title || `Chapter ${i + 1}`;
-      
-      try {
-        // Get chapter content
-        const chapterText = await new Promise<string>((resolve, reject) => {
-          epub.getChapter(
-            chapter.id || chapter.href || `chapter_${i}`,
-            (error: Error | null, text?: string) => {
-              if (error) {
-                reject(error);
-              } else {
-                resolve(text ?? '');
-              }
-            }
-          );
-        });
-        
-        // Strip HTML tags and extract text content
-        const cleanText = chapterText.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
-        
-        const dataRow: string[] = [];
-        if (options.includeMetadata) {
-          dataRow.push(sanitize(epub.metadata.creator || 'Unknown')); // Author
-          dataRow.push(sanitize(epub.metadata.title || 'Untitled')); // Title
-        }
-        dataRow.push(sanitize(chapterTitle)); // Chapter
-        dataRow.push(sanitize('')); // Section (not available in this API)
-        dataRow.push(sanitize(cleanText)); // Content
-        rows.push(dataRow);
-      } catch (chapterError) {
-        console.warn(`Error reading chapter ${chapterTitle}:`, chapterError);
-        // Add empty row on error
-        const dataRow: string[] = [];
-        if (options.includeMetadata) {
-          dataRow.push(sanitize(epub.metadata.creator || 'Unknown'));
-          dataRow.push(sanitize(epub.metadata.title || 'Untitled'));
-        }
-        dataRow.push(sanitize(chapterTitle));
-        dataRow.push(sanitize(''));
-        dataRow.push(sanitize('Error reading chapter content'));
-        rows.push(dataRow);
-      }
-    }
-
-    const csv = rows.map(row => `"${row.join(`"${delimiter}"`)}"`).join('\n');
-    return Buffer.from(csv, 'utf8');
-    
-  } finally {
-    // Clean up temporary file
-    try {
-      await fs.unlink(tempEpubPath);
-    } catch (cleanupError) {
-      console.warn('Failed to clean up temp EPUB file:', cleanupError);
-    }
-  }
-};
+// EPUB conversion temporarily disabled
 
 // Function to process RAW file with dcraw or fallback to Sharp
 const processRAWFile = async (inputBuffer: Buffer, filename: string): Promise<Buffer> => {
@@ -802,14 +704,6 @@ app.post('/api/convert', uploadSingle.single('file'), async (req, res) => {
       return await sendBufferAsDownload(res, file, outputBuffer, fileExtension, contentType);
     }
 
-    if (isEPUB && targetFormat === 'csv') {
-      const outputBuffer = await processEPUBToCSV(file.buffer, {
-        delimiter,
-        includeMetadata: includeMetadata === 'true',
-        extractTables: extractTables === 'true'
-      });
-      return await sendBufferAsDownload(res, file, outputBuffer, 'csv', 'text/csv');
-    }
   } catch (earlyError) {
     console.error('Early format handling error:', earlyError);
     return res.status(500).json({ error: 'Conversion failed', details: earlyError instanceof Error ? earlyError.message : String(earlyError) });
@@ -1156,13 +1050,6 @@ app.post('/api/convert/batch', uploadBatch.array('files', 20), async (req, res) 
             .webp({ quality: Number(qualityValue), lossless: isLossless })
             .toBuffer();
           fileExtension = 'webp';
-        } else if (targetFormat === 'csv' && fileIsEPUB) {
-          outputBuffer = await processEPUBToCSV(file.buffer, {
-            delimiter,
-            includeMetadata: includeMetadata === 'true',
-            extractTables: extractTables === 'true'
-          });
-          fileExtension = 'csv';
         } else {
           // Standard bitmap formats handled by Sharp
         let sharpInstance = sharp(imageBuffer, { 
