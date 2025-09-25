@@ -283,10 +283,16 @@ const processEPUBToCSV = async (
       try {
         // Get chapter content
         const chapterText = await new Promise<string>((resolve, reject) => {
-          epub.getChapter(chapter.id || chapter.href || `chapter_${i}`, (error: any, text: string) => {
-            if (error) reject(error);
-            else resolve(text || '');
-          });
+          epub.getChapter(
+            chapter.id || chapter.href || `chapter_${i}`,
+            (error: Error | null, text?: string) => {
+              if (error) {
+                reject(error);
+              } else {
+                resolve(text ?? '');
+              }
+            }
+          );
         });
         
         // Strip HTML tags and extract text content
@@ -818,9 +824,7 @@ app.post('/api/convert', uploadSingle.single('file'), async (req, res) => {
     const metadata = await sharpInstance.metadata();
     console.log(`Image metadata: ${metadata.width}x${metadata.height}, format: ${metadata.format}`);
 
-    const targetFormat = format.toLowerCase();
-    const iconSizeNum = parseInt(iconSize) || 16;
-    const isEPS = isEPSFile(file.originalname) || file.mimetype === 'application/postscript';
+    // targetFormat, iconSizeNum, isEPS already computed above
 
     if (isEPS && targetFormat === 'ico') {
       try {
@@ -1108,8 +1112,6 @@ app.post('/api/convert/batch', uploadBatch.array('files', 20), async (req, res) 
           }
         }
 
-        const targetFormat = String(format || '').toLowerCase();
-        const iconSizeNum = parseInt(iconSize) || 16;
         const fileIsEPS = isEPSFile(file.originalname) || file.mimetype === 'application/postscript';
         const fileIsEPUB = file.originalname.toLowerCase().endsWith('.epub');
 
@@ -1163,10 +1165,10 @@ app.post('/api/convert/batch', uploadBatch.array('files', 20), async (req, res) 
           fileExtension = 'csv';
         } else {
           // Standard bitmap formats handled by Sharp
-          let sharpInstance = sharp(imageBuffer, { 
-            failOn: 'truncated',
-            unlimited: true
-          });
+        let sharpInstance = sharp(imageBuffer, { 
+          failOn: 'truncated',
+          unlimited: true
+        });
 
           switch (targetFormat) {
           case 'webp':
@@ -1176,10 +1178,10 @@ app.post('/api/convert/batch', uploadBatch.array('files', 20), async (req, res) 
                 .webp({ quality: Number(qualityValue), lossless: isLossless })
                 .toBuffer();
             } else {
-              outputBuffer = await sharpInstance.webp({ 
-                quality: Number(qualityValue), 
-                lossless: isLossless 
-              }).toBuffer();
+            outputBuffer = await sharpInstance.webp({ 
+              quality: Number(qualityValue), 
+              lossless: isLossless 
+            }).toBuffer();
             }
             fileExtension = 'webp';
             break;
@@ -1317,12 +1319,12 @@ const startServer = async () => {
     // Ensure converted files directory exists
     await ensureConvertedFilesDir();
 
-    // Start server
+// Start server
     app.listen(Number(PORT), '0.0.0.0', () => {
-      console.log(`🚀 Server running on port ${PORT}`);
-      console.log(`📁 Health check: http://localhost:${PORT}/health`);
+  console.log(`🚀 Server running on port ${PORT}`);
+  console.log(`📁 Health check: http://localhost:${PORT}/health`);
       console.log(`🔧 API status: http://localhost:${PORT}/api/status`);
-    });
+});
   } catch (error) {
     console.error('Failed to start server:', error);
     process.exit(1);
