@@ -11,7 +11,7 @@ import { exec } from 'child_process';
 import { promisify } from 'util';
 import os from 'os';
 import { randomUUID } from 'crypto';
-import epub from 'epub-importer';
+import EPub from 'epub2';
 
 const execAsync = promisify(exec);
 
@@ -241,54 +241,92 @@ const processEPUBToCSV = async (
   options: { delimiter: string; includeMetadata: boolean; extractTables: boolean }
 ): Promise<Buffer> => {
   console.log('Parsing EPUB for CSV conversion...');
-  const book = await epub(inputBuffer);
+  
+  // Create temporary file for epub2 library
+  const tempDir = os.tmpdir();
+  const tempEpubPath = path.join(tempDir, `temp_epub_${Date.now()}.epub`);
+  
+  try {
+    // Write buffer to temporary file
+    await fs.writeFile(tempEpubPath, inputBuffer);
+    
+    // Parse EPUB using epub2
+    const epub = new EPub(tempEpubPath);
+    
+    // Parse the EPUB
+    await new Promise((resolve, reject) => {
+      epub.on('end', resolve);
+      epub.on('error', reject);
+      epub.parse();
+    });
 
-  const rows: string[][] = [];
-  const headers: string[] = ['Chapter', 'Section', 'Content'];
-  if (options.includeMetadata) {
-    headers.unshift('Author', 'Title');
-  }
-  rows.push(headers);
+    const rows: string[][] = [];
+    const headers: string[] = ['Chapter', 'Section', 'Content'];
+    if (options.includeMetadata) {
+      headers.unshift('Author', 'Title');
+    }
+    rows.push(headers);
 
-  const delimiter = options.delimiter || ',';
-  const sanitize = (value: string) =>
-    value
-      .replace(/\r?\n|\r/g, ' ')
-      .replace(/"/g, '""');
+    const delimiter = options.delimiter || ',';
+    const sanitize = (value: string) =>
+      value
+        .replace(/\r?\n|\r/g, ' ')
+        .replace(/"/g, '""');
 
-  for (const chapter of book.chapters) {
-    const chapterTitle = chapter.title || 'Untitled';
-    const sections = chapter.sections?.length ? chapter.sections : [{ title: '', text: chapter.text }];
-
-    for (const section of sections) {
-      let content = section.text || '';
-      if (options.extractTables) {
-        const tables = chapter.tables || [];
-        content = tables
-          .map((table, tableIndex) => {
-            const tableRows = table.rows || [];
-            const tableCSV = tableRows
-              .map(row => (row.cells || []).map(cell => sanitize(cell.text || '')).join(delimiter))
-              .join('\n');
-            return `Table ${tableIndex + 1} (Chapter: ${chapterTitle}):\n${tableCSV}`;
-          })
-          .join('\n');
+    // Get chapters from epub
+    const chapters = epub.flow || [];
+    
+    for (let i = 0; i < chapters.length; i++) {
+      const chapter = chapters[i];
+      const chapterTitle = chapter.title || `Chapter ${i + 1}`;
+      
+      try {
+        // Get chapter content
+        const chapterText = await new Promise<string>((resolve, reject) => {
+          epub.getChapter(chapter.id, (error: any, text: string) => {
+            if (error) reject(error);
+            else resolve(text || '');
+          });
+        });
+        
+        // Strip HTML tags and extract text content
+        const cleanText = chapterText.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
+        
+        const dataRow: string[] = [];
+        if (options.includeMetadata) {
+          dataRow.push(sanitize(epub.metadata.creator || 'Unknown')); // Author
+          dataRow.push(sanitize(epub.metadata.title || 'Untitled')); // Title
+        }
+        dataRow.push(sanitize(chapterTitle)); // Chapter
+        dataRow.push(sanitize('')); // Section (not available in this API)
+        dataRow.push(sanitize(cleanText)); // Content
+        rows.push(dataRow);
+      } catch (chapterError) {
+        console.warn(`Error reading chapter ${chapterTitle}:`, chapterError);
+        // Add empty row on error
+        const dataRow: string[] = [];
+        if (options.includeMetadata) {
+          dataRow.push(sanitize(epub.metadata.creator || 'Unknown'));
+          dataRow.push(sanitize(epub.metadata.title || 'Untitled'));
+        }
+        dataRow.push(sanitize(chapterTitle));
+        dataRow.push(sanitize(''));
+        dataRow.push(sanitize('Error reading chapter content'));
+        rows.push(dataRow);
       }
+    }
 
-      const dataRow: string[] = [];
-      if (options.includeMetadata) {
-        dataRow.push(sanitize(book.metadata.author || 'Unknown')); // Author
-        dataRow.push(sanitize(book.metadata.title || 'Untitled')); // Title
-      }
-      dataRow.push(sanitize(chapterTitle)); // Chapter
-      dataRow.push(sanitize(section.title || '')); // Section
-      dataRow.push(sanitize(content)); // Content
-      rows.push(dataRow);
+    const csv = rows.map(row => `"${row.join(`"${delimiter}"`)}"`).join('\n');
+    return Buffer.from(csv, 'utf8');
+    
+  } finally {
+    // Clean up temporary file
+    try {
+      await fs.unlink(tempEpubPath);
+    } catch (cleanupError) {
+      console.warn('Failed to clean up temp EPUB file:', cleanupError);
     }
   }
-
-  const csv = rows.map(row => `"${row.join(`"${delimiter}"`)}"`).join('\n');
-  return Buffer.from(csv, 'utf8');
 };
 
 // Function to process RAW file with dcraw or fallback to Sharp
@@ -530,7 +568,7 @@ const uploadSingle = multer({
     fileSize: 200 * 1024 * 1024, // 200MB limit per file
     files: 1
   },
-  fileFilter: (req, file, cb) => {
+  fileFilter: (req: any, file: any, cb: any) => {
     // Decode the filename if it's URL encoded before file filter
     try {
       const decodedFilename = decodeURIComponent(file.originalname);
@@ -555,7 +593,7 @@ const uploadSingle = multer({
     if (allowedMimes.includes(file.mimetype) || file.originalname.match(/\.(cr2|crw|nef|arw|dng|raw|orf|pef|erf|eps|ps)$/i)) {
       cb(null, true);
     } else {
-      cb(new Error('Unsupported file type'), false);
+      cb(new Error('Unsupported file type') as any, false);
     }
   }
 });
@@ -567,7 +605,7 @@ const uploadBatch = multer({
     fileSize: 200 * 1024 * 1024, // 200MB limit per file
     files: 20 // Allow up to 20 files for batch processing
   },
-  fileFilter: (req, file, cb) => {
+  fileFilter: (req: any, file: any, cb: any) => {
     // Decode the filename if it's URL encoded before file filter
     try {
       const decodedFilename = decodeURIComponent(file.originalname);
@@ -592,7 +630,7 @@ const uploadBatch = multer({
     if (allowedMimes.includes(file.mimetype) || file.originalname.match(/\.(cr2|crw|nef|arw|dng|raw|orf|pef|erf|eps|ps)$/i)) {
       cb(null, true);
     } else {
-      cb(new Error('Unsupported file type'), false);
+      cb(new Error('Unsupported file type') as any, false);
     }
   }
 });
