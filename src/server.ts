@@ -150,16 +150,31 @@ const processEPSFile = async (inputBuffer: Buffer, filename: string, size: numbe
       maxBuffer: 50 * 1024 * 1024
     });
 
+    // Determine ImageMagick CLI flavor (convert vs magick)
+    let useMagickRoot = false;
+    try {
+      await execAsync('convert -version', { timeout: 2000 });
+    } catch {
+      // Try magick
+      await execAsync('magick -version', { timeout: 2000 });
+      useMagickRoot = true;
+    }
+
     // Use ImageMagick to produce ICO from the rasterized PNG
-    const convertCmd = `convert "${outputPngPath}" -resize ${size}x${size} "${outputIcoPath}"`;
-    console.log('Running ImageMagick convert:', convertCmd);
-    await execAsync(convertCmd, { timeout: 30000, maxBuffer: 50 * 1024 * 1024 });
+    const convertCmd = useMagickRoot
+      ? `magick "${outputPngPath}" -resize ${size}x${size} "${outputIcoPath}"`
+      : `convert "${outputPngPath}" -resize ${size}x${size} "${outputIcoPath}"`;
+    console.log('Running ImageMagick:', convertCmd);
+    const { stdout: imStdout, stderr: imStderr } = await execAsync(convertCmd, { timeout: 30000, maxBuffer: 50 * 1024 * 1024 });
+    if (imStderr) {
+      console.log('ImageMagick stderr:', imStderr);
+    }
 
     const icoBuffer = await fs.readFile(outputIcoPath);
     return icoBuffer;
   } catch (error) {
     console.error('EPS processing error:', error);
-    throw new Error('EPS processing failed');
+    throw new Error(error instanceof Error ? error.message : 'EPS processing failed');
   } finally {
     const cleanupFiles = [inputPath, outputPngPath, outputIcoPath];
     for (const filePath of cleanupFiles) {
