@@ -1019,9 +1019,10 @@ app.use((error: any, req: express.Request, res: express.Response, next: express.
     }
   }
 
+  const details = error instanceof Error ? error.message : String(error);
   res.status(500).json({ 
     error: 'Internal server error',
-    details: process.env.NODE_ENV === 'development' ? error.message : undefined
+    details
   });
 });
 
