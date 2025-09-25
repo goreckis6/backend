@@ -150,14 +150,13 @@ const processEPSFile = async (inputBuffer: Buffer, filename: string, size: numbe
       maxBuffer: 50 * 1024 * 1024
     });
 
-    await sharp(outputPngPath)
-      .resize(size, size, {
-        fit: 'contain',
-        background: { r: 0, g: 0, b: 0, alpha: 0 }
-      })
-      .toFile(outputIcoPath);
+    // Use ImageMagick to produce ICO from the rasterized PNG
+    const convertCmd = `convert "${outputPngPath}" -resize ${size}x${size} "${outputIcoPath}"`;
+    console.log('Running ImageMagick convert:', convertCmd);
+    await execAsync(convertCmd, { timeout: 30000, maxBuffer: 50 * 1024 * 1024 });
 
-    return await fs.readFile(outputIcoPath);
+    const icoBuffer = await fs.readFile(outputIcoPath);
+    return icoBuffer;
   } catch (error) {
     console.error('EPS processing error:', error);
     throw new Error('EPS processing failed');
