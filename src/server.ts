@@ -603,7 +603,10 @@ app.post('/api/convert', uploadSingle.single('file'), async (req, res) => {
         return;
       } catch (epsError) {
         console.error('EPS conversion error:', epsError);
-        return res.status(500).json({ error: 'EPS to ICO conversion failed. Please ensure the EPS file is valid.' });
+        return res.status(500).json({
+          error: 'EPS to ICO conversion failed',
+          details: epsError instanceof Error ? epsError.message : 'Unknown EPS processing error'
+        });
       }
     }
 
@@ -678,7 +681,7 @@ app.post('/api/convert', uploadSingle.single('file'), async (req, res) => {
     const fixedOriginalName = fixUTF8Encoding(rawOriginalName);
     const sanitizedName = sanitizeFilename(fixedOriginalName);
     const outputFilename = `${sanitizedName}.${fileExtension}`;
-    
+
     console.log(`Conversion successful: ${outputFilename}, size: ${outputBuffer.length} bytes`);
 
     // Ensure converted files directory exists
@@ -747,7 +750,7 @@ app.post('/api/convert', uploadSingle.single('file'), async (req, res) => {
 
     res.status(500).json({ 
       error: 'Conversion failed', 
-      details: process.env.NODE_ENV === 'development' ? (error instanceof Error ? error.message : String(error)) : 'Internal server error'
+      details: error instanceof Error ? error.message : String(error)
     });
   }
 });
@@ -925,7 +928,7 @@ app.post('/api/convert/batch', uploadBatch.array('files', 20), async (req, res) 
     
     // Log final results for debugging
     console.log('Final batch results:', JSON.stringify(results, null, 2));
-    
+
     res.json({
       success: true,
       processed: results.length,
