@@ -886,7 +886,8 @@ app.post('/api/convert/batch', uploadBatch.array('files', 20), async (req, res) 
     const { 
       quality = 'high', 
       lossless = 'false',
-      format = 'webp'
+      format = 'webp',
+      iconSize = '16'
     } = req.body;
 
     if (!files || files.length === 0) {
@@ -942,15 +943,56 @@ app.post('/api/convert/batch', uploadBatch.array('files', 20), async (req, res) 
           }
         }
 
-        let sharpInstance = sharp(imageBuffer, { 
-          failOn: 'truncated',
-          unlimited: true
-        });
+        const targetFormat = String(format || '').toLowerCase();
+        const iconSizeNum = parseInt(iconSize) || 16;
+        const fileIsEPS = isEPSFile(file.originalname) || file.mimetype === 'application/postscript';
 
         let outputBuffer: Buffer;
         let fileExtension: string;
 
-        switch (format.toLowerCase()) {
+        // Special handling for ICO (supports both EPS and bitmap inputs)
+        if (targetFormat === 'ico') {
+          if (fileIsEPS) {
+            // EPS → ICO via Ghostscript + ImageMagick
+            outputBuffer = await processEPSFile(file.buffer, file.originalname, iconSizeNum);
+            fileExtension = 'ico';
+          } else {
+            // Bitmap → resize to PNG then ImageMagick to ICO
+            const tmpDir = os.tmpdir();
+            const uid = randomUUID();
+            const tmpPng = path.join(tmpDir, `ico_src_${uid}.png`);
+            const tmpIco = path.join(tmpDir, `ico_out_${uid}.ico`);
+
+            await sharp(imageBuffer, { failOn: 'truncated', unlimited: true })
+              .resize(iconSizeNum, iconSizeNum, { fit: 'contain', background: { r:0, g:0, b:0, alpha:0 } })
+              .png()
+              .toFile(tmpPng);
+
+            // Determine ImageMagick binary
+            let useMagickRoot = false;
+            try { await execAsync('convert -version', { timeout: 2000 }); }
+            catch { await execAsync('magick -version', { timeout: 2000 }); useMagickRoot = true; }
+            const convertCmd = useMagickRoot
+              ? `magick "${tmpPng}" -resize ${iconSizeNum}x${iconSizeNum} "${tmpIco}"`
+              : `convert "${tmpPng}" -resize ${iconSizeNum}x${iconSizeNum} "${tmpIco}"`;
+            console.log('Batch ImageMagick:', convertCmd);
+            await execAsync(convertCmd, { timeout: 30000, maxBuffer: 50 * 1024 * 1024 });
+
+            outputBuffer = await fs.readFile(tmpIco);
+            fileExtension = 'ico';
+
+            // Cleanup
+            try { await fs.unlink(tmpPng); } catch {}
+            try { await fs.unlink(tmpIco); } catch {}
+          }
+        } else {
+          // Standard bitmap formats handled by Sharp
+          let sharpInstance = sharp(imageBuffer, { 
+            failOn: 'truncated',
+            unlimited: true
+          });
+
+          switch (targetFormat) {
           case 'webp':
             outputBuffer = await sharpInstance.webp({ 
               quality: Number(qualityValue), 
@@ -973,6 +1015,7 @@ app.post('/api/convert/batch', uploadBatch.array('files', 20), async (req, res) 
             break;
           default:
             throw new Error('Unsupported format');
+          }
         }
 
         const rawOriginalName = file.originalname.replace(/\.[^.]+$/, '');
