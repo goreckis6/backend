@@ -473,7 +473,7 @@ app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 const uploadSingle = multer({
   storage: multer.memoryStorage(),
   limits: {
-    fileSize: 200 * 1024 * 1024, // 200MB limit per file
+    fileSize: 100 * 1024 * 1024, // 100MB limit per file
     files: 1
   },
   fileFilter: (req: any, file: any, cb: any) => {
@@ -510,7 +510,7 @@ const uploadSingle = multer({
 const uploadBatch = multer({
   storage: multer.memoryStorage(),
   limits: {
-    fileSize: 200 * 1024 * 1024, // 200MB limit per file
+    fileSize: 100 * 1024 * 1024, // 100MB limit per file
     files: 20 // Allow up to 20 files for batch processing
   },
   fileFilter: (req: any, file: any, cb: any) => {
