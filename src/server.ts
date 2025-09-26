@@ -13,6 +13,153 @@ import os from 'os';
 import Papa from 'papaparse';
 import { Document, Packer, Paragraph, Table, TableRow, TableCell, WidthType, TextRun } from 'docx';
 import XLSX from 'xlsx';
+
+// ---- CSV conversion helpers ----
+type CSVTable = { headers: string[]; rows: string[][] };
+
+const parseCSV = (buffer: Buffer, delimiter: string): CSVTable => {
+  const text = buffer.toString('utf8');
+  const parsed = Papa.parse<string[]>(text, {
+    delimiter: delimiter || ',',
+    skipEmptyLines: true
+  });
+  const data = parsed.data as string[][];
+  const headers = data.length ? data[0] : [];
+  const rows = data.length > 1 ? data.slice(1) : [];
+  return { headers, rows };
+};
+
+const buildHTMLFromCSV = ({ headers, rows }: CSVTable): string => {
+  const head = `<!doctype html><html><head><meta charset="utf-8"><title>CSV</title><style>body{font-family:Arial,Helvetica,sans-serif}table{border-collapse:collapse;width:100%}th,td{border:1px solid #ddd;padding:8px}th{background:#f3f4f6;text-align:left}</style></head><body>`;
+  const tblHead = `<table><thead><tr>${headers.map(h => `<th>${h ?? ''}</th>`).join('')}</tr></thead>`;
+  const tblBody = `<tbody>${rows.map(r => `<tr>${r.map(c => `<td>${c ?? ''}</td>`).join('')}</tr>`).join('')}</tbody></table>`;
+  return `${head}${tblHead}${tblBody}</body></html>`;
+};
+
+const buildTXTFromCSV = ({ headers, rows }: CSVTable): string => {
+  const lines = [headers.join('\t'), ...rows.map(r => r.join('\t'))];
+  return lines.join('\n');
+};
+
+const buildMDFromCSV = ({ headers, rows }: CSVTable): string => {
+  const header = `| ${headers.join(' | ')} |`;
+  const sep = `| ${headers.map(() => '---').join(' | ')} |`;
+  const body = rows.map(r => `| ${r.join(' | ')} |`).join('\n');
+  return [header, sep, body].join('\n');
+};
+
+const buildDOCXFromCSV = async ({ headers, rows }: CSVTable): Promise<Buffer> => {
+  const tableRows: TableRow[] = [];
+  const hdrCells = headers.map(h => new TableCell({ children: [new Paragraph({ children: [new TextRun({ text: h ?? '', bold: true })] })] }));
+  tableRows.push(new TableRow({ children: hdrCells }));
+  for (const row of rows) {
+    tableRows.push(new TableRow({ children: row.map(c => new TableCell({ children: [new Paragraph(c ?? '')] })) }));
+  }
+  const doc = new Document({
+    sections: [{ properties: {}, children: [new Table({ rows: tableRows, width: { size: 100, type: WidthType.PERCENTAGE } })] }]
+  });
+  return await Packer.toBuffer(doc);
+};
+
+const buildXLSXFromCSV = ({ headers, rows }: CSVTable): Buffer => {
+  const aoa = [headers, ...rows];
+  const wb = XLSX.utils.book_new();
+  const ws = XLSX.utils.aoa_to_sheet(aoa);
+  XLSX.utils.book_append_sheet(wb, ws, 'Sheet1');
+  return XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' }) as Buffer;
+};
+
+const writeTempFile = async (content: Buffer | string, ext: string): Promise<string> => {
+  const tempDir = os.tmpdir();
+  const p = path.join(tempDir, `csvconv_${Date.now()}_${randomUUID()}.${ext}`);
+  if (typeof content === 'string') {
+    await fs.writeFile(p, Buffer.from(content, 'utf8'));
+  } else {
+    await fs.writeFile(p, content);
+  }
+  return p;
+};
+
+const sofficeConvert = async (inputPath: string, outExt: string): Promise<Buffer> => {
+  const outDir = path.dirname(inputPath);
+  const cmd = `soffice --headless --convert-to ${outExt} "${inputPath}" --outdir "${outDir}"`;
+  await execAsync(cmd, { timeout: 120000, maxBuffer: 100 * 1024 * 1024 });
+  const base = path.basename(inputPath, path.extname(inputPath));
+  const outPath = path.join(outDir, `${base}.${outExt}`);
+  const buf = await fs.readFile(outPath);
+  try { await fs.unlink(outPath); } catch {}
+  return buf;
+};
+
+const calibreConvert = async (inputPath: string, outExt: string): Promise<Buffer> => {
+  const outPath = inputPath.replace(path.extname(inputPath), `.${outExt}`);
+  const cmd = `ebook-convert "${inputPath}" "${outPath}"`;
+  await execAsync(cmd, { timeout: 120000, maxBuffer: 100 * 1024 * 1024 });
+  const buf = await fs.readFile(outPath);
+  try { await fs.unlink(outPath); } catch {}
+  return buf;
+};
+
+const processCSVConversion = async (input: Buffer, targetFormat: string, delimiter: string): Promise<{ buffer: Buffer; ext: string; mime: string }> => {
+  const table = parseCSV(input, delimiter);
+  const fmt = (targetFormat || '').toLowerCase();
+  switch (fmt) {
+    case 'txt': {
+      const txt = buildTXTFromCSV(table);
+      return { buffer: Buffer.from(txt, 'utf8'), ext: 'txt', mime: 'text/plain' };
+    }
+    case 'md': {
+      const md = buildMDFromCSV(table);
+      return { buffer: Buffer.from(md, 'utf8'), ext: 'md', mime: 'text/markdown' };
+    }
+    case 'html': {
+      const html = buildHTMLFromCSV(table);
+      return { buffer: Buffer.from(html, 'utf8'), ext: 'html', mime: 'text/html' };
+    }
+    case 'docx': {
+      const buf = await buildDOCXFromCSV(table);
+      return { buffer: buf, ext: 'docx', mime: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' };
+    }
+    case 'xlsx': {
+      const buf = buildXLSXFromCSV(table);
+      return { buffer: buf, ext: 'xlsx', mime: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' };
+    }
+    // Formats via LibreOffice from HTML
+    case 'pdf':
+    case 'odt':
+    case 'rtf':
+    case 'doc':
+    case 'odp':
+    case 'ppt':
+    case 'pptx':
+    case 'xls': {
+      const html = buildHTMLFromCSV(table);
+      const htmlPath = await writeTempFile(html, 'html');
+      try {
+        const outBuffer = await sofficeConvert(htmlPath, fmt);
+        const mimeMap: Record<string, string> = {
+          pdf: 'application/pdf', odt: 'application/vnd.oasis.opendocument.text', rtf: 'application/rtf', doc: 'application/msword',
+          odp: 'application/vnd.oasis.opendocument.presentation', ppt: 'application/vnd.ms-powerpoint', pptx: 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+          xls: 'application/vnd.ms-excel'
+        };
+        return { buffer: outBuffer, ext: fmt, mime: mimeMap[fmt] || 'application/octet-stream' };
+      } finally { try { await fs.unlink(htmlPath); } catch {} }
+    }
+    // Ebooks via Calibre from HTML
+    case 'epub':
+    case 'mobi': {
+      const html = buildHTMLFromCSV(table);
+      const htmlPath = await writeTempFile(html, 'html');
+      try {
+        const outBuffer = await calibreConvert(htmlPath, fmt);
+        const mimeMap: Record<string, string> = { epub: 'application/epub+zip', mobi: 'application/x-mobipocket-ebook' };
+        return { buffer: outBuffer, ext: fmt, mime: mimeMap[fmt] || 'application/octet-stream' };
+      } finally { try { await fs.unlink(htmlPath); } catch {} }
+    }
+    default:
+      throw new Error('Unsupported CSV target format');
+  }
+};
 import { randomUUID } from 'crypto';
 
 const execAsync = promisify(exec);
@@ -117,6 +264,7 @@ const sanitizeFilename = (filename: string): string => {
 // RAW file extensions
 const RAW_EXTENSIONS = ['dng', 'cr2', 'cr3', 'nef', 'arw', 'rw2', 'pef', 'orf', 'raf', 'x3f', 'raw'];
 const EPS_EXTENSIONS = ['eps', 'ps'];
+const CSV_EXTENSIONS = ['csv'];
 
 // Function to check if file is RAW
 const isRAWFile = (filename: string): boolean => {
@@ -127,6 +275,11 @@ const isRAWFile = (filename: string): boolean => {
 const isEPSFile = (filename: string): boolean => {
   const ext = filename.split('.').pop()?.toLowerCase();
   return EPS_EXTENSIONS.includes(ext || '');
+};
+
+const isCSVFile = (filename: string): boolean => {
+  const ext = filename.split('.').pop()?.toLowerCase();
+  return CSV_EXTENSIONS.includes(ext || '');
 };
 
 const processEPSFile = async (inputBuffer: Buffer, filename: string, size: number): Promise<Buffer> => {
@@ -498,10 +651,12 @@ const uploadSingle = multer({
       'image/x-adobe-dng', 'image/x-panasonic-raw', 'image/x-olympus-orf',
       'image/x-pentax-pef', 'image/x-epson-erf', 'image/x-raw',
       // EPS/PostScript
-      'application/postscript', 'application/eps', 'application/x-eps', 'image/eps'
+      'application/postscript', 'application/eps', 'application/x-eps', 'image/eps',
+      // CSV
+      'text/csv', 'application/csv', 'application/vnd.ms-excel'
     ];
     
-    if (allowedMimes.includes(file.mimetype) || file.originalname.match(/\.(cr2|crw|nef|arw|dng|raw|orf|pef|erf|eps|ps)$/i)) {
+    if (allowedMimes.includes(file.mimetype) || file.originalname.match(/\.(cr2|crw|nef|arw|dng|raw|orf|pef|erf|eps|ps|csv)$/i)) {
       cb(null, true);
     } else {
       cb(new Error('Unsupported file type') as any, false);
@@ -535,10 +690,12 @@ const uploadBatch = multer({
       'image/x-adobe-dng', 'image/x-panasonic-raw', 'image/x-olympus-orf',
       'image/x-pentax-pef', 'image/x-epson-erf', 'image/x-raw',
       // EPS/PostScript
-      'application/postscript', 'application/eps', 'application/x-eps', 'image/eps'
+      'application/postscript', 'application/eps', 'application/x-eps', 'image/eps',
+      // CSV
+      'text/csv', 'application/csv', 'application/vnd.ms-excel'
     ];
     
-    if (allowedMimes.includes(file.mimetype) || file.originalname.match(/\.(cr2|crw|nef|arw|dng|raw|orf|pef|erf|eps|ps)$/i)) {
+    if (allowedMimes.includes(file.mimetype) || file.originalname.match(/\.(cr2|crw|nef|arw|dng|raw|orf|pef|erf|eps|ps|csv)$/i)) {
       cb(null, true);
     } else {
       cb(new Error('Unsupported file type') as any, false);
@@ -685,6 +842,15 @@ app.post('/api/convert', uploadSingle.single('file'), async (req, res) => {
 
   // Early format-specific handling before Sharp metadata
   try {
+    // CSV conversions (early)
+    if (isCSVFile(file.originalname)) {
+      try {
+        const { buffer, ext, mime } = await processCSVConversion(file.buffer, targetFormat, delimiter);
+        return await sendBufferAsDownload(res, file, buffer, ext, mime);
+      } catch (csvErr) {
+        return res.status(400).json({ error: 'CSV conversion failed', details: csvErr instanceof Error ? csvErr.message : String(csvErr) });
+      }
+    }
 
     if (isEPS && (targetFormat === 'ico' || targetFormat === 'webp')) {
       let outputBuffer: Buffer;
@@ -1010,14 +1176,22 @@ app.post('/api/convert/batch', uploadBatch.array('files', 20), async (req, res) 
         }
 
         const fileIsEPS = isEPSFile(file.originalname) || file.mimetype === 'application/postscript';
-        const fileIsEPUB = file.originalname.toLowerCase().endsWith('.epub');
+        const fileIsCSV = isCSVFile(file.originalname);
 
         const targetFormat = String(format || '').toLowerCase();
         const iconSizeNum = parseInt(iconSize) || 16;
         let outputBuffer: Buffer;
         let fileExtension: string;
 
-        if (targetFormat === 'ico') {
+        if (fileIsCSV) {
+          try {
+            const { buffer, ext, mime } = await processCSVConversion(file.buffer, targetFormat, delimiter);
+            outputBuffer = buffer;
+            fileExtension = ext;
+          } catch (csvErr) {
+            throw new Error(csvErr instanceof Error ? csvErr.message : String(csvErr));
+          }
+        } else if (targetFormat === 'ico') {
           if (fileIsEPS) {
             outputBuffer = await processEPSFile(file.buffer, file.originalname, iconSizeNum);
             fileExtension = 'ico';
