@@ -1385,12 +1385,12 @@ const startServer = async () => {
     // Ensure converted files directory exists
     await ensureConvertedFilesDir();
 
-// Start server
+    // Start server
     app.listen(Number(PORT), '0.0.0.0', () => {
-  console.log(`🚀 Server running on port ${PORT}`);
-  console.log(`📁 Health check: http://localhost:${PORT}/health`);
+      console.log(`🚀 Server running on port ${PORT}`);
+      console.log(`📁 Health check: http://localhost:${PORT}/health`);
       console.log(`🔧 API status: http://localhost:${PORT}/api/status`);
-});
+    });
   } catch (error) {
     console.error('Failed to start server:', error);
     process.exit(1);
