@@ -134,24 +134,36 @@ const isCsvFile = (file: Express.Multer.File) => {
 const sanitizeFilename = (name: string) =>
   name.replace(/[^a-zA-Z0-9-_]+/g, '_').replace(/^_+|_+$/g, '') || 'file';
 
-const execLibreOffice = async (args: string[]) => {
+interface LibreOfficeResult {
+  stdout: string;
+  stderr: string;
+}
+
+const execLibreOffice = async (args: string[]): Promise<LibreOfficeResult> => {
   let lastError: unknown;
   for (const binary of LIBREOFFICE_CANDIDATES) {
     try {
-      return await execFileAsync(binary, args, {
+      const result = await execFileAsync(binary, args, {
         env: {
           ...process.env,
           HOME: process.env.HOME || os.homedir(),
           USERPROFILE: process.env.USERPROFILE || os.homedir()
-        },
-        timeout: 60_000
+        }
       });
+      return result;
     } catch (error: any) {
       lastError = error;
       if (error?.code === 'ENOENT') {
         continue;
       }
-      throw error;
+      const stderr = typeof error?.stderr === 'string' && error.stderr.trim().length > 0
+        ? ` | stderr: ${error.stderr.trim()}`
+        : '';
+      const stdout = typeof error?.stdout === 'string' && error.stdout.trim().length > 0
+        ? ` | stdout: ${error.stdout.trim()}`
+        : '';
+      const message = error instanceof Error ? error.message : String(error);
+      throw new Error(`LibreOffice execution failed using "${binary}": ${message}${stderr}${stdout}`);
     }
   }
 
@@ -176,41 +188,100 @@ const convertCsvWithLibreOffice = async (
   const inputFilename = `${safeBase}.csv`;
   const inputPath = path.join(tmpDir, inputFilename);
 
-  try {
-    await fs.writeFile(inputPath, file.buffer);
+  const findOutputFile = async (): Promise<string | null> => {
+    const files = await fs.readdir(tmpDir);
+    const targetExt = `.${conversion.extension.toLowerCase()}`;
+    const directMatch = files.find(name => name.toLowerCase() === `${safeBase.toLowerCase()}${targetExt}`);
+    if (directMatch) {
+      return path.join(tmpDir, directMatch);
+    }
 
-    await execLibreOffice([
+    const fallbackMatch = files.find(name => name.toLowerCase().endsWith(targetExt));
+    return fallbackMatch ? path.join(tmpDir, fallbackMatch) : null;
+  };
+
+  const commandVariants: string[][] = [
+    [
       '--headless',
       '--convert-to',
       conversion.convertTo,
       '--outdir',
       tmpDir,
       inputPath
-    ]);
+    ],
+    [
+      '--headless',
+      '--infilter=CSV:44,34,UTF8',
+      '--convert-to',
+      conversion.convertTo,
+      '--outdir',
+      tmpDir,
+      inputPath
+    ],
+    [
+      '--headless',
+      '--infilter=CSV:59,34,UTF8',
+      '--convert-to',
+      conversion.convertTo,
+      '--outdir',
+      tmpDir,
+      inputPath
+    ],
+    [
+      '--headless',
+      '--infilter=CSV:9,34,UTF8',
+      '--convert-to',
+      conversion.convertTo,
+      '--outdir',
+      tmpDir,
+      inputPath
+    ]
+  ];
 
-    const expectedLower = `${safeBase}.${conversion.extension}`;
-    const expectedUpper = `${safeBase}.${conversion.extension.toUpperCase()}`;
+  let lastError: unknown;
 
-    let outputPath = path.join(tmpDir, expectedLower);
-    try {
-      await fs.access(outputPath);
-    } catch {
-      const altPath = path.join(tmpDir, expectedUpper);
-      await fs.access(altPath);
-      outputPath = altPath;
+  try {
+    await fs.writeFile(inputPath, file.buffer);
+
+    for (const args of commandVariants) {
+      try {
+        const { stdout, stderr } = await execLibreOffice(args);
+        if (stdout.trim().length > 0) {
+          console.log('LibreOffice stdout:', stdout.trim());
+        }
+        if (stderr.trim().length > 0) {
+          console.warn('LibreOffice stderr:', stderr.trim());
+        }
+
+        const outputPath = await findOutputFile();
+        if (!outputPath) {
+          throw new Error(`LibreOffice did not produce an output file for args: ${args.join(' ')}`);
+        }
+
+        const outputBuffer = await fs.readFile(outputPath);
+        const downloadName = `${sanitizeFilename(originalBase)}.${conversion.extension}`;
+
+        return {
+          buffer: outputBuffer,
+          filename: downloadName,
+          mime: conversion.mime
+        };
+      } catch (commandError) {
+        lastError = commandError;
+        console.error('LibreOffice conversion attempt failed:', commandError);
+      }
     }
 
-    const outputBuffer = await fs.readFile(outputPath);
-    const downloadName = `${sanitizeFilename(originalBase)}.${conversion.extension}`;
+    if (lastError) {
+      throw lastError;
+    }
 
-    return {
-      buffer: outputBuffer,
-      filename: downloadName,
-      mime: conversion.mime
-    };
+    throw new Error('LibreOffice conversion failed for unknown reasons.');
+
   } catch (error) {
     console.error('LibreOffice conversion failed:', error);
-    throw new Error('Failed to convert CSV with LibreOffice');
+    const message = error instanceof Error ? error.message : 'Unknown LibreOffice error';
+    throw new Error(`Failed to convert CSV with LibreOffice: ${message}`);
   } finally {
     await fs.rm(tmpDir, { recursive: true, force: true }).catch(() => undefined);
   }
@@ -348,9 +419,10 @@ app.post('/api/convert', upload.single('file'), async (req, res) => {
     res.send(outputBuffer);
   } catch (error) {
     console.error('Conversion error:', error);
+    const errorMessage = error instanceof Error ? error.message : 'Unknown conversion error';
     res.status(500).json({
       error: 'Conversion failed',
-      details: process.env.NODE_ENV === 'development' && error instanceof Error ? error.message : undefined
+      details: errorMessage
     });
   }
 });
