@@ -1,14 +1,17 @@
 # Use Node.js 18 with Debian base for better package support
-FROM node:18-bullseye-slim
+FROM node:20-bookworm
 
 # Install system dependencies for image processing
-RUN apt-get update && apt-get install -y \
+RUN apt-get update && apt-get install -y --no-install-recommends \
     libvips-dev \
     libraw-bin \
     dcraw \
     ghostscript \
     imagemagick \
     libmagick++-dev \
+    libreoffice \
+    calibre \
+    fonts-dejavu fonts-liberation locales \
     && rm -rf /var/lib/apt/lists/*
 
 # Set working directory

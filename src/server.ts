@@ -10,6 +10,9 @@ import { fileURLToPath } from 'url';
 import { exec } from 'child_process';
 import { promisify } from 'util';
 import os from 'os';
+import Papa from 'papaparse';
+import { Document, Packer, Paragraph, Table, TableRow, TableCell, WidthType, TextRun } from 'docx';
+import XLSX from 'xlsx';
 import { randomUUID } from 'crypto';
 
 const execAsync = promisify(exec);
