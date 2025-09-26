@@ -150,7 +150,6 @@ const normalizeCsvBuffer = (buffer: Buffer): NormalizedCsvResult => {
   ];
 
   let parsedRows: string[][] | null = null;
-  let chosenDelimiter = ',';
 
   for (const dialect of dialects) {
     const parsed = Papa.parse<string[]>(csvText, {
@@ -176,21 +175,23 @@ const normalizeCsvBuffer = (buffer: Buffer): NormalizedCsvResult => {
       return acc;
     }, {});
 
-    const [candidateColumns, candidateCount] = Object.entries(majorityColumns)
+    const majorityCandidates = Object.entries(majorityColumns)
       .map(([columns, count]) => ({ columns: Number(columns), count: Number(count) }))
-      .sort((a, b) => b.count - a.count)[0] || { columns: 0, count: 0 };
+      .sort((a, b) => b.count - a.count);
+
+    const topCandidate = majorityCandidates[0];
+    const candidateColumns = topCandidate?.columns ?? 0;
+    const candidateCount = topCandidate?.count ?? 0;
 
     const majorityRatio = rows.length > 0 ? candidateCount / rows.length : 0;
 
     if (candidateColumns > 1 && majorityRatio >= 0.6) {
       parsedRows = rows.map(row => row.slice(0, candidateColumns));
-      chosenDelimiter = dialect.delimiter;
       break;
     }
 
     if (!parsedRows || rows.length > parsedRows.length) {
       parsedRows = rows;
-      chosenDelimiter = dialect.delimiter;
     }
   }
 
