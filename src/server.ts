@@ -52,49 +52,41 @@ const LIBREOFFICE_CONVERSIONS: Record<string, {
   convertTo: string;
   extension: string;
   mime: string;
-  targetApp?: '--calc' | '--writer';
 }> = {
   doc: {
     convertTo: 'doc:MS Word 97',
     extension: 'doc',
-    mime: 'application/msword',
-    targetApp: '--writer'
+    mime: 'application/msword'
   },
   docx: {
     convertTo: 'docx',
     extension: 'docx',
-    mime: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-    targetApp: '--writer'
+    mime: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
   },
   pdf: {
     convertTo: 'pdf',
     extension: 'pdf',
-    mime: 'application/pdf',
-    targetApp: '--writer'
+    mime: 'application/pdf'
   },
   rtf: {
     convertTo: 'rtf',
     extension: 'rtf',
-    mime: 'application/rtf',
-    targetApp: '--writer'
+    mime: 'application/rtf'
   },
   odt: {
     convertTo: 'odt',
     extension: 'odt',
-    mime: 'application/vnd.oasis.opendocument.text',
-    targetApp: '--writer'
+    mime: 'application/vnd.oasis.opendocument.text'
   },
   html: {
     convertTo: 'html',
     extension: 'html',
-    mime: 'text/html; charset=utf-8',
-    targetApp: '--writer'
+    mime: 'text/html; charset=utf-8'
   },
   txt: {
     convertTo: 'txt:Text (encoded):UTF8',
     extension: 'txt',
-    mime: 'text/plain; charset=utf-8',
-    targetApp: '--writer'
+    mime: 'text/plain; charset=utf-8'
   },
   odp: {
     convertTo: 'odp',
@@ -143,66 +135,10 @@ const isCsvFile = (file: Express.Multer.File) => {
 const sanitizeFilename = (name: string) =>
   name.replace(/[^a-zA-Z0-9-_]+/g, '_').replace(/^_+|_+$/g, '') || 'file';
 
-type TableStyleOption = 'simple' | 'grid' | 'elegant';
-type FontSizeOption = 'small' | 'medium' | 'large';
-
-interface CsvFormattingOptions {
-  tableStyle?: TableStyleOption;
-  fontSize?: FontSizeOption;
-  includeHeaders?: boolean;
-}
-
 interface NormalizedCsvResult {
   normalizedCsv: string;
   rowCount: number;
-  rows: string[][];
 }
-
-const escapeHtml = (value: string) =>
-  value
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#39;');
-
-const buildStyledHtmlDocument = (
-  rows: string[][],
-  title: string,
-  options: CsvFormattingOptions
-): string => {
-  const includeHeaders = options.includeHeaders !== undefined ? options.includeHeaders : true;
-  const tableStyle: TableStyleOption = options.tableStyle ?? 'simple';
-  const fontSize: FontSizeOption = options.fontSize ?? 'medium';
-
-  const columnCount = rows[0]?.length ?? 1;
-  const headerRow = includeHeaders && rows.length > 0 ? rows[0] : undefined;
-  const dataRows = includeHeaders && rows.length > 0 ? rows.slice(1) : rows;
-
-  const normalizeRow = (row: string[]) => {
-    if (row.length === columnCount) {
-      return row;
-    }
-    if (row.length > columnCount) {
-      return row.slice(0, columnCount);
-    }
-    return [...row, ...Array(columnCount - row.length).fill('')];
-  };
-
-  const headerHtml = headerRow
-    ? `<thead><tr>${normalizeRow(headerRow)
-        .map(cell => `<th>${escapeHtml(cell)}</th>`)
-        .join('')}</tr></thead>`
-    : '';
-
-  const bodyRows = dataRows.length > 0
-    ? dataRows
-        .map(row => `<tr>${normalizeRow(row).map(cell => `<td>${escapeHtml(cell)}</td>`).join('')}</tr>`)
-        .join('\n')
-    : `<tr><td colspan="${columnCount}"></td></tr>`;
-
-  return `<!DOCTYPE html>\n<html lang="en">\n<head>\n  <meta charset="UTF-8" />\n  <title>${escapeHtml(title)}</title>\n  <style>body { font-family: Arial, sans-serif; }</style>\n</head>\n<body>\n  <table>\n    ${headerHtml}\n    <tbody>\n      ${bodyRows}\n    </tbody>\n  </table>\n</body>\n</html>`;
-};
 
 const normalizeCsvBuffer = (buffer: Buffer): NormalizedCsvResult => {
   const csvText = buffer.toString('utf8');
@@ -233,24 +169,21 @@ const normalizeCsvBuffer = (buffer: Buffer): NormalizedCsvResult => {
       continue;
     }
 
-    const majorityColumns = rows.reduce<Record<number, number>>((acc, row) => {
+    const majorityMap = rows.reduce<Record<number, number>>((acc, row) => {
       const len = row.length;
       acc[len] = (acc[len] || 0) + 1;
       return acc;
     }, {});
 
-    const majorityCandidates = Object.entries(majorityColumns)
+    const majorityEntries = Object.entries(majorityMap)
       .map(([columns, count]) => ({ columns: Number(columns), count: Number(count) }))
       .sort((a, b) => b.count - a.count);
 
-    const topCandidate = majorityCandidates[0];
-    const candidateColumns = topCandidate?.columns ?? 0;
-    const candidateCount = topCandidate?.count ?? 0;
+    const best = majorityEntries.length > 0 ? majorityEntries[0] : { columns: 0, count: 0 };
+    const majorityRatio = rows.length > 0 ? best.count / rows.length : 0;
 
-    const majorityRatio = rows.length > 0 ? candidateCount / rows.length : 0;
-
-    if (candidateColumns > 1 && majorityRatio >= 0.6) {
-      parsedRows = rows.map(row => row.slice(0, candidateColumns));
+    if (best.columns > 1 && majorityRatio >= 0.6) {
+      parsedRows = rows.map(row => row.slice(0, best.columns));
       break;
     }
 
@@ -287,8 +220,7 @@ const normalizeCsvBuffer = (buffer: Buffer): NormalizedCsvResult => {
 
   return {
     normalizedCsv,
-    rowCount: sanitizedRows.length,
-    rows: sanitizedRows
+    rowCount: sanitizedRows.length
   };
 };
 
@@ -388,8 +320,7 @@ const execCalibre = async (args: string[]): Promise<CommandResult> => {
 
 const convertCsvWithLibreOffice = async (
   file: Express.Multer.File,
-  targetFormat: string,
-  options: CsvFormattingOptions = {}
+  targetFormat: string
 ): Promise<{ buffer: Buffer; filename: string; mime: string }> => {
   const conversion = LIBREOFFICE_CONVERSIONS[targetFormat];
   if (!conversion) {
@@ -415,37 +346,16 @@ const convertCsvWithLibreOffice = async (
     return fallbackMatch ? path.join(tmpDir, fallbackMatch) : null;
   };
 
-  const baseArgs = ['--headless', '--nolockcheck', '--nodefault', '--nologo', '--nofirststartwizard'];
-  const targetApp = conversion.targetApp;
-
-  const formatArgs = deriveDocFormattingOptions(options);
-
-  const buildArgs = (extra: string[] = [], appOverride?: string) => {
-    const args = [...baseArgs];
-    if (extra.length > 0) {
-      args.push(...extra);
-    }
-    args.push('--convert-to', conversion.convertTo, '--outdir', tmpDir, inputPath);
-    if (formatArgs.length > 0) {
-      args.push(...formatArgs);
-    }
-    if (appOverride) {
-      args.push(appOverride);
-    }
-    return args;
-  };
-
   const commandVariants: string[][] = [
-    buildArgs([], targetApp),
-    buildArgs(['--infilter=CSV:44,34,UTF8'], targetApp),
-    buildArgs(['--infilter=CSV:59,34,UTF8'], targetApp),
-    buildArgs(['--infilter=CSV:9,34,UTF8'], targetApp),
-    buildArgs(['--infilter=CSV:44,34,UTF8'], '--calc'),
-    buildArgs(['--infilter=CSV:59,34,UTF8'], '--calc'),
-    buildArgs(['--infilter=CSV:9,34,UTF8'], '--calc'),
-    buildArgs(['--infilter=CSV:44,34,UTF8'], '--writer'),
-    buildArgs(['--infilter=CSV:59,34,UTF8'], '--writer'),
-    buildArgs(['--infilter=CSV:9,34,UTF8'], '--writer')
+    ['--headless', '--nolockcheck', '--nodefault', '--nologo', '--nofirststartwizard', '--convert-to', conversion.convertTo, '--outdir', tmpDir, inputPath],
+    ['--headless', '--nolockcheck', '--nodefault', '--nologo', '--nofirststartwizard', '--convert-to', conversion.convertTo, '--outdir', tmpDir, inputPath, '--calc'],
+    ['--headless', '--nolockcheck', '--nodefault', '--nologo', '--nofirststartwizard', '--convert-to', conversion.convertTo, '--outdir', tmpDir, inputPath, '--writer'],
+    ['--headless', '--nolockcheck', '--nodefault', '--nologo', '--nofirststartwizard', '--infilter=CSV:44,34,UTF8', '--convert-to', conversion.convertTo, '--outdir', tmpDir, inputPath, '--calc'],
+    ['--headless', '--nolockcheck', '--nodefault', '--nologo', '--nofirststartwizard', '--infilter=CSV:59,34,UTF8', '--convert-to', conversion.convertTo, '--outdir', tmpDir, inputPath, '--calc'],
+    ['--headless', '--nolockcheck', '--nodefault', '--nologo', '--nofirststartwizard', '--infilter=CSV:9,34,UTF8', '--convert-to', conversion.convertTo, '--outdir', tmpDir, inputPath, '--calc'],
+    ['--headless', '--nolockcheck', '--nodefault', '--nologo', '--nofirststartwizard', '--infilter=CSV:44,34,UTF8', '--convert-to', conversion.convertTo, '--outdir', tmpDir, inputPath, '--writer'],
+    ['--headless', '--nolockcheck', '--nodefault', '--nologo', '--nofirststartwizard', '--infilter=CSV:59,34,UTF8', '--convert-to', conversion.convertTo, '--outdir', tmpDir, inputPath, '--writer'],
+    ['--headless', '--nolockcheck', '--nodefault', '--nologo', '--nofirststartwizard', '--infilter=CSV:9,34,UTF8', '--convert-to', conversion.convertTo, '--outdir', tmpDir, inputPath, '--writer']
   ];
 
   let lastError: unknown;
@@ -566,22 +476,6 @@ const convertCsvWithCalibre = async (
   } finally {
     await fs.rm(tmpDir, { recursive: true, force: true }).catch(() => undefined);
   }
-};
-
-const deriveDocFormattingOptions = (options: CsvFormattingOptions) => {
-  const formatArgs: string[] = [];
-
-  if (options.tableStyle) {
-    formatArgs.push(`--table-style=${options.tableStyle}`);
-  }
-  if (options.fontSize) {
-    formatArgs.push(`--font-size=${options.fontSize}`);
-  }
-  if (options.includeHeaders !== undefined) {
-    formatArgs.push(`--include-headers=${options.includeHeaders ? 'true' : 'false'}`);
-  }
-
-  return formatArgs;
 };
 
 app.use(helmet());
