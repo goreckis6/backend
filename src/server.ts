@@ -690,6 +690,8 @@ app.post('/api/convert/batch', uploadBatch.array('files'), async (req, res) => {
     size?: number;
     success: boolean;
     error?: string;
+    downloadPath?: string;
+    storedFilename?: string;
   }> = [];
 
   let processed = 0;
