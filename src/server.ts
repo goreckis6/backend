@@ -2,7 +2,7 @@ import express from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
 import rateLimit from 'express-rate-limit';
-import multer from 'multer';
+import multer, { MulterError } from 'multer';
 import sharp from 'sharp';
 import { promises as fs } from 'fs';
 import path from 'path';
@@ -786,7 +786,7 @@ app.get('/download/:filename', async (req, res) => {
 });
 
 app.use((err: any, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
-  if (err instanceof multer.MulterError) {
+  if (err instanceof MulterError) {
     if (err.code === 'LIMIT_FILE_SIZE') {
       return res.status(400).json({ error: 'File too large. Maximum size is 200MB.' });
     }
