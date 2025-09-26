@@ -82,8 +82,23 @@ const writeTempFile = async (content: Buffer | string, ext: string): Promise<str
 
 const sofficeConvert = async (inputPath: string, outExt: string): Promise<Buffer> => {
   const outDir = path.dirname(inputPath);
-  const cmd = `soffice --headless --convert-to ${outExt} "${inputPath}" --outdir "${outDir}"`;
-  await execAsync(cmd, { timeout: 120000, maxBuffer: 100 * 1024 * 1024 });
+  
+  // Set environment variables for LibreOffice headless mode
+  const env = {
+    ...process.env,
+    HOME: '/home/appuser',
+    TMPDIR: '/tmp',
+    DISPLAY: ':99',
+    DCONF_PROFILE: '/dev/null'
+  };
+  
+  const cmd = `soffice --headless --invisible --nodefault --nolockcheck --nologo --norestore --convert-to ${outExt} "${inputPath}" --outdir "${outDir}"`;
+  await execAsync(cmd, { 
+    timeout: 120000, 
+    maxBuffer: 100 * 1024 * 1024,
+    env 
+  });
+  
   const base = path.basename(inputPath, path.extname(inputPath));
   const outPath = path.join(outDir, `${base}.${outExt}`);
   const buf = await fs.readFile(outPath);

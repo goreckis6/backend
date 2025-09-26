@@ -33,9 +33,22 @@ RUN npm run build
 # Remove dev dependencies to reduce image size
 RUN npm prune --production
 
-# Create non-root user for security
-RUN groupadd -r appuser && useradd -r -g appuser appuser
+# Create non-root user for security with proper home directory
+RUN groupadd -r appuser && useradd -r -g appuser -d /home/appuser -m appuser
 RUN chown -R appuser:appuser /app
+
+# Create necessary directories for LibreOffice and set permissions
+RUN mkdir -p /home/appuser/.cache/dconf \
+    && mkdir -p /home/appuser/.config/libreoffice \
+    && mkdir -p /tmp/libreoffice \
+    && chown -R appuser:appuser /home/appuser \
+    && chmod -R 755 /home/appuser
+
+# Set environment variables for LibreOffice
+ENV HOME=/home/appuser
+ENV TMPDIR=/tmp
+ENV DCONF_PROFILE=/dev/null
+
 USER appuser
 
 # Expose port
