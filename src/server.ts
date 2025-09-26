@@ -10,6 +10,7 @@ import os from 'os';
 import { execFile } from 'child_process';
 import { promisify } from 'util';
 import { randomUUID } from 'crypto';
+import Papa from 'papaparse';
 
 const execFileAsync = promisify(execFile);
 
@@ -134,12 +135,124 @@ const isCsvFile = (file: Express.Multer.File) => {
 const sanitizeFilename = (name: string) =>
   name.replace(/[^a-zA-Z0-9-_]+/g, '_').replace(/^_+|_+$/g, '') || 'file';
 
-interface LibreOfficeResult {
+interface NormalizedCsvResult {
+  normalizedCsv: string;
+  rowCount: number;
+}
+
+const normalizeCsvBuffer = (buffer: Buffer): NormalizedCsvResult => {
+  const csvText = buffer.toString('utf8');
+
+  const dialects = [
+    { delimiter: ',', description: 'comma separated' },
+    { delimiter: ';', description: 'semicolon separated' },
+    { delimiter: '\t', description: 'tab separated' }
+  ];
+
+  let parsedRows: string[][] | null = null;
+  let chosenDelimiter = ',';
+
+  for (const dialect of dialects) {
+    const parsed = Papa.parse<string[]>(csvText, {
+      delimiter: dialect.delimiter,
+      skipEmptyLines: 'greedy',
+      dynamicTyping: false,
+      header: false
+    });
+
+    if (parsed.errors && parsed.errors.length > 0) {
+      console.warn(`CSV parse warnings (${dialect.description}):`, parsed.errors.slice(0, 3));
+    }
+
+    const rows = (parsed.data || []).filter((row): row is string[] => Array.isArray(row) && row.length > 0);
+
+    if (rows.length === 0) {
+      continue;
+    }
+
+    const majorityColumns = rows.reduce<Record<number, number>>((acc, row) => {
+      const len = row.length;
+      acc[len] = (acc[len] || 0) + 1;
+      return acc;
+    }, {});
+
+    const [candidateColumns, candidateCount] = Object.entries(majorityColumns)
+      .map(([columns, count]) => ({ columns: Number(columns), count: Number(count) }))
+      .sort((a, b) => b.count - a.count)[0] || { columns: 0, count: 0 };
+
+    const majorityRatio = rows.length > 0 ? candidateCount / rows.length : 0;
+
+    if (candidateColumns > 1 && majorityRatio >= 0.6) {
+      parsedRows = rows.map(row => row.slice(0, candidateColumns));
+      chosenDelimiter = dialect.delimiter;
+      break;
+    }
+
+    if (!parsedRows || rows.length > parsedRows.length) {
+      parsedRows = rows;
+      chosenDelimiter = dialect.delimiter;
+    }
+  }
+
+  if (!parsedRows || parsedRows.length === 0) {
+    throw new Error('CSV appears to be empty or malformed');
+  }
+
+  const sanitizedRows = parsedRows.map(row =>
+    row.map(value => {
+      if (value === null || value === undefined) {
+        return '';
+      }
+      if (typeof value === 'string') {
+        return value;
+      }
+      return String(value);
+    })
+  );
+
+  let normalizedCsv = Papa.unparse(sanitizedRows, {
+    delimiter: ',',
+    newline: '\n',
+    quotes: true
+  });
+
+  if (!normalizedCsv.endsWith('\n')) {
+    normalizedCsv += '\n';
+  }
+
+  return {
+    normalizedCsv,
+    rowCount: sanitizedRows.length
+  };
+};
+
+const CALIBRE_CONVERSIONS: Record<string, {
+  extension: string;
+  mime: string;
+}> = {
+  mobi: {
+    extension: 'mobi',
+    mime: 'application/x-mobipocket-ebook'
+  },
+  epub: {
+    extension: 'epub',
+    mime: 'application/epub+zip'
+  }
+};
+
+const CALIBRE_CANDIDATES = [
+  process.env.CALIBRE_PATH,
+  process.env.EBOOK_CONVERT_PATH,
+  'ebook-convert',
+  'ebook-convert.exe'
+].filter((value): value is string => Boolean(value));
+
+interface CommandResult {
   stdout: string;
   stderr: string;
 }
 
-const execLibreOffice = async (args: string[]): Promise<LibreOfficeResult> => {
+const execLibreOffice = async (args: string[]): Promise<CommandResult> => {
   let lastError: unknown;
   for (const binary of LIBREOFFICE_CANDIDATES) {
     try {
@@ -173,6 +286,40 @@ const execLibreOffice = async (args: string[]): Promise<LibreOfficeResult> => {
   );
 };
 
+const execCalibre = async (args: string[]): Promise<CommandResult> => {
+  let lastError: unknown;
+  for (const binary of CALIBRE_CANDIDATES) {
+    try {
+      const result = await execFileAsync(binary, args, {
+        env: {
+          ...process.env,
+          HOME: process.env.HOME || os.homedir(),
+          USERPROFILE: process.env.USERPROFILE || os.homedir()
+        }
+      });
+      return result;
+    } catch (error: any) {
+      lastError = error;
+      if (error?.code === 'ENOENT') {
+        continue;
+      }
+      const stderr = typeof error?.stderr === 'string' && error.stderr.trim().length > 0
+        ? ` | stderr: ${error.stderr.trim()}`
+        : '';
+      const stdout = typeof error?.stdout === 'string' && error.stdout.trim().length > 0
+        ? ` | stdout: ${error.stdout.trim()}`
+        : '';
+      const message = error instanceof Error ? error.message : String(error);
+      throw new Error(`Calibre execution failed using "${binary}": ${message}${stderr}${stdout}`);
+    }
+  }
+
+  throw new Error(
+    'Calibre ebook-convert binary not found. Please ensure Calibre is installed and available on the PATH or set CALIBRE_PATH/EBOOK_CONVERT_PATH.' +
+      (lastError instanceof Error ? ` (${lastError.message})` : '')
+  );
+};
+
 const convertCsvWithLibreOffice = async (
   file: Express.Multer.File,
   targetFormat: string
@@ -185,6 +332,7 @@ const convertCsvWithLibreOffice = async (
   const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'morphy-lo-'));
   const originalBase = path.basename(file.originalname, path.extname(file.originalname));
   const safeBase = `${sanitizeFilename(originalBase)}_${randomUUID()}`;
+  const normalized = normalizeCsvBuffer(file.buffer);
   const inputFilename = `${safeBase}.csv`;
   const inputPath = path.join(tmpDir, inputFilename);
 
@@ -201,47 +349,21 @@ const convertCsvWithLibreOffice = async (
   };
 
   const commandVariants: string[][] = [
-    [
-      '--headless',
-      '--convert-to',
-      conversion.convertTo,
-      '--outdir',
-      tmpDir,
-      inputPath
-    ],
-    [
-      '--headless',
-      '--infilter=CSV:44,34,UTF8',
-      '--convert-to',
-      conversion.convertTo,
-      '--outdir',
-      tmpDir,
-      inputPath
-    ],
-    [
-      '--headless',
-      '--infilter=CSV:59,34,UTF8',
-      '--convert-to',
-      conversion.convertTo,
-      '--outdir',
-      tmpDir,
-      inputPath
-    ],
-    [
-      '--headless',
-      '--infilter=CSV:9,34,UTF8',
-      '--convert-to',
-      conversion.convertTo,
-      '--outdir',
-      tmpDir,
-      inputPath
-    ]
+    ['--headless', '--nolockcheck', '--nodefault', '--nologo', '--nofirststartwizard', '--convert-to', conversion.convertTo, '--outdir', tmpDir, inputPath],
+    ['--headless', '--nolockcheck', '--nodefault', '--nologo', '--nofirststartwizard', '--convert-to', conversion.convertTo, '--outdir', tmpDir, inputPath, '--calc'],
+    ['--headless', '--nolockcheck', '--nodefault', '--nologo', '--nofirststartwizard', '--convert-to', conversion.convertTo, '--outdir', tmpDir, inputPath, '--writer'],
+    ['--headless', '--nolockcheck', '--nodefault', '--nologo', '--nofirststartwizard', '--infilter=CSV:44,34,UTF8', '--convert-to', conversion.convertTo, '--outdir', tmpDir, inputPath, '--calc'],
+    ['--headless', '--nolockcheck', '--nodefault', '--nologo', '--nofirststartwizard', '--infilter=CSV:59,34,UTF8', '--convert-to', conversion.convertTo, '--outdir', tmpDir, inputPath, '--calc'],
+    ['--headless', '--nolockcheck', '--nodefault', '--nologo', '--nofirststartwizard', '--infilter=CSV:9,34,UTF8', '--convert-to', conversion.convertTo, '--outdir', tmpDir, inputPath, '--calc'],
+    ['--headless', '--nolockcheck', '--nodefault', '--nologo', '--nofirststartwizard', '--infilter=CSV:44,34,UTF8', '--convert-to', conversion.convertTo, '--outdir', tmpDir, inputPath, '--writer'],
+    ['--headless', '--nolockcheck', '--nodefault', '--nologo', '--nofirststartwizard', '--infilter=CSV:59,34,UTF8', '--convert-to', conversion.convertTo, '--outdir', tmpDir, inputPath, '--writer'],
+    ['--headless', '--nolockcheck', '--nodefault', '--nologo', '--nofirststartwizard', '--infilter=CSV:9,34,UTF8', '--convert-to', conversion.convertTo, '--outdir', tmpDir, inputPath, '--writer']
   ];
 
   let lastError: unknown;
 
   try {
-    await fs.writeFile(inputPath, file.buffer);
+    await fs.writeFile(inputPath, normalized.normalizedCsv, 'utf8');
 
     for (const args of commandVariants) {
       try {
@@ -282,6 +404,77 @@ const convertCsvWithLibreOffice = async (
     console.error('LibreOffice conversion failed:', error);
     const message = error instanceof Error ? error.message : 'Unknown LibreOffice error';
     throw new Error(`Failed to convert CSV with LibreOffice: ${message}`);
+  } finally {
+    await fs.rm(tmpDir, { recursive: true, force: true }).catch(() => undefined);
+  }
+};
+
+const convertCsvWithCalibre = async (
+  file: Express.Multer.File,
+  targetFormat: string
+): Promise<{ buffer: Buffer; filename: string; mime: string }> => {
+  const conversion = CALIBRE_CONVERSIONS[targetFormat];
+  if (!conversion) {
+    throw new Error('Unsupported Calibre target format');
+  }
+
+  const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'morphy-calibre-'));
+  const originalBase = path.basename(file.originalname, path.extname(file.originalname));
+  const safeBase = `${sanitizeFilename(originalBase)}_${randomUUID()}`;
+  const normalized = normalizeCsvBuffer(file.buffer);
+  const inputPath = path.join(tmpDir, `${safeBase}.html`);
+  const outputPath = path.join(tmpDir, `${safeBase}.${conversion.extension}`);
+
+  const htmlTableRows = normalized.normalizedCsv
+    .split('\n')
+    .filter(line => line.trim().length > 0)
+    .map(line => {
+      const parsed = Papa.parse<string[]>(line, {
+        delimiter: ',',
+        dynamicTyping: false,
+        header: false
+      });
+      const values = (parsed.data[0] || []).map(value =>
+        String(value ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+      );
+      const cells = values.map(value => `<td>${value}</td>`).join('');
+      return `<tr>${cells}</tr>`;
+    })
+    .join('\n');
+
+  const htmlContent = `<!DOCTYPE html>\n<html lang="en">\n<head>\n  <meta charset="UTF-8" />\n  <title>${sanitizeFilename(originalBase)}</title>\n  <style>\n    body { font-family: Arial, sans-serif; padding: 24px; }\n    table { border-collapse: collapse; width: 100%; }\n    th, td { border: 1px solid #ccc; padding: 8px; text-align: left; }\n  </style>\n</head>\n<body>\n  <table>\n    <tbody>\n      ${htmlTableRows}\n    </tbody>\n  </table>\n</body>\n</html>`;
+
+  try {
+    await fs.writeFile(inputPath, htmlContent, 'utf8');
+
+    const { stdout, stderr } = await execCalibre([
+      inputPath,
+      outputPath,
+      '--change-justification', 'left',
+      '--pretty-print',
+      '--disable-font-rescaling',
+      '--input-encoding', 'utf-8'
+    ]);
+
+    if (stdout.trim().length > 0) {
+      console.log('Calibre stdout:', stdout.trim());
+    }
+    if (stderr.trim().length > 0) {
+      console.warn('Calibre stderr:', stderr.trim());
+    }
+
+    const outputBuffer = await fs.readFile(outputPath);
+    const downloadName = `${sanitizeFilename(originalBase)}.${conversion.extension}`;
+
+    return {
+      buffer: outputBuffer,
+      filename: downloadName,
+      mime: conversion.mime
+    };
+  } catch (error) {
+    console.error('Calibre conversion failed:', error);
+    const message = error instanceof Error ? error.message : 'Unknown Calibre error';
+    throw new Error(`Failed to convert CSV with Calibre: ${message}`);
   } finally {
     await fs.rm(tmpDir, { recursive: true, force: true }).catch(() => undefined);
   }
@@ -337,6 +530,19 @@ app.post('/api/convert', upload.single('file'), async (req, res) => {
 
     if (isCsvFile(file) && LIBREOFFICE_CONVERSIONS[targetFormat]) {
       const { buffer, filename, mime } = await convertCsvWithLibreOffice(file, targetFormat);
+
+      res.set({
+        'Content-Type': mime,
+        'Content-Disposition': `attachment; filename="${filename}"`,
+        'Content-Length': buffer.length.toString(),
+        'Cache-Control': 'no-cache'
+      });
+
+      return res.send(buffer);
+    }
+
+    if (isCsvFile(file) && CALIBRE_CONVERSIONS[targetFormat]) {
+      const { buffer, filename, mime } = await convertCsvWithCalibre(file, targetFormat);
 
       res.set({
         'Content-Type': mime,
