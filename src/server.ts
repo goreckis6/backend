@@ -12,6 +12,27 @@ import { promisify } from 'util';
 import { randomUUID } from 'crypto';
 import Papa from 'papaparse';
 
+const BATCH_OUTPUT_DIR = path.join(os.tmpdir(), 'morphy-batch-outputs');
+fs.mkdir(BATCH_OUTPUT_DIR, { recursive: true }).catch(() => undefined);
+
+const batchFileMetadata = new Map<string, { downloadName: string; mime: string }>();
+const batchCleanupTimers = new Map<string, NodeJS.Timeout>();
+
+const scheduleBatchFileCleanup = (storedFilename: string) => {
+  const existingTimer = batchCleanupTimers.get(storedFilename);
+  if (existingTimer) {
+    clearTimeout(existingTimer);
+  }
+
+  const timeout = setTimeout(() => {
+    fs.rm(path.join(BATCH_OUTPUT_DIR, storedFilename), { force: true }).catch(() => undefined);
+    batchCleanupTimers.delete(storedFilename);
+    batchFileMetadata.delete(storedFilename);
+  }, 5 * 60 * 1000);
+
+  batchCleanupTimers.set(storedFilename, timeout);
+};
+
 const execFileAsync = promisify(execFile);
 
 const app = express();
@@ -502,6 +523,14 @@ const upload = multer({
   }
 });
 
+const uploadBatch = multer({
+  storage: multer.memoryStorage(),
+  limits: {
+    fileSize: 100 * 1024 * 1024,
+    files: 20
+  }
+});
+
 app.get('/health', (_req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });
 });
@@ -526,30 +555,32 @@ app.post('/api/convert', upload.single('file'), async (req, res) => {
 
     const targetFormat = String(format).toLowerCase();
 
-    if (isCsvFile(file) && LIBREOFFICE_CONVERSIONS[targetFormat]) {
-      const { buffer, filename, mime } = await convertCsvWithLibreOffice(file, targetFormat);
+    if (isCsvFile(file)) {
+      if (LIBREOFFICE_CONVERSIONS[targetFormat]) {
+        const { buffer, filename, mime } = await convertCsvWithLibreOffice(file, targetFormat);
 
-      res.set({
-        'Content-Type': mime,
-        'Content-Disposition': `attachment; filename="${filename}"`,
-        'Content-Length': buffer.length.toString(),
-        'Cache-Control': 'no-cache'
-      });
+        res.set({
+          'Content-Type': mime,
+          'Content-Disposition': `attachment; filename="${filename}"`,
+          'Content-Length': buffer.length.toString(),
+          'Cache-Control': 'no-cache'
+        });
 
-      return res.send(buffer);
-    }
+        return res.send(buffer);
+      }
 
-    if (isCsvFile(file) && CALIBRE_CONVERSIONS[targetFormat]) {
-      const { buffer, filename, mime } = await convertCsvWithCalibre(file, targetFormat);
+      if (CALIBRE_CONVERSIONS[targetFormat]) {
+        const { buffer, filename, mime } = await convertCsvWithCalibre(file, targetFormat);
 
-      res.set({
-        'Content-Type': mime,
-        'Content-Disposition': `attachment; filename="${filename}"`,
-        'Content-Length': buffer.length.toString(),
-        'Cache-Control': 'no-cache'
-      });
+        res.set({
+          'Content-Type': mime,
+          'Content-Disposition': `attachment; filename="${filename}"`,
+          'Content-Length': buffer.length.toString(),
+          'Cache-Control': 'no-cache'
+        });
 
-      return res.send(buffer);
+        return res.send(buffer);
+      }
     }
 
     const inputBuffer = await prepareRawBuffer(file);
@@ -628,6 +659,127 @@ app.post('/api/convert', upload.single('file'), async (req, res) => {
       error: 'Conversion failed',
       details: errorMessage
     });
+  }
+});
+
+app.post('/api/convert/batch', uploadBatch.array('files'), async (req, res) => {
+  const files = req.files as Express.Multer.File[] | undefined;
+  const format = String(req.body?.format ?? '').toLowerCase() || 'webp';
+
+  if (!files || files.length === 0) {
+    return res.status(400).json({
+      success: false,
+      processed: 0,
+      results: [],
+      error: 'No files uploaded'
+    });
+  }
+
+  if (files.length > 20) {
+    return res.status(400).json({
+      success: false,
+      processed: 0,
+      results: [],
+      error: 'Too many files uploaded. Maximum is 20.'
+    });
+  }
+
+  const results: Array<{
+    originalName: string;
+    outputFilename?: string;
+    size?: number;
+    success: boolean;
+    error?: string;
+  }> = [];
+
+  let processed = 0;
+
+  for (const file of files) {
+    try {
+      if (!isCsvFile(file)) {
+        throw new Error('Only CSV files are supported for batch conversion');
+      }
+
+      let output;
+      if (LIBREOFFICE_CONVERSIONS[format]) {
+        output = await convertCsvWithLibreOffice(file, format);
+      } else if (CALIBRE_CONVERSIONS[format]) {
+        output = await convertCsvWithCalibre(file, format);
+      } else {
+        throw new Error('Unsupported CSV target format for batch conversion');
+      }
+
+      const storedFilename = `${Date.now()}_${randomUUID()}_${output.filename}`;
+      const storedFilePath = path.join(BATCH_OUTPUT_DIR, storedFilename);
+
+      await fs.writeFile(storedFilePath, output.buffer);
+      batchFileMetadata.set(storedFilename, {
+        downloadName: output.filename,
+        mime: output.mime
+      });
+      scheduleBatchFileCleanup(storedFilename);
+
+      results.push({
+        originalName: file.originalname,
+        outputFilename: output.filename,
+        size: output.buffer.length,
+        success: true,
+        downloadPath: `/download/${encodeURIComponent(storedFilename)}`,
+        storedFilename
+      });
+
+      processed += 1;
+    } catch (error) {
+      console.error(`Batch conversion failed for ${file.originalname}:`, error);
+      results.push({
+        originalName: file.originalname,
+        success: false,
+        error: error instanceof Error ? error.message : 'Unknown conversion error'
+      });
+    }
+  }
+
+  res.json({
+    success: results.every(result => result.success),
+    processed,
+    results
+  });
+});
+
+app.get('/download/:filename', async (req, res) => {
+  try {
+    const storedFilename = req.params.filename;
+    const metadata = batchFileMetadata.get(storedFilename);
+
+    if (!metadata) {
+      return res.status(404).json({ error: 'File not found or expired' });
+    }
+
+    const filePath = path.join(BATCH_OUTPUT_DIR, storedFilename);
+    const stat = await fs.stat(filePath).catch(() => null);
+    if (!stat) {
+      batchFileMetadata.delete(storedFilename);
+      return res.status(404).json({ error: 'File not found or expired' });
+    }
+
+    scheduleBatchFileCleanup(storedFilename);
+
+    res.set({
+      'Content-Type': metadata.mime,
+      'Content-Disposition': `attachment; filename="${metadata.downloadName}"`,
+      'Content-Length': stat.size.toString(),
+      'Cache-Control': 'no-cache'
+    });
+
+    const stream = (await import('node:fs')).createReadStream(filePath);
+    stream.on('error', (error) => {
+      console.error('File stream error:', error);
+      res.destroy(error);
+    });
+    stream.pipe(res);
+  } catch (error) {
+    console.error('Download error:', error);
+    res.status(500).json({ error: 'Failed to download file' });
   }
 });
 
