@@ -253,9 +253,57 @@ const CALIBRE_CONVERSIONS: Record<string, {
     extension: 'mobi',
     mime: 'application/x-mobipocket-ebook'
   },
-  epub: {
-    extension: 'epub',
-    mime: 'application/epub+zip'
+  doc: {
+    extension: 'doc',
+    mime: 'application/msword'
+  },
+  docx: {
+    extension: 'docx',
+    mime: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+  },
+  pdf: {
+    extension: 'pdf',
+    mime: 'application/pdf'
+  },
+  rtf: {
+    extension: 'rtf',
+    mime: 'application/rtf'
+  },
+  odt: {
+    extension: 'odt',
+    mime: 'application/vnd.oasis.opendocument.text'
+  },
+  html: {
+    extension: 'html',
+    mime: 'text/html; charset=utf-8'
+  },
+  txt: {
+    extension: 'txt',
+    mime: 'text/plain; charset=utf-8'
+  },
+  odp: {
+    extension: 'odp',
+    mime: 'application/vnd.oasis.opendocument.presentation'
+  },
+  ppt: {
+    extension: 'ppt',
+    mime: 'application/vnd.ms-powerpoint'
+  },
+  pptx: {
+    extension: 'pptx',
+    mime: 'application/vnd.openxmlformats-officedocument.presentationml.presentation'
+  },
+  xlsx: {
+    extension: 'xlsx',
+    mime: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+  },
+  csv: {
+    extension: 'csv',
+    mime: 'text/csv; charset=utf-8'
+  },
+  md: {
+    extension: 'md',
+    mime: 'text/markdown; charset=utf-8'
   }
 };
 
@@ -428,7 +476,7 @@ const convertCsvWithLibreOffice = async (
   }
 };
 
-const convertCsvWithCalibre = async (
+const convertWithCalibre = async (
   file: Express.Multer.File,
   targetFormat: string
 ): Promise<{ buffer: Buffer; filename: string; mime: string }> => {
@@ -440,31 +488,10 @@ const convertCsvWithCalibre = async (
   const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'morphy-calibre-'));
   const originalBase = path.basename(file.originalname, path.extname(file.originalname));
   const safeBase = `${sanitizeFilename(originalBase)}_${randomUUID()}`;
-  const normalized = normalizeCsvBuffer(file.buffer);
-  const inputPath = path.join(tmpDir, `${safeBase}.html`);
-  const outputPath = path.join(tmpDir, `${safeBase}.${conversion.extension}`);
-
-  const htmlTableRows = normalized.normalizedCsv
-    .split('\n')
-    .filter(line => line.trim().length > 0)
-    .map(line => {
-      const parsed = Papa.parse<string[]>(line, {
-        delimiter: ',',
-        dynamicTyping: false,
-        header: false
-      });
-      const values = (parsed.data[0] || []).map(value =>
-        String(value ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
-      );
-      const cells = values.map(value => `<td>${value}</td>`).join('');
-      return `<tr>${cells}</tr>`;
-    })
-    .join('\n');
-
-  const htmlContent = `<!DOCTYPE html>\n<html lang="en">\n<head>\n  <meta charset="UTF-8" />\n  <title>${sanitizeFilename(originalBase)}</title>\n  <style>\n    body { font-family: Arial, sans-serif; padding: 24px; }\n    table { border-collapse: collapse; width: 100%; }\n    th, td { border: 1px solid #ccc; padding: 8px; text-align: left; }\n  </style>\n</head>\n<body>\n  <table>\n    <tbody>\n      ${htmlTableRows}\n    </tbody>\n  </table>\n</body>\n</html>`;
-
   try {
-    await fs.writeFile(inputPath, htmlContent, 'utf8');
+    const inputPath = path.join(tmpDir, `${safeBase}${path.extname(file.originalname) || '.epub'}`);
+    await fs.writeFile(inputPath, file.buffer);
+    const outputPath = path.join(tmpDir, `${safeBase}.${conversion.extension}`);
 
     const { stdout, stderr } = await execCalibre([
       inputPath,
@@ -554,34 +581,6 @@ app.post('/api/convert', upload.single('file'), async (req, res) => {
     console.log(`Processing ${file.originalname} (${file.size} bytes)`);
 
     const targetFormat = String(format).toLowerCase();
-
-    if (isCsvFile(file)) {
-      if (LIBREOFFICE_CONVERSIONS[targetFormat]) {
-        const { buffer, filename, mime } = await convertCsvWithLibreOffice(file, targetFormat);
-
-        res.set({
-          'Content-Type': mime,
-          'Content-Disposition': `attachment; filename="${filename}"`,
-          'Content-Length': buffer.length.toString(),
-          'Cache-Control': 'no-cache'
-        });
-
-        return res.send(buffer);
-      }
-
-      if (CALIBRE_CONVERSIONS[targetFormat]) {
-        const { buffer, filename, mime } = await convertCsvWithCalibre(file, targetFormat);
-
-        res.set({
-          'Content-Type': mime,
-          'Content-Disposition': `attachment; filename="${filename}"`,
-          'Content-Length': buffer.length.toString(),
-          'Cache-Control': 'no-cache'
-        });
-
-        return res.send(buffer);
-      }
-    }
 
     const inputBuffer = await prepareRawBuffer(file);
 
@@ -698,17 +697,13 @@ app.post('/api/convert/batch', uploadBatch.array('files'), async (req, res) => {
 
   for (const file of files) {
     try {
-      if (!isCsvFile(file)) {
-        throw new Error('Only CSV files are supported for batch conversion');
-      }
-
       let output;
-      if (LIBREOFFICE_CONVERSIONS[format]) {
+      if (LIBREOFFICE_CONVERSIONS[format] && !isCsvFile(file)) {
         output = await convertCsvWithLibreOffice(file, format);
       } else if (CALIBRE_CONVERSIONS[format]) {
-        output = await convertCsvWithCalibre(file, format);
+        output = await convertWithCalibre(file, format);
       } else {
-        throw new Error('Unsupported CSV target format for batch conversion');
+        throw new Error('Unsupported target format for batch conversion');
       }
 
       const storedFilename = `${Date.now()}_${randomUUID()}_${output.filename}`;
