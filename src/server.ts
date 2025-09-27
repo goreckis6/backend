@@ -35,6 +35,18 @@ const scheduleBatchFileCleanup = (storedFilename: string) => {
 
 const execFileAsync = promisify(execFile);
 
+const persistOutputBuffer = async (buffer: Buffer, filename: string, mime: string) => {
+  const storedFilename = `${Date.now()}_${randomUUID()}_${filename}`;
+  const storedFilePath = path.join(BATCH_OUTPUT_DIR, storedFilename);
+  await fs.writeFile(storedFilePath, buffer);
+  batchFileMetadata.set(storedFilename, {
+    downloadName: filename,
+    mime
+  });
+  scheduleBatchFileCleanup(storedFilename);
+  return storedFilename;
+};
+
 const app = express();
 const PORT = Number(process.env.PORT || 3000);
 
@@ -333,6 +345,13 @@ const CALIBRE_CANDIDATES = [
   'ebook-convert.exe'
 ].filter((value): value is string => Boolean(value));
 
+interface ConversionResult {
+  buffer: Buffer;
+  filename: string;
+  mime: string;
+  storedFilename?: string;
+}
+
 interface CommandResult {
   stdout: string;
   stderr: string;
@@ -408,8 +427,9 @@ const execCalibre = async (args: string[]): Promise<CommandResult> => {
 
 const convertCsvWithLibreOffice = async (
   file: Express.Multer.File,
-  targetFormat: string
-): Promise<{ buffer: Buffer; filename: string; mime: string }> => {
+  targetFormat: string,
+  persistToDisk = false
+): Promise<ConversionResult> => {
   const conversion = LIBREOFFICE_CONVERSIONS[targetFormat];
   if (!conversion) {
     throw new Error('Unsupported LibreOffice target format');
@@ -469,6 +489,16 @@ const convertCsvWithLibreOffice = async (
         const outputBuffer = await fs.readFile(outputPath);
         const downloadName = `${sanitizeFilename(originalBase)}.${conversion.extension}`;
 
+        if (persistToDisk) {
+          const storedFilename = await persistOutputBuffer(outputBuffer, downloadName, conversion.mime);
+          return {
+            buffer: outputBuffer,
+            filename: downloadName,
+            mime: conversion.mime,
+            storedFilename
+          };
+        }
+
         return {
           buffer: outputBuffer,
           filename: downloadName,
@@ -507,7 +537,7 @@ const convertWithCalibre = async (
   targetFormat: string,
   options: Record<string, string | undefined> = {},
   persistToDisk = false
-): Promise<CalibreConversionResult> => {
+): Promise<ConversionResult> => {
   const conversion = CALIBRE_CONVERSIONS[targetFormat];
   if (!conversion) {
     throw new Error('Unsupported Calibre target format');
@@ -542,19 +572,16 @@ const convertWithCalibre = async (
         `.${intermediateExtension}`,
         originalBase,
         conversion.postProcessLibreOfficeTarget,
-        options
+        options,
+        persistToDisk
       );
 
-      if (persistToDisk && result.buffer.length > 0) {
-        const storedFilename = `${Date.now()}_${randomUUID()}_${result.filename}`;
-        const storedFilePath = path.join(BATCH_OUTPUT_DIR, storedFilename);
-        await fs.writeFile(storedFilePath, result.buffer);
-        batchFileMetadata.set(storedFilename, {
-          downloadName: result.filename,
-          mime: result.mime
-        });
-        scheduleBatchFileCleanup(storedFilename);
+      if (persistToDisk && result.storedFilename) {
+        return result;
+      }
 
+      if (persistToDisk) {
+        const storedFilename = await persistOutputBuffer(result.buffer, result.filename, result.mime);
         return {
           ...result,
           storedFilename
@@ -567,15 +594,7 @@ const convertWithCalibre = async (
     const downloadName = `${sanitizedBase}.${conversion.extension}`;
 
     if (persistToDisk) {
-      const storedFilename = `${Date.now()}_${randomUUID()}_${downloadName}`;
-      const storedFilePath = path.join(BATCH_OUTPUT_DIR, storedFilename);
-      await fs.writeFile(storedFilePath, outputBuffer);
-      batchFileMetadata.set(storedFilename, {
-        downloadName,
-        mime: conversion.mime
-      });
-      scheduleBatchFileCleanup(storedFilename);
-
+      const storedFilename = await persistOutputBuffer(outputBuffer, downloadName, conversion.mime);
       return {
         buffer: outputBuffer,
         filename: downloadName,
@@ -603,8 +622,9 @@ const convertBufferWithLibreOffice = async (
   inputExtension: string,
   originalBase: string,
   targetFormat: keyof typeof LIBREOFFICE_CONVERSIONS,
-  options: Record<string, string | undefined> = {}
-): Promise<CalibreConversionResult> => {
+  options: Record<string, string | undefined> = {},
+  persistToDisk = false
+): Promise<ConversionResult> => {
   const conversion = LIBREOFFICE_CONVERSIONS[targetFormat];
   if (!conversion) {
     throw new Error('Unsupported LibreOffice target format');
@@ -649,6 +669,16 @@ const convertBufferWithLibreOffice = async (
 
     const outputBuffer = await fs.readFile(path.join(tmpDir, outputName));
     const downloadName = `${sanitizedBase}.${conversion.extension}`;
+
+    if (persistToDisk) {
+      const storedFilename = await persistOutputBuffer(outputBuffer, downloadName, conversion.mime);
+      return {
+        buffer: outputBuffer,
+        filename: downloadName,
+        mime: conversion.mime,
+        storedFilename
+      };
+    }
 
     return {
       buffer: outputBuffer,
@@ -912,7 +942,7 @@ app.post('/api/convert/batch', uploadBatch.array('files'), async (req, res) => {
     try {
       let output;
       if (LIBREOFFICE_CONVERSIONS[format] && !isCsvFile(file)) {
-        output = await convertCsvWithLibreOffice(file, format);
+        output = await convertCsvWithLibreOffice(file, format, true);
       } else if (CALIBRE_CONVERSIONS[format] && isEpubFile(file)) {
         output = await convertWithCalibre(file, format, requestOptions, true);
       } else if (CALIBRE_CONVERSIONS[format] && isCsvFile(file)) {
