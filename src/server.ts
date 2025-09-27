@@ -36,16 +36,20 @@ const scheduleBatchFileCleanup = (storedFilename: string) => {
 
 const execFileAsync = promisify(execFile);
 
-const persistOutputBuffer = async (buffer: Buffer, filename: string, mime: string) => {
-  const storedFilename = `${Date.now()}_${randomUUID()}_${filename}`;
+const persistOutputBuffer = async (
+  buffer: Buffer,
+  downloadName: string,
+  mime: string
+): Promise<ConversionResult> => {
+  const storedFilename = `${Date.now()}_${randomUUID()}_${downloadName}`;
   const storedFilePath = path.join(BATCH_OUTPUT_DIR, storedFilename);
   await fs.writeFile(storedFilePath, buffer);
   batchFileMetadata.set(storedFilename, {
-    downloadName: filename,
+    downloadName,
     mime
   });
   scheduleBatchFileCleanup(storedFilename);
-  return storedFilename;
+  return { buffer, filename: downloadName, mime, storedFilename };
 };
 
 const app = express();
@@ -382,6 +386,7 @@ const execCalibre = async (args: string[]): Promise<CommandResult> => {
 const convertCsvWithLibreOffice = async (
   file: Express.Multer.File,
   targetFormat: string,
+  options: Record<string, string | undefined> = {},
   persistToDisk = false
 ): Promise<ConversionResult> => {
   const conversion = LIBREOFFICE_CONVERSIONS[targetFormat];
@@ -444,13 +449,7 @@ const convertCsvWithLibreOffice = async (
         const downloadName = `${sanitizeFilename(originalBase)}.${conversion.extension}`;
 
         if (persistToDisk) {
-          const storedFilename = await persistOutputBuffer(outputBuffer, downloadName, conversion.mime);
-          return {
-            buffer: outputBuffer,
-            filename: downloadName,
-            mime: conversion.mime,
-            storedFilename
-          };
+          return persistOutputBuffer(outputBuffer, downloadName, conversion.mime);
         }
 
         return {
@@ -535,11 +534,7 @@ const convertWithCalibre = async (
       }
 
       if (persistToDisk) {
-        const storedFilename = await persistOutputBuffer(result.buffer, result.filename, result.mime);
-        return {
-          ...result,
-          storedFilename
-        };
+        return persistOutputBuffer(result.buffer, result.filename, result.mime);
       }
 
       return result;
@@ -558,13 +553,7 @@ const convertWithCalibre = async (
     const downloadName = `${sanitizedBase}.${conversion.extension}`;
 
     if (persistToDisk) {
-      const storedFilename = await persistOutputBuffer(outputBuffer, downloadName, conversion.mime);
-      return {
-        buffer: outputBuffer,
-        filename: downloadName,
-        mime: conversion.mime,
-        storedFilename
-      };
+      return persistOutputBuffer(outputBuffer, downloadName, conversion.mime);
     }
 
     return {
@@ -635,13 +624,7 @@ const convertBufferWithLibreOffice = async (
     const downloadName = `${sanitizedBase}.${conversion.extension}`;
 
     if (persistToDisk) {
-      const storedFilename = await persistOutputBuffer(outputBuffer, downloadName, conversion.mime);
-      return {
-        buffer: outputBuffer,
-        filename: downloadName,
-        mime: conversion.mime,
-        storedFilename
-      };
+      return persistOutputBuffer(outputBuffer, downloadName, conversion.mime);
     }
 
     return {
@@ -678,8 +661,7 @@ const postProcessToSpreadsheet = async (
     : 'text/csv; charset=utf-8';
 
   if (persistToDisk) {
-    const storedFilename = await persistOutputBuffer(buffer as Buffer, downloadName, mime);
-    return { buffer: buffer as Buffer, filename: downloadName, mime, storedFilename };
+    return persistOutputBuffer(buffer as Buffer, downloadName, mime);
   }
 
   return { buffer: buffer as Buffer, filename: downloadName, mime };
@@ -784,106 +766,91 @@ app.post('/api/convert', upload.single('file'), async (req, res) => {
 
     const targetFormat = String(requestOptions.format ?? 'webp').toLowerCase();
 
-    if (isEpubFile(file) && CALIBRE_CONVERSIONS[targetFormat]) {
-      const result = await convertWithCalibre(file, targetFormat, requestOptions);
+    let result: ConversionResult;
 
-      res.set({
-        'Content-Type': result.mime,
-        'Content-Disposition': `attachment; filename="${result.filename}"`,
-        'Content-Length': result.buffer.length.toString(),
-        'Cache-Control': 'no-cache'
+    if (isCsvFile(file) && LIBREOFFICE_CONVERSIONS[targetFormat]) {
+      result = await convertCsvWithLibreOffice(file, targetFormat, requestOptions, true);
+    } else if (isEpubFile(file) && CALIBRE_CONVERSIONS[targetFormat]) {
+      result = await convertWithCalibre(file, targetFormat, requestOptions, true);
+    } else {
+      // Handle Sharp image conversions
+      const quality = requestOptions.quality ?? 'high';
+      const lossless = requestOptions.lossless ?? 'false';
+      const width = requestOptions.width;
+      const height = requestOptions.height;
+      const iconSize = requestOptions.iconSize ?? '16';
+
+      const inputBuffer = await prepareRawBuffer(file);
+
+      const qualityValue = quality === 'high' ? 95 : quality === 'medium' ? 80 : 60;
+      const isLossless = lossless === 'true';
+
+      let pipeline = sharp(inputBuffer, {
+        failOn: 'truncated',
+        unlimited: true
       });
 
-      return res.send(result.buffer);
+      const metadata = await pipeline.metadata();
+      console.log(`Metadata => ${metadata.width}x${metadata.height}, format: ${metadata.format}`);
+
+      let contentType: string;
+      let fileExtension: string;
+
+      switch (targetFormat) {
+        case 'webp':
+          pipeline = pipeline.webp({ quality: qualityValue, lossless: isLossless });
+          contentType = 'image/webp';
+          fileExtension = 'webp';
+          break;
+        case 'png':
+          pipeline = pipeline.png({ compressionLevel: 9 });
+          contentType = 'image/png';
+          fileExtension = 'png';
+          break;
+        case 'jpeg':
+        case 'jpg':
+          pipeline = pipeline.jpeg({ quality: qualityValue, progressive: true });
+          contentType = 'image/jpeg';
+          fileExtension = 'jpg';
+          break;
+        case 'ico':
+          pipeline = pipeline
+            .resize(parseInt(iconSize) || 16, parseInt(iconSize) || 16, {
+              fit: 'contain',
+              background: { r: 0, g: 0, b: 0, alpha: 0 }
+            })
+            .png();
+          contentType = 'image/x-icon';
+          fileExtension = 'ico';
+          break;
+        default:
+          return res.status(400).json({ error: 'Unsupported output format' });
+      }
+
+      if (width || height) {
+        pipeline = pipeline.resize(
+          width ? parseInt(width) : undefined,
+          height ? parseInt(height) : undefined,
+          {
+            fit: 'inside',
+            withoutEnlargement: true
+          }
+        );
+      }
+
+      const outputBuffer = await pipeline.toBuffer();
+      const outputName = `${file.originalname.replace(/\.[^.]+$/, '')}.${fileExtension}`;
+
+      result = await persistOutputBuffer(outputBuffer, outputName, contentType);
     }
 
-    const quality = requestOptions.quality ?? 'high';
-    const lossless = requestOptions.lossless ?? 'false';
-    const width = requestOptions.width;
-    const height = requestOptions.height;
-    const iconSize = requestOptions.iconSize ?? '16';
-
-    const inputBuffer = await prepareRawBuffer(file);
-
-    const qualityValue = quality === 'high' ? 95 : quality === 'medium' ? 80 : 60;
-    const isLossless = lossless === 'true';
-
-    let pipeline = sharp(inputBuffer, {
-      failOn: 'truncated',
-      unlimited: true
+    // Return download link instead of streaming file
+    res.json({
+      success: true,
+      downloadPath: `/download/${encodeURIComponent(result.storedFilename!)}`,
+      filename: result.filename,
+      size: result.buffer.length
     });
-
-    const metadata = await pipeline.metadata();
-    console.log(`Metadata => ${metadata.width}x${metadata.height}, format: ${metadata.format}`);
-
-    let contentType: string;
-    let fileExtension: string;
-
-    switch (targetFormat) {
-      case 'webp':
-        pipeline = pipeline.webp({ quality: qualityValue, lossless: isLossless });
-        contentType = 'image/webp';
-        fileExtension = 'webp';
-        break;
-      case 'png':
-        pipeline = pipeline.png({ compressionLevel: 9 });
-        contentType = 'image/png';
-        fileExtension = 'png';
-        break;
-      case 'jpeg':
-      case 'jpg':
-        pipeline = pipeline.jpeg({ quality: qualityValue, progressive: true });
-        contentType = 'image/jpeg';
-        fileExtension = 'jpg';
-        break;
-      case 'ico':
-        pipeline = pipeline
-          .resize(parseInt(iconSize) || 16, parseInt(iconSize) || 16, {
-            fit: 'contain',
-            background: { r: 0, g: 0, b: 0, alpha: 0 }
-          })
-          .png();
-        contentType = 'image/x-icon';
-        fileExtension = 'ico';
-        break;
-      default:
-        if (isCsvFile(file) && CALIBRE_CONVERSIONS[targetFormat]) {
-          const result = await convertWithCalibre(file, targetFormat, requestOptions);
-
-          res.set({
-            'Content-Type': result.mime,
-            'Content-Disposition': `attachment; filename="${result.filename}"`,
-            'Content-Length': result.buffer.length.toString(),
-            'Cache-Control': 'no-cache'
-          });
-
-          return res.send(result.buffer);
-        }
-        return res.status(400).json({ error: 'Unsupported output format' });
-    }
-
-    if (width || height) {
-      pipeline = pipeline.resize(
-        width ? parseInt(width) : undefined,
-        height ? parseInt(height) : undefined,
-        {
-          fit: 'inside',
-          withoutEnlargement: true
-        }
-      );
-    }
-
-    const outputBuffer = await pipeline.toBuffer();
-    const outputName = `${file.originalname.replace(/\.[^.]+$/, '')}.${fileExtension}`;
-
-    res.set({
-      'Content-Type': contentType,
-      'Content-Disposition': `attachment; filename="${outputName}"`,
-      'Content-Length': outputBuffer.length.toString(),
-      'Cache-Control': 'no-cache'
-    });
-
-    res.send(outputBuffer);
   } catch (error) {
     console.error('Conversion error:', error);
     const errorMessage = error instanceof Error ? error.message : 'Unknown conversion error';
@@ -932,16 +899,12 @@ app.post('/api/convert/batch', uploadBatch.array('files'), async (req, res) => {
   for (const file of files) {
     try {
       let output;
-      if (LIBREOFFICE_CONVERSIONS[format] && !isCsvFile(file)) {
-        output = await convertCsvWithLibreOffice(file, format, true);
-      } else if (CALIBRE_CONVERSIONS[format] && isEpubFile(file)) {
-        output = await convertWithCalibre(file, format, requestOptions, true);
-      } else if (CALIBRE_CONVERSIONS[format] && isCsvFile(file)) {
-        output = await convertWithCalibre(file, format, requestOptions, true);
-      } else if (CALIBRE_CONVERSIONS[format]) {
+      if (isCsvFile(file) && LIBREOFFICE_CONVERSIONS[format]) {
+        output = await convertCsvWithLibreOffice(file, format, requestOptions, true);
+      } else if (isEpubFile(file) && CALIBRE_CONVERSIONS[format]) {
         output = await convertWithCalibre(file, format, requestOptions, true);
       } else {
-        throw new Error('Unsupported target format for batch conversion');
+        throw new Error('Unsupported input file type or target format for batch conversion');
       }
 
       results.push({
