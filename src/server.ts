@@ -425,7 +425,7 @@ const CALIBRE_CONVERSIONS: Record<string, {
   pdf: { extension: 'pdf', mime: 'application/pdf' },
   rtf: { extension: 'rtf', mime: 'application/rtf' },
   odt: { extension: 'odt', mime: 'application/vnd.oasis.opendocument.text' },
-  html: { extension: 'html', mime: 'text/html; charset=utf-8' },
+  html: { extension: 'html', mime: 'text/html; charset=utf-8', intermediateExtension: 'txt', postProcessLibreOfficeTarget: 'html' },
   txt: { extension: 'txt', mime: 'text/plain; charset=utf-8' },
   odp: { extension: 'odp', mime: 'application/vnd.oasis.opendocument.presentation' },
   ppt: { extension: 'ppt', mime: 'application/vnd.ms-powerpoint' },
