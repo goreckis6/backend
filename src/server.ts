@@ -172,13 +172,15 @@ const LIBREOFFICE_CANDIDATES = [
 const isCsvFile = (file: Express.Multer.File) => {
   const ext = path.extname(file.originalname).replace('.', '').toLowerCase();
   const mimetype = file.mimetype?.toLowerCase() ?? '';
-  return ext === 'csv' || mimetype.includes('csv') || mimetype.includes('text/plain');
+  // Priority to file extension first, then MIME type, but be more specific about text/plain
+  return ext === 'csv' || mimetype.includes('csv') || (mimetype === 'text/plain' && ext !== 'epub');
 };
 
 const isEpubFile = (file: Express.Multer.File) => {
   const ext = path.extname(file.originalname).replace('.', '').toLowerCase();
   const mimetype = file.mimetype?.toLowerCase() ?? '';
-  return ext === 'epub' || mimetype.includes('epub');
+  // Priority to file extension first, then MIME type
+  return ext === 'epub' || mimetype.includes('epub') || mimetype.includes('application/epub');
 };
 
 const sanitizeFilename = (name: string) =>
@@ -765,13 +767,18 @@ app.post('/api/convert', upload.single('file'), async (req, res) => {
     console.log(`Processing ${file.originalname} (${file.size} bytes)`);
 
     const targetFormat = String(requestOptions.format ?? 'webp').toLowerCase();
+    const isCSV = isCsvFile(file);
+    const isEPUB = isEpubFile(file);
+    console.log(`Single file: isCSV=${isCSV}, isEPUB=${isEPUB}, format=${targetFormat}, mimetype=${file.mimetype}`);
 
     let result: ConversionResult;
 
-    if (isCsvFile(file) && LIBREOFFICE_CONVERSIONS[targetFormat]) {
-      result = await convertCsvWithLibreOffice(file, targetFormat, requestOptions, true);
-    } else if (isEpubFile(file) && CALIBRE_CONVERSIONS[targetFormat]) {
+    if (isEPUB && CALIBRE_CONVERSIONS[targetFormat]) {
+      console.log('Single: Routing to Calibre (EPUB conversion)');
       result = await convertWithCalibre(file, targetFormat, requestOptions, true);
+    } else if (isCSV && LIBREOFFICE_CONVERSIONS[targetFormat]) {
+      console.log('Single: Routing to LibreOffice (CSV conversion)');
+      result = await convertCsvWithLibreOffice(file, targetFormat, requestOptions, true);
     } else {
       // Handle Sharp image conversions
       const quality = requestOptions.quality ?? 'high';
@@ -899,12 +906,18 @@ app.post('/api/convert/batch', uploadBatch.array('files'), async (req, res) => {
   for (const file of files) {
     try {
       let output;
-      if (isCsvFile(file) && LIBREOFFICE_CONVERSIONS[format]) {
-        output = await convertCsvWithLibreOffice(file, format, requestOptions, true);
-      } else if (isEpubFile(file) && CALIBRE_CONVERSIONS[format]) {
+      const isCSV = isCsvFile(file);
+      const isEPUB = isEpubFile(file);
+      console.log(`Processing ${file.originalname}: isCSV=${isCSV}, isEPUB=${isEPUB}, format=${format}, mimetype=${file.mimetype}`);
+      
+      if (isEPUB && CALIBRE_CONVERSIONS[format]) {
+        console.log('Routing to Calibre (EPUB conversion)');
         output = await convertWithCalibre(file, format, requestOptions, true);
+      } else if (isCSV && LIBREOFFICE_CONVERSIONS[format]) {
+        console.log('Routing to LibreOffice (CSV conversion)');
+        output = await convertCsvWithLibreOffice(file, format, requestOptions, true);
       } else {
-        throw new Error('Unsupported input file type or target format for batch conversion');
+        throw new Error(`Unsupported input file type or target format for batch conversion. File: ${file.originalname}, isCSV: ${isCSV}, isEPUB: ${isEPUB}, format: ${format}`);
       }
 
       results.push({
