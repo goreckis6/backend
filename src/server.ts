@@ -630,10 +630,16 @@ const convertWithCalibre = async (
   options: Record<string, string | undefined> = {},
   persistToDisk = false
 ): Promise<ConversionResult> => {
+  console.log(`Calibre conversion requested: ${file.originalname} -> ${targetFormat}`);
+  console.log(`Available Calibre conversions:`, Object.keys(CALIBRE_CONVERSIONS));
+  
   const conversion = CALIBRE_CONVERSIONS[targetFormat];
   if (!conversion) {
-    throw new Error('Unsupported Calibre target format');
+    console.error(`Unsupported Calibre target format: ${targetFormat}`);
+    throw new Error(`Unsupported Calibre target format: ${targetFormat}`);
   }
+  
+  console.log(`Using conversion config:`, conversion);
 
   const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'morphy-calibre-'));
   const originalBase = path.basename(file.originalname, path.extname(file.originalname));
