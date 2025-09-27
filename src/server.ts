@@ -522,6 +522,7 @@ const convertWithCalibre = async (
     const outputBuffer = await fs.readFile(outputPath);
 
     if (conversion.postProcessLibreOfficeTarget) {
+      console.log(`Post-processing with LibreOffice: ${intermediateExtension} -> ${conversion.postProcessLibreOfficeTarget}, persistToDisk: ${persistToDisk}`);
       const result = await convertBufferWithLibreOffice(
         outputBuffer,
         `.${intermediateExtension}`,
@@ -530,16 +531,8 @@ const convertWithCalibre = async (
         options,
         persistToDisk
       );
-
-      if (persistToDisk && result.storedFilename) {
-        return result;
-      }
-
-      if (persistToDisk) {
-        return persistOutputBuffer(result.buffer, result.filename, result.mime);
-      }
-
-      return result;
+      console.log(`LibreOffice post-process result: filename=${result.filename}, hasStoredFilename=${!!result.storedFilename}, bufferSize=${result.buffer.length}`);
+      return result; // convertBufferWithLibreOffice handles persistToDisk internally
     }
 
     if (conversion.postProcessExcelTarget) {
@@ -920,6 +913,7 @@ app.post('/api/convert/batch', uploadBatch.array('files'), async (req, res) => {
         throw new Error(`Unsupported input file type or target format for batch conversion. File: ${file.originalname}, isCSV: ${isCSV}, isEPUB: ${isEPUB}, format: ${format}`);
       }
 
+      console.log(`Batch result for ${file.originalname}: filename=${output.filename}, hasStoredFilename=${!!output.storedFilename}, bufferSize=${output.buffer.length}`);
       results.push({
         originalName: file.originalname,
         outputFilename: output.filename,
