@@ -11,6 +11,7 @@ import { execFile } from 'child_process';
 import { promisify } from 'util';
 import { randomUUID } from 'crypto';
 import Papa from 'papaparse';
+import * as XLSX from 'xlsx';
 
 const BATCH_OUTPUT_DIR = path.join(os.tmpdir(), 'morphy-batch-outputs');
 fs.mkdir(BATCH_OUTPUT_DIR, { recursive: true }).catch(() => undefined);
@@ -273,69 +274,22 @@ const CALIBRE_CONVERSIONS: Record<string, {
   mime: string;
   intermediateExtension?: string;
   postProcessLibreOfficeTarget?: keyof typeof LIBREOFFICE_CONVERSIONS;
+  postProcessExcelTarget?: 'csv' | 'xlsx';
 }> = {
-  mobi: {
-    extension: 'mobi',
-    mime: 'application/x-mobipocket-ebook'
-  },
-  doc: {
-    extension: 'doc',
-    mime: 'application/msword',
-    intermediateExtension: 'docx',
-    postProcessLibreOfficeTarget: 'doc'
-  },
-  docx: {
-    extension: 'docx',
-    mime: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
-  },
-  pdf: {
-    extension: 'pdf',
-    mime: 'application/pdf'
-  },
-  rtf: {
-    extension: 'rtf',
-    mime: 'application/rtf'
-  },
-  odt: {
-    extension: 'odt',
-    mime: 'application/vnd.oasis.opendocument.text'
-  },
-  html: {
-    extension: 'html',
-    mime: 'text/html; charset=utf-8'
-  },
-  txt: {
-    extension: 'txt',
-    mime: 'text/plain; charset=utf-8'
-  },
-  odp: {
-    extension: 'odp',
-    mime: 'application/vnd.oasis.opendocument.presentation'
-  },
-  ppt: {
-    extension: 'ppt',
-    mime: 'application/vnd.ms-powerpoint'
-  },
-  pptx: {
-    extension: 'pptx',
-    mime: 'application/vnd.openxmlformats-officedocument.presentationml.presentation'
-  },
-  xlsx: {
-    extension: 'xlsx',
-    mime: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-    intermediateExtension: 'ods',
-    postProcessLibreOfficeTarget: 'xlsx'
-  },
-  csv: {
-    extension: 'csv',
-    mime: 'text/csv; charset=utf-8',
-    intermediateExtension: 'ods',
-    postProcessLibreOfficeTarget: 'csv'
-  },
-  md: {
-    extension: 'md',
-    mime: 'text/markdown; charset=utf-8'
-  }
+  mobi: { extension: 'mobi', mime: 'application/x-mobipocket-ebook' },
+  doc: { extension: 'doc', mime: 'application/msword', intermediateExtension: 'docx', postProcessLibreOfficeTarget: 'doc' },
+  docx: { extension: 'docx', mime: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' },
+  pdf: { extension: 'pdf', mime: 'application/pdf' },
+  rtf: { extension: 'rtf', mime: 'application/rtf' },
+  odt: { extension: 'odt', mime: 'application/vnd.oasis.opendocument.text' },
+  html: { extension: 'html', mime: 'text/html; charset=utf-8' },
+  txt: { extension: 'txt', mime: 'text/plain; charset=utf-8' },
+  odp: { extension: 'odp', mime: 'application/vnd.oasis.opendocument.presentation' },
+  ppt: { extension: 'ppt', mime: 'application/vnd.ms-powerpoint' },
+  pptx: { extension: 'pptx', mime: 'application/vnd.openxmlformats-officedocument.presentationml.presentation' },
+  xlsx: { extension: 'xlsx', mime: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', intermediateExtension: 'txt', postProcessExcelTarget: 'xlsx' },
+  csv: { extension: 'csv', mime: 'text/csv; charset=utf-8', intermediateExtension: 'txt', postProcessExcelTarget: 'csv' },
+  md: { extension: 'md', mime: 'text/markdown; charset=utf-8' }
 };
 
 const CALIBRE_CANDIDATES = [
@@ -591,6 +545,16 @@ const convertWithCalibre = async (
       return result;
     }
 
+    if (conversion.postProcessExcelTarget) {
+      const result = await postProcessToSpreadsheet(
+        outputBuffer,
+        originalBase,
+        conversion.postProcessExcelTarget,
+        persistToDisk
+      );
+      return result;
+    }
+
     const downloadName = `${sanitizedBase}.${conversion.extension}`;
 
     if (persistToDisk) {
@@ -692,6 +656,33 @@ const convertBufferWithLibreOffice = async (
   } finally {
     await fs.rm(tmpDir, { recursive: true, force: true }).catch(() => undefined);
   }
+};
+
+const postProcessToSpreadsheet = async (
+  textBuffer: Buffer,
+  originalBase: string,
+  target: 'csv' | 'xlsx',
+  persistToDisk = false
+): Promise<ConversionResult> => {
+  const sanitizedBase = sanitizeFilename(originalBase);
+  const lines = textBuffer.toString('utf8').split(/\r?\n/);
+  const data: any[][] = lines.map(line => [line]);
+  const ws = XLSX.utils.aoa_to_sheet(data);
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'Sheet1');
+
+  const buffer = XLSX.write(wb, { type: 'buffer', bookType: target });
+  const downloadName = `${sanitizedBase}.${target}`;
+  const mime = target === 'xlsx'
+    ? 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+    : 'text/csv; charset=utf-8';
+
+  if (persistToDisk) {
+    const storedFilename = await persistOutputBuffer(buffer as Buffer, downloadName, mime);
+    return { buffer: buffer as Buffer, filename: downloadName, mime, storedFilename };
+  }
+
+  return { buffer: buffer as Buffer, filename: downloadName, mime };
 };
 
 const buildCalibreArgs = (
