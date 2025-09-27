@@ -489,22 +489,42 @@ const execLibreOffice = async (args: string[]): Promise<CommandResult> => {
 };
 
 const execCalibre = async (args: string[]): Promise<CommandResult> => {
+  console.log('=== CALIBRE EXECUTION START ===');
+  console.log('CALIBRE_CANDIDATES:', CALIBRE_CANDIDATES);
+  console.log('Command args:', args);
+  
   let lastError: unknown;
   for (const binary of CALIBRE_CANDIDATES) {
     try {
+      console.log(`Trying Calibre binary: ${binary}`);
+      
       const result = await execFileAsync(binary, args, {
         env: {
           ...process.env,
           HOME: process.env.HOME || os.homedir(),
           USERPROFILE: process.env.USERPROFILE || os.homedir()
-        }
+        },
+        timeout: 60000 // 60 second timeout
       });
+      
+      console.log(`Calibre execution successful with binary: ${binary}`);
+      console.log('Calibre stdout length:', result.stdout.length);
+      console.log('Calibre stderr length:', result.stderr.length);
+      
       return result;
     } catch (error: any) {
+      console.log(`Calibre binary ${binary} failed:`, {
+        code: error?.code,
+        signal: error?.signal,
+        message: error instanceof Error ? error.message : String(error)
+      });
+      
       lastError = error;
       if (error?.code === 'ENOENT') {
+        console.log(`Binary ${binary} not found, trying next...`);
         continue;
       }
+      
       const stderr = typeof error?.stderr === 'string' && error.stderr.trim().length > 0
         ? ` | stderr: ${error.stderr.trim()}`
         : '';
@@ -512,10 +532,15 @@ const execCalibre = async (args: string[]): Promise<CommandResult> => {
         ? ` | stdout: ${error.stdout.trim()}`
         : '';
       const message = error instanceof Error ? error.message : String(error);
+      
+      console.error(`Calibre execution error: ${message}${stderr}${stdout}`);
       throw new Error(`Calibre execution failed using "${binary}": ${message}${stderr}${stdout}`);
     }
   }
 
+  console.error('All Calibre binaries failed');
+  console.log('=== CALIBRE EXECUTION END (FAILED) ===');
+  
   throw new Error(
     'Calibre ebook-convert binary not found. Please ensure Calibre is installed and available on the PATH or set CALIBRE_PATH/EBOOK_CONVERT_PATH.' +
       (lastError instanceof Error ? ` (${lastError.message})` : '')
@@ -947,17 +972,38 @@ app.post('/api/convert', upload.single('file'), async (req, res) => {
     const file = req.file;
     const requestOptions = { ...(req.body as Record<string, string | undefined>) };
 
+    console.log('=== CONVERSION REQUEST START ===');
+    console.log('Request body options:', requestOptions);
+    
     if (!file) {
+      console.log('ERROR: No file uploaded');
       return res.status(400).json({ error: 'No file uploaded' });
     }
 
-    console.log(`Processing ${file.originalname} (${file.size} bytes)`);
+    console.log(`Processing file details:`, {
+      originalname: file.originalname,
+      size: file.size,
+      mimetype: file.mimetype,
+      fieldname: file.fieldname,
+      encoding: file.encoding
+    });
 
     const targetFormat = String(requestOptions.format ?? 'webp').toLowerCase();
     const isCSV = isCsvFile(file);
     const isEPUB = isEpubFile(file);
     const isEPS = isEpsFile(file);
-    console.log(`Single file: isCSV=${isCSV}, isEPUB=${isEPUB}, isEPS=${isEPS}, format=${targetFormat}, mimetype=${file.mimetype}`);
+    
+    console.log('File type detection:', {
+      targetFormat,
+      isCSV,
+      isEPUB, 
+      isEPS,
+      mimetype: file.mimetype,
+      extension: file.originalname.split('.').pop()?.toLowerCase()
+    });
+    
+    console.log('Available CALIBRE_CONVERSIONS:', Object.keys(CALIBRE_CONVERSIONS));
+    console.log('Target format in CALIBRE_CONVERSIONS?', !!CALIBRE_CONVERSIONS[targetFormat]);
 
     let result: ConversionResult;
 
@@ -1043,15 +1089,38 @@ app.post('/api/convert', upload.single('file'), async (req, res) => {
     }
 
     // Return download link instead of streaming file
+    console.log('Conversion successful:', {
+      filename: result.filename,
+      size: result.buffer.length,
+      storedFilename: result.storedFilename,
+      mime: result.mime
+    });
+    
     res.json({
       success: true,
       downloadPath: `/download/${encodeURIComponent(result.storedFilename!)}`,
       filename: result.filename,
       size: result.buffer.length
     });
+    
+    console.log('=== CONVERSION REQUEST END (SUCCESS) ===');
   } catch (error) {
-    console.error('Conversion error:', error);
+    console.error('=== CONVERSION ERROR ===');
+    console.error('Error type:', error instanceof Error ? error.constructor.name : typeof error);
+    console.error('Error message:', error instanceof Error ? error.message : String(error));
+    console.error('Error stack:', error instanceof Error ? error.stack : 'No stack trace');
+    
+    if (error instanceof Error && error.message.includes('ENOENT')) {
+      console.error('ENOENT error - likely missing binary or file path issue');
+    }
+    
+    if (error instanceof Error && error.message.includes('Calibre')) {
+      console.error('Calibre-specific error detected');
+    }
+    
     const errorMessage = error instanceof Error ? error.message : 'Unknown conversion error';
+    console.log('=== CONVERSION REQUEST END (ERROR) ===');
+    
     res.status(500).json({
       error: 'Conversion failed',
       details: errorMessage
