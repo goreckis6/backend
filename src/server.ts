@@ -153,6 +153,12 @@ const isCsvFile = (file: Express.Multer.File) => {
   return ext === 'csv' || mimetype.includes('csv') || mimetype.includes('text/plain');
 };
 
+const isEpubFile = (file: Express.Multer.File) => {
+  const ext = path.extname(file.originalname).replace('.', '').toLowerCase();
+  const mimetype = file.mimetype?.toLowerCase() ?? '';
+  return ext === 'epub' || mimetype.includes('epub');
+};
+
 const sanitizeFilename = (name: string) =>
   name.replace(/[^a-zA-Z0-9-_]+/g, '_').replace(/^_+|_+$/g, '') || 'file';
 
@@ -248,6 +254,8 @@ const normalizeCsvBuffer = (buffer: Buffer): NormalizedCsvResult => {
 const CALIBRE_CONVERSIONS: Record<string, {
   extension: string;
   mime: string;
+  intermediateExtension?: string;
+  postProcessLibreOfficeTarget?: keyof typeof LIBREOFFICE_CONVERSIONS;
 }> = {
   mobi: {
     extension: 'mobi',
@@ -255,7 +263,9 @@ const CALIBRE_CONVERSIONS: Record<string, {
   },
   doc: {
     extension: 'doc',
-    mime: 'application/msword'
+    mime: 'application/msword',
+    intermediateExtension: 'docx',
+    postProcessLibreOfficeTarget: 'doc'
   },
   docx: {
     extension: 'docx',
@@ -476,9 +486,76 @@ const convertCsvWithLibreOffice = async (
   }
 };
 
+const convertBufferWithLibreOffice = async (
+  buffer: Buffer,
+  inputExtension: string,
+  originalBase: string,
+  targetFormat: keyof typeof LIBREOFFICE_CONVERSIONS,
+  options: Record<string, string | undefined> = {}
+): Promise<{ buffer: Buffer; filename: string; mime: string }> => {
+  const conversion = LIBREOFFICE_CONVERSIONS[targetFormat];
+  if (!conversion) {
+    throw new Error('Unsupported LibreOffice target format');
+  }
+
+  const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'morphy-lo-post-'));
+  const sanitizedBase = sanitizeFilename(originalBase);
+  const safeBase = `${sanitizedBase}_${randomUUID()}`;
+  const normalizedExtension = inputExtension.startsWith('.') ? inputExtension : `.${inputExtension}`;
+  const inputFilename = `${safeBase}${normalizedExtension}`;
+  const inputPath = path.join(tmpDir, inputFilename);
+
+  try {
+    await fs.writeFile(inputPath, buffer);
+
+    const args = [
+      '--headless',
+      '--nolockcheck',
+      '--nodefault',
+      '--nologo',
+      '--nofirststartwizard',
+      ...buildLibreOfficeFilterArgs(options),
+      '--convert-to', conversion.convertTo,
+      '--outdir', tmpDir,
+      inputPath
+    ];
+
+    const { stdout, stderr } = await execLibreOffice(args);
+    if (stdout.trim().length > 0) {
+      console.log('LibreOffice post-process stdout:', stdout.trim());
+    }
+    if (stderr.trim().length > 0) {
+      console.warn('LibreOffice post-process stderr:', stderr.trim());
+    }
+
+    const files = await fs.readdir(tmpDir);
+    const targetExt = `.${conversion.extension.toLowerCase()}`;
+    const outputName = files.find(name => name.toLowerCase().endsWith(targetExt));
+    if (!outputName) {
+      throw new Error(`LibreOffice did not produce an output file for post-processing to ${conversion.extension}`);
+    }
+
+    const outputBuffer = await fs.readFile(path.join(tmpDir, outputName));
+    const downloadName = `${sanitizedBase}.${conversion.extension}`;
+
+    return {
+      buffer: outputBuffer,
+      filename: downloadName,
+      mime: conversion.mime
+    };
+  } catch (error) {
+    console.error('LibreOffice post-processing failed:', error);
+    const message = error instanceof Error ? error.message : 'Unknown LibreOffice error';
+    throw new Error(`Failed to post-process with LibreOffice: ${message}`);
+  } finally {
+    await fs.rm(tmpDir, { recursive: true, force: true }).catch(() => undefined);
+  }
+};
+
 const convertWithCalibre = async (
   file: Express.Multer.File,
-  targetFormat: string
+  targetFormat: string,
+  options: Record<string, string | undefined> = {}
 ): Promise<{ buffer: Buffer; filename: string; mime: string }> => {
   const conversion = CALIBRE_CONVERSIONS[targetFormat];
   if (!conversion) {
@@ -487,20 +564,17 @@ const convertWithCalibre = async (
 
   const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'morphy-calibre-'));
   const originalBase = path.basename(file.originalname, path.extname(file.originalname));
-  const safeBase = `${sanitizeFilename(originalBase)}_${randomUUID()}`;
+  const sanitizedBase = sanitizeFilename(originalBase);
+  const safeBase = `${sanitizedBase}_${randomUUID()}`;
+  const intermediateExtension = conversion.intermediateExtension ?? conversion.extension;
   try {
     const inputPath = path.join(tmpDir, `${safeBase}${path.extname(file.originalname) || '.epub'}`);
     await fs.writeFile(inputPath, file.buffer);
-    const outputPath = path.join(tmpDir, `${safeBase}.${conversion.extension}`);
+    const outputPath = path.join(tmpDir, `${safeBase}.${intermediateExtension}`);
 
-    const { stdout, stderr } = await execCalibre([
-      inputPath,
-      outputPath,
-      '--change-justification', 'left',
-      '--pretty-print',
-      '--disable-font-rescaling',
-      '--input-encoding', 'utf-8'
-    ]);
+    const args = buildCalibreArgs(inputPath, outputPath, options);
+
+    const { stdout, stderr } = await execCalibre(args);
 
     if (stdout.trim().length > 0) {
       console.log('Calibre stdout:', stdout.trim());
@@ -510,7 +584,18 @@ const convertWithCalibre = async (
     }
 
     const outputBuffer = await fs.readFile(outputPath);
-    const downloadName = `${sanitizeFilename(originalBase)}.${conversion.extension}`;
+
+    if (conversion.postProcessLibreOfficeTarget) {
+      return convertBufferWithLibreOffice(
+        outputBuffer,
+        `.${intermediateExtension}`,
+        originalBase,
+        conversion.postProcessLibreOfficeTarget,
+        options
+      );
+    }
+
+    const downloadName = `${sanitizedBase}.${conversion.extension}`;
 
     return {
       buffer: outputBuffer,
@@ -520,10 +605,60 @@ const convertWithCalibre = async (
   } catch (error) {
     console.error('Calibre conversion failed:', error);
     const message = error instanceof Error ? error.message : 'Unknown Calibre error';
-    throw new Error(`Failed to convert CSV with Calibre: ${message}`);
+    throw new Error(`Failed to convert with Calibre: ${message}`);
   } finally {
     await fs.rm(tmpDir, { recursive: true, force: true }).catch(() => undefined);
   }
+};
+
+const buildCalibreArgs = (
+  inputPath: string,
+  outputPath: string,
+  options: Record<string, string | undefined>
+): string[] => {
+  const args = [
+    inputPath,
+    outputPath,
+    '--change-justification', 'left',
+    '--pretty-print',
+    '--disable-font-rescaling',
+    '--input-encoding', 'utf-8'
+  ];
+
+  if (options.bookTitle) args.push('--title', options.bookTitle);
+  if (options.author) args.push('--authors', options.author);
+  if (options.includeMetadata === 'false') args.push('--no-default-epub-cover');
+  if (options.includeImages === 'false') args.push('--disable-dehyphenate');
+  if (options.preserveFormatting === 'false') args.push('--disable-font-rescaling');
+  if (options.extractTables === 'true') args.push('--extract-tables');
+  if (options.delimiter) {
+    const delimiterValue = options.delimiter === '\t' ? '9' : options.delimiter === ';' ? '59' : '44';
+    args.push('--csv-input', `delimiter=${delimiterValue}`);
+  }
+  if (options.pageSize) args.push('--paper-size', options.pageSize);
+  if (options.orientation) args.push('--orientation', options.orientation);
+  if (options.includeCSS === 'false') args.push('--no-css');
+  if (options.responsiveDesign === 'true') args.push('--flow-size', '0');
+  if (options.githubCompatible === 'true') args.push('--transform-css', 'github');
+  if (options.kindleOptimized === 'true') args.push('--mobi-file-type', 'both');
+  if (options.openSourceCompatible === 'true') args.push('--prefer-metadata-author-sort');
+  if (options.slideLayout) args.push('--ppt-template', options.slideLayout);
+  if (options.enableCollaboration === 'true') args.push('--docx-no-cover');
+  if (options.encoding) args.push('--output-encoding', options.encoding);
+  if (options.lineEndings) args.push('--line-endings', options.lineEndings);
+
+  return args;
+};
+
+const buildLibreOfficeFilterArgs = (
+  options: Record<string, string | undefined>
+): string[] => {
+  if (!options.delimiter) {
+    return [];
+  }
+
+  const delimiter = options.delimiter === '\t' ? '9' : options.delimiter === ';' ? '59' : '44';
+  return [`--infilter=CSV:${delimiter},34,UTF8`];
 };
 
 app.use(helmet());
@@ -565,14 +700,7 @@ app.get('/health', (_req, res) => {
 app.post('/api/convert', upload.single('file'), async (req, res) => {
   try {
     const file = req.file;
-    const {
-      quality = 'high',
-      lossless = 'false',
-      format = 'webp',
-      width,
-      height,
-      iconSize = '16'
-    } = req.body;
+    const requestOptions = { ...(req.body as Record<string, string | undefined>) };
 
     if (!file) {
       return res.status(400).json({ error: 'No file uploaded' });
@@ -580,7 +708,26 @@ app.post('/api/convert', upload.single('file'), async (req, res) => {
 
     console.log(`Processing ${file.originalname} (${file.size} bytes)`);
 
-    const targetFormat = String(format).toLowerCase();
+    const targetFormat = String(requestOptions.format ?? 'webp').toLowerCase();
+
+    if (isEpubFile(file) && CALIBRE_CONVERSIONS[targetFormat]) {
+      const { buffer, filename, mime } = await convertWithCalibre(file, targetFormat, requestOptions);
+
+      res.set({
+        'Content-Type': mime,
+        'Content-Disposition': `attachment; filename="${filename}"`,
+        'Content-Length': buffer.length.toString(),
+        'Cache-Control': 'no-cache'
+      });
+
+      return res.send(buffer);
+    }
+
+    const quality = requestOptions.quality ?? 'high';
+    const lossless = requestOptions.lossless ?? 'false';
+    const width = requestOptions.width;
+    const height = requestOptions.height;
+    const iconSize = requestOptions.iconSize ?? '16';
 
     const inputBuffer = await prepareRawBuffer(file);
 
@@ -626,6 +773,18 @@ app.post('/api/convert', upload.single('file'), async (req, res) => {
         fileExtension = 'ico';
         break;
       default:
+        if (isCsvFile(file) && CALIBRE_CONVERSIONS[targetFormat]) {
+          const { buffer, filename, mime } = await convertWithCalibre(file, targetFormat, requestOptions);
+
+          res.set({
+            'Content-Type': mime,
+            'Content-Disposition': `attachment; filename="${filename}"`,
+            'Content-Length': buffer.length.toString(),
+            'Cache-Control': 'no-cache'
+          });
+
+          return res.send(buffer);
+        }
         return res.status(400).json({ error: 'Unsupported output format' });
     }
 
@@ -663,7 +822,8 @@ app.post('/api/convert', upload.single('file'), async (req, res) => {
 
 app.post('/api/convert/batch', uploadBatch.array('files'), async (req, res) => {
   const files = req.files as Express.Multer.File[] | undefined;
-  const format = String(req.body?.format ?? '').toLowerCase() || 'webp';
+  const requestOptions = { ...(req.body as Record<string, string | undefined>) };
+  const format = String(requestOptions.format ?? 'webp').toLowerCase();
 
   if (!files || files.length === 0) {
     return res.status(400).json({
@@ -700,8 +860,12 @@ app.post('/api/convert/batch', uploadBatch.array('files'), async (req, res) => {
       let output;
       if (LIBREOFFICE_CONVERSIONS[format] && !isCsvFile(file)) {
         output = await convertCsvWithLibreOffice(file, format);
+      } else if (CALIBRE_CONVERSIONS[format] && isEpubFile(file)) {
+        output = await convertWithCalibre(file, format, requestOptions);
+      } else if (CALIBRE_CONVERSIONS[format] && isCsvFile(file)) {
+        output = await convertWithCalibre(file, format, requestOptions);
       } else if (CALIBRE_CONVERSIONS[format]) {
-        output = await convertWithCalibre(file, format);
+        output = await convertWithCalibre(file, format, requestOptions);
       } else {
         throw new Error('Unsupported target format for batch conversion');
       }
