@@ -652,14 +652,50 @@ const convertWithCalibre = async (
     const outputPath = path.join(tmpDir, `${safeBase}.${intermediateExtension}`);
 
     const args = buildCalibreArgs(inputPath, outputPath, options);
+    console.log('Calibre command args:', args);
 
-    const { stdout, stderr } = await execCalibre(args);
+    try {
+      const { stdout, stderr } = await execCalibre(args);
 
-    if (stdout.trim().length > 0) {
-      console.log('Calibre stdout:', stdout.trim());
-    }
-    if (stderr.trim().length > 0) {
-      console.warn('Calibre stderr:', stderr.trim());
+      if (stdout.trim().length > 0) {
+        console.log('Calibre stdout:', stdout.trim());
+      }
+      if (stderr.trim().length > 0) {
+        console.warn('Calibre stderr:', stderr.trim());
+      }
+
+      const outputBuffer = await fs.readFile(outputPath);
+      console.log(`Calibre conversion successful, output size: ${outputBuffer.length} bytes`);
+    } catch (calibreError) {
+      console.error('Calibre conversion failed:', calibreError);
+      
+      // Special fallback for HTML conversion
+      if (targetFormat === 'html') {
+        console.log('Attempting HTML conversion fallback...');
+        
+        // Try with simpler arguments for HTML
+        const fallbackArgs = [
+          inputPath,
+          outputPath,
+          '--no-default-epub-cover',
+          '--disable-font-rescaling',
+          '--breadth-first'
+        ];
+        
+        console.log('Fallback Calibre args:', fallbackArgs);
+        const { stdout: fallbackStdout, stderr: fallbackStderr } = await execCalibre(fallbackArgs);
+        
+        if (fallbackStdout.trim().length > 0) {
+          console.log('Fallback Calibre stdout:', fallbackStdout.trim());
+        }
+        if (fallbackStderr.trim().length > 0) {
+          console.warn('Fallback Calibre stderr:', fallbackStderr.trim());
+        }
+        
+        console.log('HTML fallback conversion successful');
+      } else {
+        throw calibreError;
+      }
     }
 
     const outputBuffer = await fs.readFile(outputPath);
@@ -701,8 +737,16 @@ const convertWithCalibre = async (
     };
   } catch (error) {
     console.error('Calibre conversion failed:', error);
+    console.error('File details:', {
+      originalName: file.originalname,
+      fileSize: file.buffer.length,
+      targetFormat,
+      hasIntermediateExtension: !!conversion.intermediateExtension,
+      hasPostProcess: !!(conversion.postProcessLibreOfficeTarget || conversion.postProcessExcelTarget)
+    });
+    
     const message = error instanceof Error ? error.message : 'Unknown Calibre error';
-    throw new Error(`Failed to convert with Calibre: ${message}`);
+    throw new Error(`Failed to convert ${file.originalname} (${targetFormat}): ${message}`);
   } finally {
     await fs.rm(tmpDir, { recursive: true, force: true }).catch(() => undefined);
   }
@@ -840,6 +884,13 @@ const buildCalibreArgs = (
   if (options.enableCollaboration === 'true') args.push('--docx-no-cover');
   if (options.encoding) args.push('--output-encoding', options.encoding);
   if (options.lineEndings) args.push('--line-endings', options.lineEndings);
+  
+  // Special handling for HTML conversion to avoid common issues
+  if (args[1].endsWith('.html')) {
+    args.push('--breadth-first');
+    args.push('--max-levels', '5');
+    args.push('--max-toc-links', '50');
+  }
 
   return args;
 };
