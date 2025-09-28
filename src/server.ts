@@ -189,7 +189,19 @@ const convertDngFile = async (
   options: Record<string, string | undefined> = {},
   persistToDisk = false
 ): Promise<ConversionResult> => {
+  console.log('=== DNG CONVERSION START ===');
+  console.log('File details:', {
+    originalname: file.originalname,
+    size: file.size,
+    mimetype: file.mimetype,
+    targetFormat,
+    options,
+    persistToDisk
+  });
+
   const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'morphy-dng-'));
+  console.log('Created temp directory:', tmpDir);
+
   const originalBase = path.basename(file.originalname, path.extname(file.originalname));
   const sanitizedBase = sanitizeFilename(originalBase);
   const safeBase = `${sanitizedBase}_${randomUUID()}`;
@@ -197,19 +209,65 @@ const convertDngFile = async (
   const inputPath = path.join(tmpDir, inputFilename);
   const tiffPath = path.join(tmpDir, `${safeBase}.tiff`);
 
+  console.log('File paths:', {
+    inputPath,
+    tiffPath,
+    originalBase,
+    sanitizedBase,
+    safeBase
+  });
+
   try {
+    console.log('Writing DNG file to disk...');
     await fs.writeFile(inputPath, file.buffer);
+    console.log('DNG file written successfully, size:', file.buffer.length, 'bytes');
+
+    // Verify file was written
+    const stats = await fs.stat(inputPath);
+    console.log('Verified file on disk:', {
+      size: stats.size,
+      exists: stats.isFile()
+    });
 
     const quality = options.quality ?? 'high';
     const iconSize = options.iconSize ?? '16';
     const qualityValue = quality === 'high' ? 95 : quality === 'medium' ? 80 : 60;
 
+    console.log('Conversion options:', {
+      quality,
+      iconSize,
+      qualityValue
+    });
+
     // Step 1: Use dcraw to convert DNG to TIFF
-    console.log('Converting DNG to TIFF with dcraw...');
-    await execFileAsync('dcraw', ['-T', '-6', '-O', tiffPath, inputPath]);
-    console.log('dcraw conversion successful');
+    console.log('=== DCRAW CONVERSION START ===');
+    console.log('dcraw command: dcraw -T -6 -O', tiffPath, inputPath);
+    
+    try {
+      const dcrawResult = await execFileAsync('dcraw', ['-T', '-6', '-O', tiffPath, inputPath]);
+      console.log('dcraw conversion successful!');
+      console.log('dcraw stdout:', dcrawResult.stdout);
+      console.log('dcraw stderr:', dcrawResult.stderr);
+    } catch (dcrawError) {
+      console.error('dcraw failed:', dcrawError);
+      throw new Error(`dcraw conversion failed: ${dcrawError instanceof Error ? dcrawError.message : String(dcrawError)}`);
+    }
+
+    // Verify TIFF was created
+    try {
+      const tiffStats = await fs.stat(tiffPath);
+      console.log('TIFF file created successfully:', {
+        size: tiffStats.size,
+        exists: tiffStats.isFile()
+      });
+    } catch (statError) {
+      console.error('TIFF file not found after dcraw conversion:', statError);
+      throw new Error('dcraw did not produce output file');
+    }
 
     // Step 2: Use ImageMagick to convert TIFF to target format
+    console.log('=== IMAGEMAGICK CONVERSION START ===');
+    
     let contentType: string;
     let fileExtension: string;
     let outputPath: string;
@@ -237,6 +295,7 @@ const convertDngFile = async (
     }
 
     outputPath = path.join(tmpDir, `${safeBase}.${fileExtension}`);
+    console.log('Output path:', outputPath);
 
     // Build ImageMagick convert command
     const convertArgs = [
@@ -255,36 +314,69 @@ const convertDngFile = async (
     if (targetFormat === 'ico') {
       const size = parseInt(iconSize) || 16;
       convertArgs.push('-resize', `${size}x${size}`);
+      console.log('ICO size:', size);
     }
 
     convertArgs.push(outputPath);
 
     // Try ImageMagick convert command
-    console.log('Converting TIFF to', targetFormat, 'with ImageMagick...');
+    console.log('ImageMagick command: convert', convertArgs.join(' '));
+    
     try {
-      console.log('Trying ImageMagick convert with args:', convertArgs);
-      await execFileAsync('convert', convertArgs);
-      console.log('ImageMagick convert successful');
+      console.log('Trying ImageMagick convert...');
+      const convertResult = await execFileAsync('convert', convertArgs);
+      console.log('ImageMagick convert successful!');
+      console.log('convert stdout:', convertResult.stdout);
+      console.log('convert stderr:', convertResult.stderr);
     } catch (convertError) {
       console.warn('ImageMagick convert failed:', convertError);
       // Fallback: try magick command (newer ImageMagick)
       try {
-        console.log('Trying magick command with args:', ['convert', ...convertArgs]);
-        await execFileAsync('magick', ['convert', ...convertArgs]);
-        console.log('Magick command successful');
+        console.log('Trying magick command fallback...');
+        const magickArgs = ['convert', ...convertArgs];
+        console.log('magick command:', 'magick', magickArgs.join(' '));
+        const magickResult = await execFileAsync('magick', magickArgs);
+        console.log('Magick command successful!');
+        console.log('magick stdout:', magickResult.stdout);
+        console.log('magick stderr:', magickResult.stderr);
       } catch (magickError) {
         console.error('Both ImageMagick variants failed:', magickError);
         throw new Error('ImageMagick conversion failed');
       }
     }
 
-    const outputBuffer = await fs.readFile(outputPath);
-    const downloadName = `${sanitizedBase}.${fileExtension}`;
-
-    if (persistToDisk) {
-      return persistOutputBuffer(outputBuffer, downloadName, contentType);
+    // Verify output file was created
+    try {
+      const outputStats = await fs.stat(outputPath);
+      console.log('Output file created successfully:', {
+        size: outputStats.size,
+        exists: outputStats.isFile(),
+        path: outputPath
+      });
+    } catch (statError) {
+      console.error('Output file not found after ImageMagick conversion:', statError);
+      throw new Error('ImageMagick did not produce output file');
     }
 
+    console.log('Reading output buffer...');
+    const outputBuffer = await fs.readFile(outputPath);
+    console.log('Output buffer size:', outputBuffer.length, 'bytes');
+    
+    const downloadName = `${sanitizedBase}.${fileExtension}`;
+    console.log('Download name:', downloadName);
+
+    if (persistToDisk) {
+      console.log('Persisting to disk...');
+      const result = await persistOutputBuffer(outputBuffer, downloadName, contentType);
+      console.log('Persisted successfully:', {
+        storedFilename: result.storedFilename,
+        filename: result.filename
+      });
+      console.log('=== DNG CONVERSION END (SUCCESS) ===');
+      return result;
+    }
+
+    console.log('=== DNG CONVERSION END (SUCCESS) ===');
     return {
       buffer: outputBuffer,
       filename: downloadName,
@@ -292,11 +384,19 @@ const convertDngFile = async (
     };
 
   } catch (error) {
-    console.error('DNG conversion failed:', error);
+    console.error('=== DNG CONVERSION ERROR ===');
+    console.error('Error type:', error instanceof Error ? error.constructor.name : typeof error);
+    console.error('Error message:', error instanceof Error ? error.message : String(error));
+    console.error('Error stack:', error instanceof Error ? error.stack : 'No stack trace');
+    
     const message = error instanceof Error ? error.message : 'Unknown DNG conversion error';
+    console.log('=== DNG CONVERSION END (ERROR) ===');
     throw new Error(`Failed to convert DNG file: ${message}. Please ensure dcraw and ImageMagick are installed.`);
   } finally {
-    await fs.rm(tmpDir, { recursive: true, force: true }).catch(() => undefined);
+    console.log('Cleaning up temp directory:', tmpDir);
+    await fs.rm(tmpDir, { recursive: true, force: true }).catch((cleanupError) => {
+      console.warn('Cleanup failed:', cleanupError);
+    });
   }
 };
 
@@ -439,7 +539,13 @@ const isEpsFile = (file: Express.Multer.File) => {
 
 const isDngFile = (file: Express.Multer.File) => {
   const ext = path.extname(file.originalname).replace('.', '').toLowerCase();
-  return ext === 'dng';
+  const result = ext === 'dng';
+  console.log('DNG file detection:', {
+    filename: file.originalname,
+    extension: ext,
+    isDNG: result
+  });
+  return result;
 };
 
 const sanitizeFilename = (name: string) =>
@@ -1206,6 +1312,12 @@ app.post('/api/convert', upload.single('file'), async (req, res) => {
       result = await convertEpsFile(file, targetFormat, requestOptions, true);
     } else if (isDNG && ['webp', 'png', 'jpeg', 'jpg', 'ico'].includes(targetFormat)) {
       console.log('Single: Routing to DNG conversion');
+      console.log('DNG conversion details:', {
+        filename: file.originalname,
+        targetFormat,
+        supportedFormats: ['webp', 'png', 'jpeg', 'jpg', 'ico'],
+        requestOptions
+      });
       result = await convertDngFile(file, targetFormat, requestOptions, true);
     } else {
       // Handle Sharp image conversions
@@ -1374,7 +1486,13 @@ app.post('/api/convert/batch', uploadBatch.array('files'), async (req, res) => {
         console.log('Routing to EPS conversion');
         output = await convertEpsFile(file, format, requestOptions, true);
       } else if (isDNG && ['webp', 'png', 'jpeg', 'jpg', 'ico'].includes(format)) {
-        console.log('Routing to DNG conversion');
+        console.log('Batch: Routing to DNG conversion');
+        console.log('Batch DNG conversion details:', {
+          filename: file.originalname,
+          targetFormat: format,
+          supportedFormats: ['webp', 'png', 'jpeg', 'jpg', 'ico'],
+          requestOptions
+        });
         output = await convertDngFile(file, format, requestOptions, true);
       } else {
         throw new Error(`Unsupported input file type or target format for batch conversion. File: ${file.originalname}, isCSV: ${isCSV}, isEPUB: ${isEPUB}, isEPS: ${isEPS}, isDNG: ${isDNG}, format: ${format}`);
