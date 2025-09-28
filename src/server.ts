@@ -241,10 +241,10 @@ const convertDngFile = async (
 
     // Step 1: Use dcraw to convert DNG to TIFF
     console.log('=== DCRAW CONVERSION START ===');
-    console.log('dcraw command: dcraw -T -6 -O', tiffPath, inputPath);
+    console.log('dcraw command (cwd=tmpDir): dcraw -T -6', inputPath);
     
     try {
-      const dcrawResult = await execFileAsync('dcraw', ['-T', '-6', '-O', tiffPath, inputPath]);
+      const dcrawResult = await execFileAsync('dcraw', ['-T', '-6', inputPath], { cwd: tmpDir });
       console.log('dcraw conversion successful!');
       console.log('dcraw stdout:', dcrawResult.stdout);
       console.log('dcraw stderr:', dcrawResult.stderr);
