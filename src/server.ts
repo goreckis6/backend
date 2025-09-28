@@ -418,6 +418,7 @@ const CALIBRE_CONVERSIONS: Record<string, {
   intermediateExtension?: string;
   postProcessLibreOfficeTarget?: keyof typeof LIBREOFFICE_CONVERSIONS;
   postProcessExcelTarget?: 'csv' | 'xlsx';
+  postProcessMarkdown?: boolean;
 }> = {
   mobi: { extension: 'mobi', mime: 'application/x-mobipocket-ebook' },
   doc: { extension: 'doc', mime: 'application/msword', intermediateExtension: 'docx', postProcessLibreOfficeTarget: 'doc' },
@@ -432,7 +433,7 @@ const CALIBRE_CONVERSIONS: Record<string, {
   pptx: { extension: 'pptx', mime: 'application/vnd.openxmlformats-officedocument.presentationml.presentation' },
   xlsx: { extension: 'xlsx', mime: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', intermediateExtension: 'txt', postProcessExcelTarget: 'xlsx' },
   csv: { extension: 'csv', mime: 'text/csv; charset=utf-8', intermediateExtension: 'txt', postProcessExcelTarget: 'csv' },
-  md: { extension: 'md', mime: 'text/markdown; charset=utf-8' }
+  md: { extension: 'md', mime: 'text/markdown; charset=utf-8', intermediateExtension: 'txt', postProcessMarkdown: true }
 };
 
 const CALIBRE_CANDIDATES = [
@@ -749,6 +750,15 @@ const convertWithCalibre = async (
       return result;
     }
 
+    if (conversion.postProcessMarkdown) {
+      const result = await postProcessToMarkdown(
+        outputBuffer,
+        originalBase,
+        persistToDisk
+      );
+      return result;
+    }
+
     const downloadName = `${sanitizedBase}.${conversion.extension}`;
 
     if (persistToDisk) {
@@ -872,6 +882,60 @@ const postProcessToSpreadsheet = async (
   }
 
   return { buffer: buffer as Buffer, filename: downloadName, mime };
+};
+
+const postProcessToMarkdown = async (
+  textBuffer: Buffer,
+  originalBase: string,
+  persistToDisk = false
+): Promise<ConversionResult> => {
+  const text = textBuffer.toString('utf-8');
+  const sanitizedBase = sanitizeFilename(originalBase);
+  
+  // Convert plain text to basic markdown format
+  const lines = text.split('\n');
+  const markdownLines: string[] = [];
+  
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i].trim();
+    
+    if (!line) {
+      markdownLines.push('');
+      continue;
+    }
+    
+    // Simple heuristics for markdown conversion
+    if (line.length < 50 && !line.endsWith('.') && !line.endsWith(',') && !line.endsWith(';')) {
+      // Likely a heading
+      markdownLines.push(`## ${line}`);
+    } else if (line.startsWith('Chapter ') || line.startsWith('CHAPTER ')) {
+      // Chapter heading
+      markdownLines.push(`# ${line}`);
+    } else {
+      // Regular paragraph
+      markdownLines.push(line);
+    }
+    
+    // Add extra line break after paragraphs
+    if (i < lines.length - 1 && lines[i + 1].trim() === '') {
+      markdownLines.push('');
+    }
+  }
+  
+  const markdownContent = markdownLines.join('\n');
+  const buffer = Buffer.from(markdownContent, 'utf-8');
+  const downloadName = `${sanitizedBase}.md`;
+  const mime = 'text/markdown; charset=utf-8';
+
+  if (persistToDisk) {
+    return persistOutputBuffer(buffer, downloadName, mime);
+  }
+
+  return {
+    buffer,
+    filename: downloadName,
+    mime
+  };
 };
 
 const buildCalibreArgs = (
