@@ -1122,12 +1122,13 @@ app.post('/api/convert', upload.single('file'), async (req, res) => {
           fileExtension = 'jpg';
           break;
         case 'ico':
+          const icoSize = parseInt(iconSize) || 16;
           pipeline = pipeline
-            .resize(parseInt(iconSize) || 16, parseInt(iconSize) || 16, {
+            .resize(icoSize, icoSize, {
               fit: 'contain',
-              background: { r: 0, g: 0, b: 0, alpha: 0 }
+              background: { r: 255, g: 255, b: 255, alpha: 0 }
             })
-            .png();
+            .png({ compressionLevel: 0, quality: 100 });
           contentType = 'image/x-icon';
           fileExtension = 'ico';
           break;
