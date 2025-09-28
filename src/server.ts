@@ -183,6 +183,123 @@ const convertEpsFile = async (
   }
 };
 
+const convertDngFile = async (
+  file: Express.Multer.File,
+  targetFormat: string,
+  options: Record<string, string | undefined> = {},
+  persistToDisk = false
+): Promise<ConversionResult> => {
+  const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'morphy-dng-'));
+  const originalBase = path.basename(file.originalname, path.extname(file.originalname));
+  const sanitizedBase = sanitizeFilename(originalBase);
+  const safeBase = `${sanitizedBase}_${randomUUID()}`;
+  const inputFilename = `${safeBase}.dng`;
+  const inputPath = path.join(tmpDir, inputFilename);
+  const tiffPath = path.join(tmpDir, `${safeBase}.tiff`);
+
+  try {
+    await fs.writeFile(inputPath, file.buffer);
+
+    const quality = options.quality ?? 'high';
+    const iconSize = options.iconSize ?? '16';
+    const qualityValue = quality === 'high' ? 95 : quality === 'medium' ? 80 : 60;
+
+    // Step 1: Use dcraw to convert DNG to TIFF
+    console.log('Converting DNG to TIFF with dcraw...');
+    await execFileAsync('dcraw', ['-T', '-6', '-O', tiffPath, inputPath]);
+    console.log('dcraw conversion successful');
+
+    // Step 2: Use ImageMagick to convert TIFF to target format
+    let contentType: string;
+    let fileExtension: string;
+    let outputPath: string;
+
+    switch (targetFormat) {
+      case 'webp':
+        contentType = 'image/webp';
+        fileExtension = 'webp';
+        break;
+      case 'png':
+        contentType = 'image/png';
+        fileExtension = 'png';
+        break;
+      case 'jpeg':
+      case 'jpg':
+        contentType = 'image/jpeg';
+        fileExtension = 'jpg';
+        break;
+      case 'ico':
+        contentType = 'image/x-icon';
+        fileExtension = 'ico';
+        break;
+      default:
+        throw new Error('Unsupported output format for DNG conversion');
+    }
+
+    outputPath = path.join(tmpDir, `${safeBase}.${fileExtension}`);
+
+    // Build ImageMagick convert command
+    const convertArgs = [
+      tiffPath,
+      '-colorspace', 'RGB',
+      '-background', 'white',
+      '-flatten'
+    ];
+
+    // Add quality settings
+    if (targetFormat === 'jpeg' || targetFormat === 'jpg') {
+      convertArgs.push('-quality', qualityValue.toString());
+    }
+
+    // For ICO format, resize to icon size
+    if (targetFormat === 'ico') {
+      const size = parseInt(iconSize) || 16;
+      convertArgs.push('-resize', `${size}x${size}`);
+    }
+
+    convertArgs.push(outputPath);
+
+    // Try ImageMagick convert command
+    console.log('Converting TIFF to', targetFormat, 'with ImageMagick...');
+    try {
+      console.log('Trying ImageMagick convert with args:', convertArgs);
+      await execFileAsync('convert', convertArgs);
+      console.log('ImageMagick convert successful');
+    } catch (convertError) {
+      console.warn('ImageMagick convert failed:', convertError);
+      // Fallback: try magick command (newer ImageMagick)
+      try {
+        console.log('Trying magick command with args:', ['convert', ...convertArgs]);
+        await execFileAsync('magick', ['convert', ...convertArgs]);
+        console.log('Magick command successful');
+      } catch (magickError) {
+        console.error('Both ImageMagick variants failed:', magickError);
+        throw new Error('ImageMagick conversion failed');
+      }
+    }
+
+    const outputBuffer = await fs.readFile(outputPath);
+    const downloadName = `${sanitizedBase}.${fileExtension}`;
+
+    if (persistToDisk) {
+      return persistOutputBuffer(outputBuffer, downloadName, contentType);
+    }
+
+    return {
+      buffer: outputBuffer,
+      filename: downloadName,
+      mime: contentType
+    };
+
+  } catch (error) {
+    console.error('DNG conversion failed:', error);
+    const message = error instanceof Error ? error.message : 'Unknown DNG conversion error';
+    throw new Error(`Failed to convert DNG file: ${message}. Please ensure dcraw and ImageMagick are installed.`);
+  } finally {
+    await fs.rm(tmpDir, { recursive: true, force: true }).catch(() => undefined);
+  }
+};
+
 const app = express();
 const PORT = Number(process.env.PORT || 3000);
 
@@ -318,6 +435,11 @@ const isEpsFile = (file: Express.Multer.File) => {
   const ext = path.extname(file.originalname).replace('.', '').toLowerCase();
   const mimetype = file.mimetype?.toLowerCase() ?? '';
   return ext === 'eps' || mimetype.includes('eps') || mimetype.includes('postscript');
+};
+
+const isDngFile = (file: Express.Multer.File) => {
+  const ext = path.extname(file.originalname).replace('.', '').toLowerCase();
+  return ext === 'dng';
 };
 
 const sanitizeFilename = (name: string) =>
@@ -1056,12 +1178,14 @@ app.post('/api/convert', upload.single('file'), async (req, res) => {
     const isCSV = isCsvFile(file);
     const isEPUB = isEpubFile(file);
     const isEPS = isEpsFile(file);
+    const isDNG = isDngFile(file);
     
     console.log('File type detection:', {
       targetFormat,
       isCSV,
       isEPUB, 
       isEPS,
+      isDNG,
       mimetype: file.mimetype,
       extension: file.originalname.split('.').pop()?.toLowerCase()
     });
@@ -1080,6 +1204,9 @@ app.post('/api/convert', upload.single('file'), async (req, res) => {
     } else if (isEPS && ['webp', 'png', 'jpeg', 'jpg', 'ico'].includes(targetFormat)) {
       console.log('Single: Routing to EPS conversion');
       result = await convertEpsFile(file, targetFormat, requestOptions, true);
+    } else if (isDNG && ['webp', 'png', 'jpeg', 'jpg', 'ico'].includes(targetFormat)) {
+      console.log('Single: Routing to DNG conversion');
+      result = await convertDngFile(file, targetFormat, requestOptions, true);
     } else {
       // Handle Sharp image conversions
       const quality = requestOptions.quality ?? 'high';
@@ -1234,8 +1361,9 @@ app.post('/api/convert/batch', uploadBatch.array('files'), async (req, res) => {
       const isCSV = isCsvFile(file);
       const isEPUB = isEpubFile(file);
       const isEPS = isEpsFile(file);
-      console.log(`Processing ${file.originalname}: isCSV=${isCSV}, isEPUB=${isEPUB}, isEPS=${isEPS}, format=${format}, mimetype=${file.mimetype}`);
-      
+      const isDNG = isDngFile(file);
+      console.log(`Processing ${file.originalname}: isCSV=${isCSV}, isEPUB=${isEPUB}, isEPS=${isEPS}, isDNG=${isDNG}, format=${format}, mimetype=${file.mimetype}`);
+
       if (isEPUB && CALIBRE_CONVERSIONS[format]) {
         console.log('Routing to Calibre (EPUB conversion)');
         output = await convertWithCalibre(file, format, requestOptions, true);
@@ -1245,8 +1373,11 @@ app.post('/api/convert/batch', uploadBatch.array('files'), async (req, res) => {
       } else if (isEPS && ['webp', 'png', 'jpeg', 'jpg', 'ico'].includes(format)) {
         console.log('Routing to EPS conversion');
         output = await convertEpsFile(file, format, requestOptions, true);
+      } else if (isDNG && ['webp', 'png', 'jpeg', 'jpg', 'ico'].includes(format)) {
+        console.log('Routing to DNG conversion');
+        output = await convertDngFile(file, format, requestOptions, true);
       } else {
-        throw new Error(`Unsupported input file type or target format for batch conversion. File: ${file.originalname}, isCSV: ${isCSV}, isEPUB: ${isEPUB}, isEPS: ${isEPS}, format: ${format}`);
+        throw new Error(`Unsupported input file type or target format for batch conversion. File: ${file.originalname}, isCSV: ${isCSV}, isEPUB: ${isEPUB}, isEPS: ${isEPS}, isDNG: ${isDNG}, format: ${format}`);
       }
 
       console.log(`Batch result for ${file.originalname}: filename=${output.filename}, hasStoredFilename=${!!output.storedFilename}, bufferSize=${output.buffer.length}`);
