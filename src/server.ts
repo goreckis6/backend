@@ -12,6 +12,7 @@ import { promisify } from 'util';
 import { randomUUID } from 'crypto';
 import Papa from 'papaparse';
 import * as XLSX from 'xlsx';
+import PptxGenJS from 'pptxgenjs';
 
 const BATCH_OUTPUT_DIR = path.join(os.tmpdir(), 'morphy-batch-outputs');
 fs.mkdir(BATCH_OUTPUT_DIR, { recursive: true }).catch(() => undefined);
@@ -1171,86 +1172,63 @@ const convertTxtToPresentation = async (
   const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'morphy-presentation-'));
   
   try {
-    // Step 1: Create structured HTML from text
+    // Step 1: Build PPTX with pptxgenjs to avoid empty slides
     const textContent = textBuffer.toString('utf-8');
-    const htmlContent = createPresentationHTML(textContent);
-    const htmlBuffer = Buffer.from(htmlContent, 'utf-8');
-    
-    // Step 2: Convert HTML to presentation format using LibreOffice
-    const htmlPath = path.join(tmpDir, `${sanitizedBase}_temp.html`);
-    await fs.writeFile(htmlPath, htmlBuffer);
-    
-    console.log(`Converting HTML to ${targetFormat}...`);
-    
-    // Try preferred filter first using ext:filter syntax; fallback to just ext
-    const filterMap: Record<'odp' | 'ppt' | 'pptx', string> = {
-      odp: 'impress8',
-      ppt: 'MS PowerPoint 97',
-      pptx: 'Impress MS PowerPoint 2007 XML'
-    };
+    const slidesData = buildSlidesFromText(textContent);
+    const pptx = new (PptxGenJS as any)();
+    pptx.layout = 'LAYOUT_16x9';
+    slidesData.forEach((slideData: { title: string; bullets: string[] }) => {
+      const slide = pptx.addSlide();
+      if (slideData.title) {
+        slide.addText(slideData.title, { x: 0.5, y: 0.4, fontSize: 28, bold: true });
+      }
+      let y = 1.1;
+      slideData.bullets.forEach((line) => {
+        if (line && line.trim().length > 0) {
+          slide.addText(`• ${line}`, { x: 0.7, y, fontSize: 18 });
+          y += 0.4;
+        }
+      });
+    });
+    const pptxPath = path.join(tmpDir, `${sanitizedBase}.pptx`);
+    await new Promise<void>((resolve, reject) => {
+      pptx.writeFile({ fileName: pptxPath }).then(() => resolve()).catch(reject);
+    });
 
-    const tryArgsVariants: string[][] = [
-      [
-        '--headless', '--nolockcheck', '--nodefault', '--nologo', '--nofirststartwizard',
-        '--convert-to', `${targetFormat}:${filterMap[targetFormat]}`,
-        '--outdir', tmpDir, htmlPath
-      ],
-      [
-        '--headless', '--nolockcheck', '--nodefault', '--nologo', '--nofirststartwizard',
-        '--convert-to', targetFormat,
-        '--outdir', tmpDir, htmlPath
-      ]
+    // If target is PPTX, return generated file
+    if (targetFormat === 'pptx') {
+      const outputBuffer = await fs.readFile(pptxPath);
+      const downloadName = `${sanitizedBase}.pptx`;
+      const mime = 'application/vnd.openxmlformats-officedocument.presentationml.presentation';
+      if (persistToDisk) {
+        return persistOutputBuffer(outputBuffer, downloadName, mime);
+      }
+      return { buffer: outputBuffer, filename: downloadName, mime };
+    }
+
+    // Step 2: Convert PPTX to desired format via LibreOffice
+    console.log(`Converting PPTX to ${targetFormat}...`);
+    const filterMap2: Record<'odp' | 'ppt', string> = { odp: 'impress8', ppt: 'MS PowerPoint 97' };
+    const variants2: string[][] = [
+      ['--headless','--nolockcheck','--nodefault','--nologo','--nofirststartwizard','--convert-to', `${targetFormat}:${filterMap2[targetFormat]}`,'--outdir', tmpDir, pptxPath],
+      ['--headless','--nolockcheck','--nodefault','--nologo','--nofirststartwizard','--convert-to', targetFormat,'--outdir', tmpDir, pptxPath]
     ];
-
-    let stdout = '';
-    let stderr = '';
-    let convertSucceeded = false;
-
-    for (const variant of tryArgsVariants) {
-      console.log('LibreOffice presentation conversion args:', variant);
+    let stdout = ''; let stderr = ''; let ok = false;
+    for (const variant of variants2) {
+      console.log('LibreOffice PPTX->presentation args:', variant);
       try {
         const res = await execLibreOffice(variant);
-        stdout = res.stdout;
-        stderr = res.stderr;
-        convertSucceeded = true;
-        break;
-      } catch (err) {
-        console.warn('LibreOffice conversion attempt failed, trying fallback...', err);
-      }
+        stdout = res.stdout; stderr = res.stderr; ok = true; break;
+      } catch (e) { console.warn('LibreOffice PPTX conversion attempt failed, trying fallback...', e); }
     }
+    if (!ok) throw new Error('LibreOffice failed converting PPTX to presentation format');
+    if (stdout.trim()) console.log('LibreOffice presentation stdout:', stdout.trim());
+    if (stderr.trim()) console.warn('LibreOffice presentation stderr:', stderr.trim());
 
-    if (!convertSucceeded) {
-      throw new Error('LibreOffice conversion failed for presentation output');
-    }
-    
-    if (stdout.trim().length > 0) {
-      console.log('LibreOffice presentation stdout:', stdout.trim());
-    }
-    if (stderr.trim().length > 0) {
-      console.warn('LibreOffice presentation stderr:', stderr.trim());
-    }
-    if (stdout.trim().length > 0) {
-      console.log('LibreOffice presentation stdout:', stdout.trim());
-    }
-    if (stderr.trim().length > 0) {
-      console.warn('LibreOffice presentation stderr:', stderr.trim());
-    }
-    
-    // Find the output file
     const files = await fs.readdir(tmpDir);
-    console.log('Files in temp dir after conversion:', files);
-    
-    const expectedExtensions = {
-      odp: '.odp',
-      ppt: '.ppt',
-      pptx: '.pptx'
-    };
-    
-    const outputFile = files.find(f => f.toLowerCase().endsWith(expectedExtensions[targetFormat]));
-    if (!outputFile) {
-      throw new Error(`LibreOffice did not produce ${targetFormat} output file. Available files: ${files.join(', ')}`);
-    }
-    
+    const expectedExt = { odp: '.odp', ppt: '.ppt', pptx: '.pptx' } as const;
+    const outputFile = files.find(f => f.toLowerCase().endsWith(expectedExt[targetFormat]));
+    if (!outputFile) throw new Error(`LibreOffice did not produce ${targetFormat} output file. Available files: ${files.join(', ')}`);
     const outputPath = path.join(tmpDir, outputFile);
     const outputBuffer = await fs.readFile(outputPath);
     
@@ -1377,6 +1355,50 @@ const createSlideHTML = (title: string, content: string): string => {
     <h1>${title}</h1>
 ${formattedContent}
 </div>`;
+};
+
+// Build slide data structure (title + bullet lines) from plain text
+const buildSlidesFromText = (textContent: string): Array<{ title: string; bullets: string[] }> => {
+  const lines = textContent.split(/\r?\n/);
+  const slides: Array<{ title: string; bullets: string[] }> = [];
+
+  let currentTitle = 'Document Presentation';
+  let currentBullets: string[] = [];
+  const flushSlide = () => {
+    if (currentBullets.length > 0) {
+      slides.push({ title: currentTitle, bullets: currentBullets });
+      currentBullets = [];
+      currentTitle = 'Continued...';
+    }
+  };
+
+  for (const raw of lines) {
+    const line = raw.trim();
+    if (!line) {
+      // Blank line indicates possible slide break when bullets are long
+      if (currentBullets.length >= 10) flushSlide();
+      continue;
+    }
+
+    const isHeading = (line.length < 60 && !/[.,;:]$/.test(line)) || /^chapter\s+/i.test(line);
+    if (isHeading && currentBullets.length > 0) {
+      flushSlide();
+      currentTitle = line;
+      continue;
+    }
+
+    currentBullets.push(line);
+    if (currentBullets.length >= 12) {
+      flushSlide();
+    }
+  }
+
+  // Final slide
+  flushSlide();
+  if (slides.length === 0) {
+    slides.push({ title: currentTitle, bullets: ['(No extractable content)'] });
+  }
+  return slides;
 };
 
 const createPresentationStructure = (textContent: string): string => {
