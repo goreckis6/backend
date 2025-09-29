@@ -656,9 +656,9 @@ const CALIBRE_CONVERSIONS: Record<string, {
   odt: { extension: 'odt', mime: 'application/vnd.oasis.opendocument.text', intermediateExtension: 'txt', postProcessLibreOfficeTarget: 'odt' },
   html: { extension: 'html', mime: 'text/html; charset=utf-8', intermediateExtension: 'txt', postProcessLibreOfficeTarget: 'html' },
   txt: { extension: 'txt', mime: 'text/plain; charset=utf-8' },
-  odp: { extension: 'odp', mime: 'application/vnd.oasis.opendocument.presentation', intermediateExtension: 'txt', postProcessLibreOfficeTarget: 'odp' },
-  ppt: { extension: 'ppt', mime: 'application/vnd.ms-powerpoint', intermediateExtension: 'txt', postProcessLibreOfficeTarget: 'ppt' },
-  pptx: { extension: 'pptx', mime: 'application/vnd.openxmlformats-officedocument.presentationml.presentation', intermediateExtension: 'txt', postProcessLibreOfficeTarget: 'pptx' },
+  odp: { extension: 'odp', mime: 'application/vnd.oasis.opendocument.presentation', intermediateExtension: 'html', postProcessLibreOfficeTarget: 'odp' },
+  ppt: { extension: 'ppt', mime: 'application/vnd.ms-powerpoint', intermediateExtension: 'html', postProcessLibreOfficeTarget: 'ppt' },
+  pptx: { extension: 'pptx', mime: 'application/vnd.openxmlformats-officedocument.presentationml.presentation', intermediateExtension: 'html', postProcessLibreOfficeTarget: 'pptx' },
   xlsx: { extension: 'xlsx', mime: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', intermediateExtension: 'txt', postProcessExcelTarget: 'xlsx' },
   csv: { extension: 'csv', mime: 'text/csv; charset=utf-8', intermediateExtension: 'txt', postProcessExcelTarget: 'csv' },
   md: { extension: 'md', mime: 'text/markdown; charset=utf-8', intermediateExtension: 'txt', postProcessMarkdown: true }
@@ -956,16 +956,28 @@ const convertWithCalibre = async (
 
     if (conversion.postProcessLibreOfficeTarget) {
       console.log(`Post-processing with LibreOffice: ${intermediateExtension} -> ${conversion.postProcessLibreOfficeTarget}, persistToDisk: ${persistToDisk}`);
-      const result = await convertBufferWithLibreOffice(
-        outputBuffer,
-        `.${intermediateExtension}`,
-        originalBase,
-        conversion.postProcessLibreOfficeTarget,
-        options,
-        persistToDisk
-      );
-      console.log(`LibreOffice post-process result: filename=${result.filename}, hasStoredFilename=${!!result.storedFilename}, bufferSize=${result.buffer.length}`);
-      return result; // convertBufferWithLibreOffice handles persistToDisk internally
+      console.log(`Input buffer size: ${outputBuffer.length} bytes`);
+      try {
+        const result = await convertBufferWithLibreOffice(
+          outputBuffer,
+          `.${intermediateExtension}`,
+          originalBase,
+          conversion.postProcessLibreOfficeTarget,
+          options,
+          persistToDisk
+        );
+        console.log(`LibreOffice post-process result: filename=${result.filename}, hasStoredFilename=${!!result.storedFilename}, bufferSize=${result.buffer.length}`);
+        return result; // convertBufferWithLibreOffice handles persistToDisk internally
+      } catch (libreOfficeError) {
+        console.error('LibreOffice post-processing failed:', libreOfficeError);
+        console.error('Failed conversion details:', {
+          inputFormat: intermediateExtension,
+          outputFormat: conversion.postProcessLibreOfficeTarget,
+          inputBufferSize: outputBuffer.length,
+          originalFile: file.originalname
+        });
+        throw new Error(`LibreOffice post-processing failed: ${libreOfficeError instanceof Error ? libreOfficeError.message : String(libreOfficeError)}`);
+      }
     }
 
     if (conversion.postProcessExcelTarget) {
