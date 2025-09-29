@@ -656,9 +656,9 @@ const CALIBRE_CONVERSIONS: Record<string, {
   odt: { extension: 'odt', mime: 'application/vnd.oasis.opendocument.text', intermediateExtension: 'txt', postProcessLibreOfficeTarget: 'odt' },
   html: { extension: 'html', mime: 'text/html; charset=utf-8', intermediateExtension: 'txt', postProcessLibreOfficeTarget: 'html' },
   txt: { extension: 'txt', mime: 'text/plain; charset=utf-8' },
-  odp: { extension: 'odp', mime: 'application/vnd.oasis.opendocument.presentation', intermediateExtension: 'html', postProcessLibreOfficeTarget: 'odp' },
-  ppt: { extension: 'ppt', mime: 'application/vnd.ms-powerpoint', intermediateExtension: 'html', postProcessLibreOfficeTarget: 'ppt' },
-  pptx: { extension: 'pptx', mime: 'application/vnd.openxmlformats-officedocument.presentationml.presentation', intermediateExtension: 'html', postProcessLibreOfficeTarget: 'pptx' },
+  odp: { extension: 'odp', mime: 'application/vnd.oasis.opendocument.presentation', intermediateExtension: 'txt', postProcessLibreOfficeTarget: 'odp' },
+  ppt: { extension: 'ppt', mime: 'application/vnd.ms-powerpoint', intermediateExtension: 'txt', postProcessLibreOfficeTarget: 'ppt' },
+  pptx: { extension: 'pptx', mime: 'application/vnd.openxmlformats-officedocument.presentationml.presentation', intermediateExtension: 'txt', postProcessLibreOfficeTarget: 'pptx' },
   xlsx: { extension: 'xlsx', mime: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', intermediateExtension: 'txt', postProcessExcelTarget: 'xlsx' },
   csv: { extension: 'csv', mime: 'text/csv; charset=utf-8', intermediateExtension: 'txt', postProcessExcelTarget: 'csv' },
   md: { extension: 'md', mime: 'text/markdown; charset=utf-8', intermediateExtension: 'txt', postProcessMarkdown: true }
@@ -1048,7 +1048,17 @@ const convertBufferWithLibreOffice = async (
   const inputPath = path.join(tmpDir, inputFilename);
 
   try {
-    await fs.writeFile(inputPath, buffer);
+    // Special preprocessing for presentation formats
+    let processedBuffer = buffer;
+    if (['odp', 'ppt', 'pptx'].includes(targetFormat) && normalizedExtension === '.txt') {
+      console.log('Preprocessing text for presentation format:', targetFormat);
+      const textContent = buffer.toString('utf-8');
+      const presentationText = createPresentationStructure(textContent);
+      processedBuffer = Buffer.from(presentationText, 'utf-8');
+      console.log('Preprocessed text length:', presentationText.length);
+    }
+    
+    await fs.writeFile(inputPath, processedBuffer);
 
     const args = [
       '--headless',
@@ -1122,6 +1132,75 @@ const postProcessToSpreadsheet = async (
   }
 
   return { buffer: buffer as Buffer, filename: downloadName, mime };
+};
+
+const createPresentationStructure = (textContent: string): string => {
+  const lines = textContent.split('\n');
+  const structuredLines: string[] = [];
+  
+  // Add a title slide
+  structuredLines.push('TITLE SLIDE');
+  structuredLines.push('=============');
+  structuredLines.push('Document Presentation');
+  structuredLines.push('');
+  structuredLines.push('');
+  
+  let slideCount = 1;
+  let currentSlideLines: string[] = [];
+  
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i].trim();
+    
+    if (!line) {
+      if (currentSlideLines.length > 0) {
+        currentSlideLines.push('');
+      }
+      continue;
+    }
+    
+    // Start new slide for chapters or major sections
+    if (line.startsWith('Chapter ') || line.startsWith('CHAPTER ') || 
+        (line.length < 50 && !line.endsWith('.') && !line.endsWith(',') && !line.endsWith(';'))) {
+      
+      // Finish current slide if it has content
+      if (currentSlideLines.length > 0) {
+        structuredLines.push(`SLIDE ${slideCount}`);
+        structuredLines.push('================');
+        structuredLines.push(...currentSlideLines);
+        structuredLines.push('');
+        structuredLines.push('');
+        slideCount++;
+        currentSlideLines = [];
+      }
+      
+      // Start new slide with this heading
+      currentSlideLines.push(line);
+      currentSlideLines.push('');
+    } else {
+      // Add to current slide
+      currentSlideLines.push(line);
+      
+      // Start new slide after every 5 lines of content to avoid overcrowded slides
+      if (currentSlideLines.filter(l => l.trim().length > 0).length >= 6) {
+        structuredLines.push(`SLIDE ${slideCount}`);
+        structuredLines.push('================');
+        structuredLines.push(...currentSlideLines);
+        structuredLines.push('');
+        structuredLines.push('');
+        slideCount++;
+        currentSlideLines = [];
+      }
+    }
+  }
+  
+  // Add final slide if there's remaining content
+  if (currentSlideLines.length > 0) {
+    structuredLines.push(`SLIDE ${slideCount}`);
+    structuredLines.push('================');
+    structuredLines.push(...currentSlideLines);
+  }
+  
+  return structuredLines.join('\n');
 };
 
 const postProcessToMarkdown = async (
