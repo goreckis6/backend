@@ -656,9 +656,9 @@ const CALIBRE_CONVERSIONS: Record<string, {
   odt: { extension: 'odt', mime: 'application/vnd.oasis.opendocument.text', intermediateExtension: 'txt', postProcessLibreOfficeTarget: 'odt' },
   html: { extension: 'html', mime: 'text/html; charset=utf-8', intermediateExtension: 'txt', postProcessLibreOfficeTarget: 'html' },
   txt: { extension: 'txt', mime: 'text/plain; charset=utf-8' },
-  odp: { extension: 'odp', mime: 'application/vnd.oasis.opendocument.presentation', intermediateExtension: 'txt', postProcessLibreOfficeTarget: 'odp' },
-  ppt: { extension: 'ppt', mime: 'application/vnd.ms-powerpoint', intermediateExtension: 'txt', postProcessLibreOfficeTarget: 'ppt' },
-  pptx: { extension: 'pptx', mime: 'application/vnd.openxmlformats-officedocument.presentationml.presentation', intermediateExtension: 'txt', postProcessLibreOfficeTarget: 'pptx' },
+  odp: { extension: 'odp', mime: 'application/vnd.oasis.opendocument.presentation', intermediateExtension: 'txt', postProcessPresentationTarget: 'odp' },
+  ppt: { extension: 'ppt', mime: 'application/vnd.ms-powerpoint', intermediateExtension: 'txt', postProcessPresentationTarget: 'ppt' },
+  pptx: { extension: 'pptx', mime: 'application/vnd.openxmlformats-officedocument.presentationml.presentation', intermediateExtension: 'txt', postProcessPresentationTarget: 'pptx' },
   xlsx: { extension: 'xlsx', mime: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', intermediateExtension: 'txt', postProcessExcelTarget: 'xlsx' },
   csv: { extension: 'csv', mime: 'text/csv; charset=utf-8', intermediateExtension: 'txt', postProcessExcelTarget: 'csv' },
   md: { extension: 'md', mime: 'text/markdown; charset=utf-8', intermediateExtension: 'txt', postProcessMarkdown: true }
@@ -954,6 +954,31 @@ const convertWithCalibre = async (
 
     const outputBuffer = await fs.readFile(outputPath);
 
+    if (conversion.postProcessPresentationTarget) {
+      console.log(`Post-processing presentation: ${intermediateExtension} -> ${conversion.postProcessPresentationTarget}, persistToDisk: ${persistToDisk}`);
+      console.log(`Input buffer size: ${outputBuffer.length} bytes`);
+      try {
+        const result = await convertTxtToPresentation(
+          outputBuffer,
+          originalBase,
+          conversion.postProcessPresentationTarget,
+          options,
+          persistToDisk
+        );
+        console.log(`Presentation post-process result: filename=${result.filename}, hasStoredFilename=${!!result.storedFilename}, bufferSize=${result.buffer.length}`);
+        return result;
+      } catch (presentationError) {
+        console.error('Presentation post-processing failed:', presentationError);
+        console.error('Failed conversion details:', {
+          inputFormat: intermediateExtension,
+          outputFormat: conversion.postProcessPresentationTarget,
+          inputBufferSize: outputBuffer.length,
+          originalFile: file.originalname
+        });
+        throw new Error(`Presentation post-processing failed: ${presentationError instanceof Error ? presentationError.message : String(presentationError)}`);
+      }
+    }
+
     if (conversion.postProcessLibreOfficeTarget) {
       console.log(`Post-processing with LibreOffice: ${intermediateExtension} -> ${conversion.postProcessLibreOfficeTarget}, persistToDisk: ${persistToDisk}`);
       console.log(`Input buffer size: ${outputBuffer.length} bytes`);
@@ -1132,6 +1157,180 @@ const postProcessToSpreadsheet = async (
   }
 
   return { buffer: buffer as Buffer, filename: downloadName, mime };
+};
+
+const convertTxtToPresentation = async (
+  textBuffer: Buffer,
+  originalBase: string,
+  targetFormat: 'odp' | 'ppt' | 'pptx',
+  options: Record<string, string | undefined> = {},
+  persistToDisk = false
+): Promise<ConversionResult> => {
+  const sanitizedBase = sanitizeFilename(originalBase);
+  const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'morphy-presentation-'));
+  
+  try {
+    // Step 1: Create structured HTML from text
+    const textContent = textBuffer.toString('utf-8');
+    const htmlContent = createPresentationHTML(textContent);
+    const htmlBuffer = Buffer.from(htmlContent, 'utf-8');
+    
+    // Step 2: Convert HTML to presentation format using LibreOffice
+    const htmlPath = path.join(tmpDir, `${sanitizedBase}_temp.html`);
+    await fs.writeFile(htmlPath, htmlBuffer);
+    
+    console.log(`Converting HTML to ${targetFormat}...`);
+    
+    const conversionMap = {
+      odp: 'impress8',
+      ppt: 'MS PowerPoint 97',
+      pptx: 'Impress MS PowerPoint 2007 XML'
+    };
+    
+    const args = [
+      '--headless',
+      '--nolockcheck',
+      '--nodefault',
+      '--nologo',
+      '--nofirststartwizard',
+      '--convert-to', conversionMap[targetFormat],
+      '--outdir', tmpDir,
+      htmlPath
+    ];
+    
+    console.log('LibreOffice presentation conversion args:', args);
+    
+    const { stdout, stderr } = await execLibreOffice(args);
+    if (stdout.trim().length > 0) {
+      console.log('LibreOffice presentation stdout:', stdout.trim());
+    }
+    if (stderr.trim().length > 0) {
+      console.warn('LibreOffice presentation stderr:', stderr.trim());
+    }
+    
+    // Find the output file
+    const files = await fs.readdir(tmpDir);
+    console.log('Files in temp dir after conversion:', files);
+    
+    const expectedExtensions = {
+      odp: '.odp',
+      ppt: '.ppt',
+      pptx: '.pptx'
+    };
+    
+    const outputFile = files.find(f => f.toLowerCase().endsWith(expectedExtensions[targetFormat]));
+    if (!outputFile) {
+      throw new Error(`LibreOffice did not produce ${targetFormat} output file. Available files: ${files.join(', ')}`);
+    }
+    
+    const outputPath = path.join(tmpDir, outputFile);
+    const outputBuffer = await fs.readFile(outputPath);
+    
+    console.log(`Presentation conversion successful, output size: ${outputBuffer.length} bytes`);
+    
+    const mimeTypes = {
+      odp: 'application/vnd.oasis.opendocument.presentation',
+      ppt: 'application/vnd.ms-powerpoint',
+      pptx: 'application/vnd.openxmlformats-officedocument.presentationml.presentation'
+    };
+    
+    const downloadName = `${sanitizedBase}.${targetFormat}`;
+    const mime = mimeTypes[targetFormat];
+    
+    if (persistToDisk) {
+      return persistOutputBuffer(outputBuffer, downloadName, mime);
+    }
+    
+    return {
+      buffer: outputBuffer,
+      filename: downloadName,
+      mime
+    };
+    
+  } finally {
+    await fs.rm(tmpDir, { recursive: true, force: true }).catch(() => undefined);
+  }
+};
+
+const createPresentationHTML = (textContent: string): string => {
+  const lines = textContent.split('\n');
+  const slides: string[] = [];
+  
+  let currentSlide: string[] = [];
+  let slideTitle = 'Document Presentation';
+  
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i].trim();
+    
+    if (!line) {
+      if (currentSlide.length > 0) {
+        currentSlide.push('');
+      }
+      continue;
+    }
+    
+    // Check if this looks like a title/heading (short line, doesn't end with punctuation)
+    const isTitle = line.length < 50 && !line.endsWith('.') && !line.endsWith(',') && !line.endsWith(';');
+    const isChapter = line.startsWith('Chapter ') || line.startsWith('CHAPTER ');
+    
+    if ((isTitle || isChapter) && currentSlide.length > 0) {
+      // Save current slide and start new one
+      if (currentSlide.length > 0) {
+        slides.push(createSlideHTML(slideTitle, currentSlide.join('\n')));
+      }
+      
+      slideTitle = line;
+      currentSlide = [];
+    } else if (isTitle || isChapter) {
+      // First slide title
+      slideTitle = line;
+    } else {
+      // Add content to current slide
+      currentSlide.push(line);
+      
+      // Start new slide after reasonable amount of content
+      if (currentSlide.filter(l => l.trim()).length >= 8) {
+        slides.push(createSlideHTML(slideTitle, currentSlide.join('\n')));
+        slideTitle = 'Continued...';
+        currentSlide = [];
+      }
+    }
+  }
+  
+  // Add final slide if there's content
+  if (currentSlide.length > 0) {
+    slides.push(createSlideHTML(slideTitle, currentSlide.join('\n')));
+  }
+  
+  // Create complete HTML document
+  return `<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>Presentation</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 0; padding: 20px; }
+        .slide { page-break-after: always; margin-bottom: 50px; padding: 20px; border: 1px solid #ccc; }
+        .slide h1 { color: #333; font-size: 28px; margin-bottom: 20px; text-align: center; }
+        .slide h2 { color: #555; font-size: 24px; margin-bottom: 15px; }
+        .slide p { font-size: 16px; line-height: 1.5; margin-bottom: 10px; }
+        .slide:last-child { page-break-after: auto; }
+    </style>
+</head>
+<body>
+${slides.join('\n')}
+</body>
+</html>`;
+};
+
+const createSlideHTML = (title: string, content: string): string => {
+  const paragraphs = content.split('\n\n').filter(p => p.trim());
+  const formattedContent = paragraphs.map(p => `    <p>${p.replace(/\n/g, '<br>')}</p>`).join('\n');
+  
+  return `<div class="slide">
+    <h1>${title}</h1>
+${formattedContent}
+</div>`;
 };
 
 const createPresentationStructure = (textContent: string): string => {
