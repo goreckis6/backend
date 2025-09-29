@@ -1,7 +1,6 @@
-# Use Node.js 18 with Debian base for better package support
 FROM node:20-bookworm
 
-# Install system dependencies for image processing
+# Install system dependencies for file conversion
 RUN apt-get update && apt-get install -y --no-install-recommends \
     libvips-dev \
     libraw-bin \
@@ -18,45 +17,16 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 WORKDIR /app
 
 # Copy package files
-COPY package.json ./
-COPY tsconfig.json ./
+COPY package*.json ./
 
-# Install all dependencies (including dev dependencies for build)
-RUN npm install
+# Install production dependencies only
+RUN npm ci --only=production
 
-# Copy source code
-COPY src/ ./src/
-
-# Build the application
-RUN npm run build
-
-# Remove dev dependencies to reduce image size
-RUN npm prune --production
-
-# Create non-root user for security with proper home directory
-RUN groupadd -r appuser && useradd -r -g appuser -d /home/appuser -m appuser
-RUN chown -R appuser:appuser /app
-
-# Create necessary directories for LibreOffice and set permissions
-RUN mkdir -p /home/appuser/.cache/dconf \
-    && mkdir -p /home/appuser/.config/libreoffice \
-    && mkdir -p /tmp/libreoffice \
-    && chown -R appuser:appuser /home/appuser \
-    && chmod -R 755 /home/appuser
-
-# Set environment variables for LibreOffice
-ENV HOME=/home/appuser
-ENV TMPDIR=/tmp
-ENV DCONF_PROFILE=/dev/null
-
-USER appuser
+# Copy application code
+COPY server.js ./
 
 # Expose port
-EXPOSE 3000
+EXPOSE 10000
 
-# Health check
-HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
-  CMD curl -f http://localhost:3000/health || exit 1
-
-# Start the application with garbage collection enabled
-CMD ["node", "--expose-gc", "dist/server.js"]
+# Start the application
+CMD ["node", "server.js"]
