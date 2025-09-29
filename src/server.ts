@@ -819,12 +819,92 @@ const execCalibre = async (args: string[]): Promise<CommandResult> => {
   );
 };
 
+const convertCsvDirectlyToMarkdown = async (
+  file: Express.Multer.File,
+  options: Record<string, string | undefined> = {},
+  persistToDisk = false
+): Promise<ConversionResult> => {
+  console.log('=== DIRECT CSV TO MARKDOWN CONVERSION ===');
+  
+  const originalBase = path.basename(file.originalname, path.extname(file.originalname));
+  const sanitizedBase = sanitizeFilename(originalBase);
+  
+  try {
+    // Parse CSV content directly
+    const csvContent = file.buffer.toString('utf-8');
+    const parsed = Papa.parse(csvContent, {
+      header: false,
+      skipEmptyLines: true,
+      delimiter: ','
+    });
+    
+    console.log('CSV parsed successfully:', {
+      rows: parsed.data.length,
+      errors: parsed.errors.length
+    });
+    
+    if (parsed.errors.length > 0) {
+      console.warn('CSV parsing errors:', parsed.errors);
+    }
+    
+    // Convert to markdown table
+    const rows = parsed.data as string[][];
+    if (rows.length === 0) {
+      throw new Error('CSV file appears to be empty');
+    }
+    
+    const markdownLines: string[] = [];
+    
+    // Add table header
+    const headers = rows[0];
+    markdownLines.push('| ' + headers.join(' | ') + ' |');
+    markdownLines.push('|' + headers.map(() => '---').join('|') + '|');
+    
+    // Add data rows
+    for (let i = 1; i < rows.length; i++) {
+      const row = rows[i];
+      markdownLines.push('| ' + row.join(' | ') + ' |');
+    }
+    
+    const markdownContent = markdownLines.join('\n');
+    const buffer = Buffer.from(markdownContent, 'utf-8');
+    const downloadName = `${sanitizedBase}.md`;
+    const mime = 'text/markdown; charset=utf-8';
+    
+    console.log('Markdown conversion successful:', {
+      contentLength: markdownContent.length,
+      rows: rows.length,
+      columns: headers.length
+    });
+    
+    if (persistToDisk) {
+      return persistOutputBuffer(buffer, downloadName, mime);
+    }
+    
+    return {
+      buffer,
+      filename: downloadName,
+      mime
+    };
+    
+  } catch (error) {
+    console.error('Direct CSV to Markdown conversion failed:', error);
+    throw new Error(`Failed to convert CSV to Markdown: ${error instanceof Error ? error.message : String(error)}`);
+  }
+};
+
 const convertCsvWithLibreOffice = async (
   file: Express.Multer.File,
   targetFormat: string,
   options: Record<string, string | undefined> = {},
   persistToDisk = false
 ): Promise<ConversionResult> => {
+  // Special handling for MD conversion - bypass LibreOffice entirely
+  if (targetFormat === 'md') {
+    console.log('Using direct CSV to Markdown conversion (bypassing LibreOffice)');
+    return await convertCsvDirectlyToMarkdown(file, options, persistToDisk);
+  }
+
   const conversion = LIBREOFFICE_CONVERSIONS[targetFormat];
   if (!conversion) {
     throw new Error('Unsupported LibreOffice target format');
@@ -889,6 +969,14 @@ const convertCsvWithLibreOffice = async (
 
         const outputPath = await findOutputFile();
         if (!outputPath) {
+          // Debug: List all files in temp directory
+          try {
+            const files = await fs.readdir(tmpDir);
+            console.log('Files in temp directory after LibreOffice:', files);
+            console.log('Looking for files with extension:', conversion.extension);
+          } catch (listError) {
+            console.error('Failed to list temp directory:', listError);
+          }
           throw new Error(`LibreOffice did not produce an output file for args: ${args.join(' ')}`);
         }
 
