@@ -69,12 +69,7 @@ const convertEpsFile = async (
   const inputPath = path.join(tmpDir, inputFilename);
 
   try {
-    if (copyAsDocx) {
-      const docxFile = await convertDocxToDocxBuffer(file);
-      await fs.writeFile(inputPath, docxFile);
-    } else {
-      await fs.writeFile(inputPath, file.buffer);
-    }
+    await fs.writeFile(inputPath, file.buffer);
 
     const quality = options.quality ?? 'high';
     const width = options.width;
