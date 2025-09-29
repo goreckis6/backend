@@ -509,6 +509,11 @@ const LIBREOFFICE_CONVERSIONS: Record<string, {
     convertTo: 'csv:"Text - txt - csv (StarCalc)"',
     extension: 'csv',
     mime: 'text/csv; charset=utf-8'
+  },
+  md: {
+    convertTo: 'txt:Text (encoded):UTF8',
+    extension: 'md',
+    mime: 'text/markdown; charset=utf-8'
   }
 };
 
@@ -842,6 +847,13 @@ const convertCsvWithLibreOffice = async (
 
         const outputBuffer = await fs.readFile(outputPath);
         const downloadName = `${sanitizeFilename(originalBase)}.${conversion.extension}`;
+
+        // Post-process for Markdown format
+        if (targetFormat === 'md') {
+          console.log('Post-processing TXT to Markdown format...');
+          const result = await convertTxtToMarkdown(outputBuffer, originalBase, options, persistToDisk);
+          return result;
+        }
 
         if (persistToDisk) {
           return persistOutputBuffer(outputBuffer, downloadName, conversion.mime);
@@ -1470,41 +1482,66 @@ const createPresentationStructure = (textContent: string): string => {
   return structuredLines.join('\n');
 };
 
-const postProcessToMarkdown = async (
+const convertTxtToMarkdown = async (
   textBuffer: Buffer,
   originalBase: string,
+  options: Record<string, string | undefined> = {},
   persistToDisk = false
 ): Promise<ConversionResult> => {
   const text = textBuffer.toString('utf-8');
   const sanitizedBase = sanitizeFilename(originalBase);
   
-  // Convert plain text to basic markdown format
+  // Convert CSV data to markdown table format
   const lines = text.split('\n');
   const markdownLines: string[] = [];
   
-  for (let i = 0; i < lines.length; i++) {
-    const line = lines[i].trim();
+  // Check if this looks like CSV data (comma-separated values)
+  const isCsvData = lines.some(line => line.includes(',') && line.split(',').length > 1);
+  
+  if (isCsvData) {
+    // Convert CSV to markdown table
+    const rows = lines.filter(line => line.trim()).map(line => 
+      line.split(',').map(cell => cell.trim().replace(/"/g, ''))
+    );
     
-    if (!line) {
-      markdownLines.push('');
-      continue;
+    if (rows.length > 0) {
+      // Add table header
+      const headers = rows[0];
+      markdownLines.push('| ' + headers.join(' | ') + ' |');
+      markdownLines.push('|' + headers.map(() => '---').join('|') + '|');
+      
+      // Add data rows
+      for (let i = 1; i < rows.length; i++) {
+        const row = rows[i];
+        markdownLines.push('| ' + row.join(' | ') + ' |');
+      }
     }
-    
-    // Simple heuristics for markdown conversion
-    if (line.length < 50 && !line.endsWith('.') && !line.endsWith(',') && !line.endsWith(';')) {
-      // Likely a heading
-      markdownLines.push(`## ${line}`);
-    } else if (line.startsWith('Chapter ') || line.startsWith('CHAPTER ')) {
-      // Chapter heading
-      markdownLines.push(`# ${line}`);
-    } else {
-      // Regular paragraph
-      markdownLines.push(line);
-    }
-    
-    // Add extra line break after paragraphs
-    if (i < lines.length - 1 && lines[i + 1].trim() === '') {
-      markdownLines.push('');
+  } else {
+    // Convert plain text to basic markdown format
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i].trim();
+      
+      if (!line) {
+        markdownLines.push('');
+        continue;
+      }
+      
+      // Simple heuristics for markdown conversion
+      if (line.length < 50 && !line.endsWith('.') && !line.endsWith(',') && !line.endsWith(';')) {
+        // Likely a heading
+        markdownLines.push(`## ${line}`);
+      } else if (line.startsWith('Chapter ') || line.startsWith('CHAPTER ')) {
+        // Chapter heading
+        markdownLines.push(`# ${line}`);
+      } else {
+        // Regular paragraph
+        markdownLines.push(line);
+      }
+      
+      // Add extra line break after paragraphs
+      if (i < lines.length - 1 && lines[i + 1].trim() === '') {
+        markdownLines.push('');
+      }
     }
   }
   
