@@ -230,6 +230,22 @@ const convertDngFile = async (
       exists: stats.isFile()
     });
 
+    // Check if file is empty or too small
+    if (stats.size < 1000) {
+      throw new Error('DNG file appears to be empty or corrupted (too small)');
+    }
+
+    // Check if file has DNG signature
+    const fileHeader = file.buffer.slice(0, 4);
+    const isDng = fileHeader[0] === 0x49 && fileHeader[1] === 0x49 && fileHeader[2] === 0x2A && fileHeader[3] === 0x00; // TIFF/DNG signature
+    const isDngAlt = fileHeader[0] === 0x4D && fileHeader[1] === 0x4D && fileHeader[2] === 0x00 && fileHeader[3] === 0x2A; // TIFF/DNG signature (big-endian)
+    
+    if (!isDng && !isDngAlt) {
+      console.warn('File does not appear to have DNG/TIFF signature, but proceeding anyway...');
+    } else {
+      console.log('DNG file signature verified');
+    }
+
     const quality = options.quality ?? 'high';
     const iconSize = options.iconSize ?? '16';
     const qualityValue = quality === 'high' ? 95 : quality === 'medium' ? 80 : 60;
@@ -242,16 +258,36 @@ const convertDngFile = async (
 
     // Step 1: Use dcraw to convert DNG to TIFF
     console.log('=== DCRAW CONVERSION START ===');
-    console.log('dcraw command (cwd=tmpDir): dcraw -T -6', inputPath);
     
-    try {
-      const dcrawResult = await execFileAsync('dcraw', ['-T', '-6', inputPath], { cwd: tmpDir });
-      console.log('dcraw conversion successful!');
-      console.log('dcraw stdout:', dcrawResult.stdout);
-      console.log('dcraw stderr:', dcrawResult.stderr);
-    } catch (dcrawError) {
-      console.error('dcraw failed:', dcrawError);
-      throw new Error(`dcraw conversion failed: ${dcrawError instanceof Error ? dcrawError.message : String(dcrawError)}`);
+    const dcrawCommands = [
+      { args: ['-T', '-6', '-O', tiffPath, inputPath], desc: 'dcraw -T -6 -O (with output file)' },
+      { args: ['-T', '-6', inputPath], desc: 'dcraw -T -6 (without output file)', cwd: tmpDir },
+      { args: ['-T', '-4', '-O', tiffPath, inputPath], desc: 'dcraw -T -4 -O (16-bit output)' },
+      { args: ['-T', '-8', '-O', tiffPath, inputPath], desc: 'dcraw -T -8 -O (8-bit output)' },
+      { args: ['-T', '-6', '-w', '-O', tiffPath, inputPath], desc: 'dcraw -T -6 -w -O (with white balance)' }
+    ];
+    
+    let dcrawSuccess = false;
+    let lastError: unknown;
+    
+    for (const cmd of dcrawCommands) {
+      try {
+        console.log(`Trying: ${cmd.desc}`);
+        const dcrawResult = await execFileAsync('dcraw', cmd.args, cmd.cwd ? { cwd: cmd.cwd } : {});
+        console.log('dcraw conversion successful!');
+        console.log('dcraw stdout:', dcrawResult.stdout);
+        console.log('dcraw stderr:', dcrawResult.stderr);
+        dcrawSuccess = true;
+        break;
+      } catch (dcrawError) {
+        console.error(`dcraw command failed (${cmd.desc}):`, dcrawError);
+        lastError = dcrawError;
+        continue;
+      }
+    }
+    
+    if (!dcrawSuccess) {
+      throw new Error(`dcraw conversion failed with all command variants: ${lastError instanceof Error ? lastError.message : String(lastError)}`);
     }
 
     // Verify TIFF was created
@@ -511,7 +547,7 @@ const LIBREOFFICE_CONVERSIONS: Record<string, {
     mime: 'text/csv; charset=utf-8'
   },
   md: {
-    convertTo: 'txt:Text (encoded):UTF8',
+    convertTo: 'txt',
     extension: 'md',
     mime: 'text/markdown; charset=utf-8'
   }
@@ -813,15 +849,17 @@ const convertCsvWithLibreOffice = async (
     return fallbackMatch ? path.join(tmpDir, fallbackMatch) : null;
   };
 
-  // Prioritize comma delimiter for MD conversion, otherwise use all variants
+  // Prioritize simple commands for MD conversion, otherwise use all variants
   const commandVariants: string[][] = targetFormat === 'md' ? [
+    ['--headless', '--convert-to', conversion.convertTo, '--outdir', tmpDir, inputPath],
+    ['--headless', '--nolockcheck', '--convert-to', conversion.convertTo, '--outdir', tmpDir, inputPath],
+    ['--headless', '--nolockcheck', '--nodefault', '--convert-to', conversion.convertTo, '--outdir', tmpDir, inputPath],
+    ['--headless', '--nolockcheck', '--nodefault', '--nologo', '--convert-to', conversion.convertTo, '--outdir', tmpDir, inputPath],
+    ['--headless', '--nolockcheck', '--nodefault', '--nologo', '--nofirststartwizard', '--convert-to', conversion.convertTo, '--outdir', tmpDir, inputPath],
     ['--headless', '--nolockcheck', '--nodefault', '--nologo', '--nofirststartwizard', '--convert-to', conversion.convertTo, '--outdir', tmpDir, inputPath, '--calc'],
     ['--headless', '--nolockcheck', '--nodefault', '--nologo', '--nofirststartwizard', '--convert-to', conversion.convertTo, '--outdir', tmpDir, inputPath, '--writer'],
-    ['--headless', '--nolockcheck', '--nodefault', '--nologo', '--nofirststartwizard', '--convert-to', conversion.convertTo, '--outdir', tmpDir, inputPath],
     ['--headless', '--nolockcheck', '--nodefault', '--nologo', '--nofirststartwizard', '--infilter=CSV:44,34,UTF8', '--convert-to', conversion.convertTo, '--outdir', tmpDir, inputPath, '--calc'],
-    ['--headless', '--nolockcheck', '--nodefault', '--nologo', '--nofirststartwizard', '--infilter=CSV:44,34,UTF8', '--convert-to', conversion.convertTo, '--outdir', tmpDir, inputPath, '--writer'],
-    ['--headless', '--nolockcheck', '--nodefault', '--nologo', '--nofirststartwizard', '--infilter=CSV:59,34,UTF8', '--convert-to', conversion.convertTo, '--outdir', tmpDir, inputPath, '--calc'],
-    ['--headless', '--nolockcheck', '--nodefault', '--nologo', '--nofirststartwizard', '--infilter=CSV:9,34,UTF8', '--convert-to', conversion.convertTo, '--outdir', tmpDir, inputPath, '--calc']
+    ['--headless', '--nolockcheck', '--nodefault', '--nologo', '--nofirststartwizard', '--infilter=CSV:44,34,UTF8', '--convert-to', conversion.convertTo, '--outdir', tmpDir, inputPath, '--writer']
   ] : [
     ['--headless', '--nolockcheck', '--nodefault', '--nologo', '--nofirststartwizard', '--convert-to', conversion.convertTo, '--outdir', tmpDir, inputPath],
     ['--headless', '--nolockcheck', '--nodefault', '--nologo', '--nofirststartwizard', '--convert-to', conversion.convertTo, '--outdir', tmpDir, inputPath, '--calc'],
