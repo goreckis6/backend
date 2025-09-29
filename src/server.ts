@@ -550,6 +550,11 @@ const LIBREOFFICE_CONVERSIONS: Record<string, {
     convertTo: 'txt',
     extension: 'md',
     mime: 'text/markdown; charset=utf-8'
+  },
+  'doc-to-csv': {
+    convertTo: 'csv:"Text - txt - csv (StarCalc)"',
+    extension: 'csv',
+    mime: 'text/csv; charset=utf-8'
   }
 };
 
@@ -587,6 +592,21 @@ const isDngFile = (file: Express.Multer.File) => {
     extension: ext,
     isDNG: result
   });
+  return result;
+};
+
+const isDocFile = (file: Express.Multer.File) => {
+  const ext = path.extname(file.originalname).replace('.', '').toLowerCase();
+  const mimetype = file.mimetype?.toLowerCase() ?? '';
+  const result = ext === 'doc' || mimetype.includes('msword') || mimetype.includes('application/msword');
+  
+  console.log('DOC file detection:', {
+    filename: file.originalname,
+    extension: ext,
+    mimetype: mimetype,
+    isDOC: result
+  });
+  
   return result;
 };
 
@@ -890,6 +910,88 @@ const convertCsvDirectlyToMarkdown = async (
   } catch (error) {
     console.error('Direct CSV to Markdown conversion failed:', error);
     throw new Error(`Failed to convert CSV to Markdown: ${error instanceof Error ? error.message : String(error)}`);
+  }
+};
+
+const convertDocWithLibreOffice = async (
+  file: Express.Multer.File,
+  targetFormat: string,
+  options: Record<string, string | undefined> = {},
+  persistToDisk = false
+): Promise<ConversionResult> => {
+  console.log('=== DOC TO CSV CONVERSION START ===');
+  
+  const conversion = LIBREOFFICE_CONVERSIONS[targetFormat];
+  if (!conversion) {
+    throw new Error('Unsupported LibreOffice target format');
+  }
+
+  const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'morphy-doc-'));
+  const originalBase = path.basename(file.originalname, path.extname(file.originalname));
+  const sanitizedBase = sanitizeFilename(originalBase);
+  const safeBase = `${sanitizedBase}_${randomUUID()}`;
+  const inputFilename = `${safeBase}.doc`;
+  const inputPath = path.join(tmpDir, inputFilename);
+
+  try {
+    await fs.writeFile(inputPath, file.buffer);
+
+    const args = [
+      '--headless',
+      '--nolockcheck',
+      '--nodefault',
+      '--nologo',
+      '--nofirststartwizard',
+      '--convert-to', conversion.convertTo,
+      '--outdir', tmpDir,
+      inputPath
+    ];
+
+    console.log('LibreOffice DOC to CSV args:', args);
+
+    const { stdout, stderr } = await execLibreOffice(args);
+    
+    if (stdout.trim().length > 0) {
+      console.log('LibreOffice stdout:', stdout.trim());
+    }
+    if (stderr.trim().length > 0) {
+      console.warn('LibreOffice stderr:', stderr.trim());
+    }
+
+    const files = await fs.readdir(tmpDir);
+    const targetExt = `.${conversion.extension.toLowerCase()}`;
+    const outputFile = files.find(name => name.toLowerCase().endsWith(targetExt));
+    
+    if (!outputFile) {
+      console.log('Files in temp directory after LibreOffice:', files);
+      throw new Error(`LibreOffice did not produce an output file for DOC to CSV conversion`);
+    }
+
+    const outputPath = path.join(tmpDir, outputFile);
+    const outputBuffer = await fs.readFile(outputPath);
+    const downloadName = `${sanitizedBase}.${conversion.extension}`;
+
+    console.log('DOC to CSV conversion successful:', {
+      outputSize: outputBuffer.length,
+      filename: downloadName
+    });
+
+    if (persistToDisk) {
+      return persistOutputBuffer(outputBuffer, downloadName, conversion.mime);
+    }
+
+    return {
+      buffer: outputBuffer,
+      filename: downloadName,
+      mime: conversion.mime
+    };
+
+  } catch (error) {
+    console.error('DOC to CSV conversion failed:', error);
+    const message = error instanceof Error ? error.message : 'Unknown LibreOffice error';
+    throw new Error(`Failed to convert DOC to CSV: ${message}`);
+  } finally {
+    await fs.rm(tmpDir, { recursive: true, force: true }).catch(() => undefined);
   }
 };
 
@@ -1815,6 +1917,7 @@ app.post('/api/convert', upload.single('file'), async (req, res) => {
     const isEPUB = isEpubFile(file);
     const isEPS = isEpsFile(file);
     const isDNG = isDngFile(file);
+    const isDOC = isDocFile(file);
     
     console.log('File type detection:', {
       targetFormat,
@@ -1822,8 +1925,10 @@ app.post('/api/convert', upload.single('file'), async (req, res) => {
       isEPUB, 
       isEPS,
       isDNG,
+      isDOC,
       mimetype: file.mimetype,
-      extension: file.originalname.split('.').pop()?.toLowerCase()
+      extension: file.originalname.split('.').pop()?.toLowerCase(),
+      originalname: file.originalname
     });
     
     console.log('Available CALIBRE_CONVERSIONS:', Object.keys(CALIBRE_CONVERSIONS));
@@ -1837,6 +1942,9 @@ app.post('/api/convert', upload.single('file'), async (req, res) => {
     } else if (isCSV && LIBREOFFICE_CONVERSIONS[targetFormat]) {
       console.log('Single: Routing to LibreOffice (CSV conversion)');
       result = await convertCsvWithLibreOffice(file, targetFormat, requestOptions, true);
+    } else if ((isDOC || file.originalname.toLowerCase().endsWith('.doc')) && targetFormat === 'csv') {
+      console.log('Single: Routing to LibreOffice (DOC to CSV conversion)');
+      result = await convertDocWithLibreOffice(file, 'doc-to-csv', requestOptions, true);
     } else if (isEPS && ['webp', 'png', 'jpeg', 'jpg', 'ico'].includes(targetFormat)) {
       console.log('Single: Routing to EPS conversion');
       result = await convertEpsFile(file, targetFormat, requestOptions, true);
@@ -1850,76 +1958,94 @@ app.post('/api/convert', upload.single('file'), async (req, res) => {
       });
       result = await convertDngFile(file, targetFormat, requestOptions, true);
     } else {
-      // Handle Sharp image conversions
-      const quality = requestOptions.quality ?? 'high';
-      const lossless = requestOptions.lossless ?? 'false';
-      const width = requestOptions.width;
-      const height = requestOptions.height;
-      const iconSize = requestOptions.iconSize ?? '16';
+      // Check if this is a DOC file that wasn't detected properly
+      if (file.originalname.toLowerCase().endsWith('.doc') && targetFormat === 'csv') {
+        console.log('DOC file detected by fallback - routing to LibreOffice');
+        result = await convertDocWithLibreOffice(file, 'doc-to-csv', requestOptions, true);
+      } else {
+        // Handle Sharp image conversions
+        console.log('Falling back to Sharp image processing - this should not happen for DOC files!');
+        console.log('File details:', {
+          originalname: file.originalname,
+          mimetype: file.mimetype,
+          targetFormat,
+          isDOC,
+          isCSV,
+          isEPUB,
+          isEPS,
+          isDNG
+        });
+        
+        const quality = requestOptions.quality ?? 'high';
+        const lossless = requestOptions.lossless ?? 'false';
+        const width = requestOptions.width;
+        const height = requestOptions.height;
+        const iconSize = requestOptions.iconSize ?? '16';
 
-      const inputBuffer = await prepareRawBuffer(file);
+        const inputBuffer = await prepareRawBuffer(file);
 
-      const qualityValue = quality === 'high' ? 95 : quality === 'medium' ? 80 : 60;
-      const isLossless = lossless === 'true';
+        const qualityValue = quality === 'high' ? 95 : quality === 'medium' ? 80 : 60;
+        const isLossless = lossless === 'true';
 
-      let pipeline = sharp(inputBuffer, {
-        failOn: 'truncated',
-        unlimited: true
-      });
+        let pipeline = sharp(inputBuffer, {
+          failOn: 'truncated',
+          unlimited: true
+        });
 
-      const metadata = await pipeline.metadata();
-      console.log(`Metadata => ${metadata.width}x${metadata.height}, format: ${metadata.format}`);
+        const metadata = await pipeline.metadata();
+        console.log(`Metadata => ${metadata.width}x${metadata.height}, format: ${metadata.format}`);
 
-      let contentType: string;
-      let fileExtension: string;
+        let contentType: string;
+        let fileExtension: string;
 
-      switch (targetFormat) {
-        case 'webp':
-          pipeline = pipeline.webp({ quality: qualityValue, lossless: isLossless });
-          contentType = 'image/webp';
-          fileExtension = 'webp';
-          break;
-        case 'png':
-          pipeline = pipeline.png({ compressionLevel: 9 });
-          contentType = 'image/png';
-          fileExtension = 'png';
-          break;
-        case 'jpeg':
-        case 'jpg':
-          pipeline = pipeline.jpeg({ quality: qualityValue, progressive: true });
-          contentType = 'image/jpeg';
-          fileExtension = 'jpg';
-          break;
-        case 'ico':
-          const icoSize = parseInt(iconSize) || 16;
-          pipeline = pipeline
-            .resize(icoSize, icoSize, {
-              fit: 'contain',
-              background: { r: 255, g: 255, b: 255, alpha: 0 }
-            })
-            .png({ compressionLevel: 0, quality: 100 });
-          contentType = 'image/x-icon';
-          fileExtension = 'ico';
-          break;
-        default:
-          return res.status(400).json({ error: 'Unsupported output format' });
+        switch (targetFormat) {
+          case 'webp':
+            pipeline = pipeline.webp({ quality: qualityValue, lossless: isLossless });
+            contentType = 'image/webp';
+            fileExtension = 'webp';
+            break;
+          case 'png':
+            pipeline = pipeline.png({ compressionLevel: 9 });
+            contentType = 'image/png';
+            fileExtension = 'png';
+            break;
+          case 'jpeg':
+          case 'jpg':
+            pipeline = pipeline.jpeg({ quality: qualityValue, progressive: true });
+            contentType = 'image/jpeg';
+            fileExtension = 'jpg';
+            break;
+          case 'ico':
+            const icoSize = parseInt(iconSize) || 16;
+            pipeline = pipeline
+              .resize(icoSize, icoSize, {
+                fit: 'contain',
+                background: { r: 255, g: 255, b: 255, alpha: 0 }
+              })
+              .png({ compressionLevel: 0, quality: 100 });
+            contentType = 'image/x-icon';
+            fileExtension = 'ico';
+            break;
+          default:
+            return res.status(400).json({ error: 'Unsupported output format' });
+        }
+
+        if (width || height) {
+          pipeline = pipeline.resize(
+            width ? parseInt(width) : undefined,
+            height ? parseInt(height) : undefined,
+            {
+              fit: 'inside',
+              withoutEnlargement: true
+            }
+          );
+        }
+
+        const outputBuffer = await pipeline.toBuffer();
+        const outputName = `${file.originalname.replace(/\.[^.]+$/, '')}.${fileExtension}`;
+
+        result = await persistOutputBuffer(outputBuffer, outputName, contentType);
       }
-
-      if (width || height) {
-        pipeline = pipeline.resize(
-          width ? parseInt(width) : undefined,
-          height ? parseInt(height) : undefined,
-          {
-            fit: 'inside',
-            withoutEnlargement: true
-          }
-        );
-      }
-
-      const outputBuffer = await pipeline.toBuffer();
-      const outputName = `${file.originalname.replace(/\.[^.]+$/, '')}.${fileExtension}`;
-
-      result = await persistOutputBuffer(outputBuffer, outputName, contentType);
     }
 
     // Return download link instead of streaming file
@@ -2004,7 +2130,8 @@ app.post('/api/convert/batch', uploadBatch.array('files'), async (req, res) => {
       const isEPUB = isEpubFile(file);
       const isEPS = isEpsFile(file);
       const isDNG = isDngFile(file);
-      console.log(`Processing ${file.originalname}: isCSV=${isCSV}, isEPUB=${isEPUB}, isEPS=${isEPS}, isDNG=${isDNG}, format=${format}, mimetype=${file.mimetype}`);
+      const isDOC = isDocFile(file);
+      console.log(`Processing ${file.originalname}: isCSV=${isCSV}, isEPUB=${isEPUB}, isEPS=${isEPS}, isDNG=${isDNG}, isDOC=${isDOC}, format=${format}, mimetype=${file.mimetype}`);
 
       if (isEPUB && CALIBRE_CONVERSIONS[format]) {
         console.log('Routing to Calibre (EPUB conversion)');
@@ -2012,6 +2139,9 @@ app.post('/api/convert/batch', uploadBatch.array('files'), async (req, res) => {
       } else if (isCSV && LIBREOFFICE_CONVERSIONS[format]) {
         console.log('Routing to LibreOffice (CSV conversion)');
         output = await convertCsvWithLibreOffice(file, format, requestOptions, true);
+      } else if ((isDOC || file.originalname.toLowerCase().endsWith('.doc')) && format === 'csv') {
+        console.log('Batch: Routing to LibreOffice (DOC to CSV conversion)');
+        output = await convertDocWithLibreOffice(file, 'doc-to-csv', requestOptions, true);
       } else if (isEPS && ['webp', 'png', 'jpeg', 'jpg', 'ico'].includes(format)) {
         console.log('Routing to EPS conversion');
         output = await convertEpsFile(file, format, requestOptions, true);
@@ -2025,7 +2155,7 @@ app.post('/api/convert/batch', uploadBatch.array('files'), async (req, res) => {
         });
         output = await convertDngFile(file, format, requestOptions, true);
       } else {
-        throw new Error(`Unsupported input file type or target format for batch conversion. File: ${file.originalname}, isCSV: ${isCSV}, isEPUB: ${isEPUB}, isEPS: ${isEPS}, isDNG: ${isDNG}, format: ${format}`);
+        throw new Error(`Unsupported input file type or target format for batch conversion. File: ${file.originalname}, isCSV: ${isCSV}, isEPUB: ${isEPUB}, isEPS: ${isEPS}, isDNG: ${isDNG}, isDOC: ${isDOC}, format: ${format}`);
       }
 
       console.log(`Batch result for ${file.originalname}: filename=${output.filename}, hasStoredFilename=${!!output.storedFilename}, bufferSize=${output.buffer.length}`);
