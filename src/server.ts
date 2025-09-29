@@ -2187,49 +2187,73 @@ const convertDocxWithLibreOffice = async (
   try {
     await fs.writeFile(inputPath, file.buffer);
 
-    const exportArgs = [
-      '--headless',
-      '--nolockcheck',
-      '--nodefault',
-      '--nologo',
-      '--nofirststartwizard',
-      '--convert-to', 'epub:"writer_epub_Export"',
-      '--outdir', tmpDir,
-      inputPath
+    const exportVariants: string[][] = [
+      [
+        '--headless',
+        '--nolockcheck',
+        '--nodefault',
+        '--nologo',
+        '--nofirststartwizard',
+        '--convert-to', 'epub:writer_epub_Export',
+        '--outdir', tmpDir,
+        inputPath
+      ],
+      [
+        '--headless',
+        '--nolockcheck',
+        '--nodefault',
+        '--nologo',
+        '--nofirststartwizard',
+        '--convert-to', 'epub',
+        '--outdir', tmpDir,
+        inputPath
+      ]
     ];
 
-    const { stdout, stderr } = await execLibreOffice(exportArgs);
-    if (stdout.trim().length > 0) {
-      console.log('LibreOffice DOCX->EPUB stdout:', stdout.trim());
+    let conversionSucceeded = false;
+    for (const exportArgs of exportVariants) {
+      try {
+        console.log('Trying LibreOffice DOCX->EPUB command:', exportArgs);
+        const { stdout, stderr } = await execLibreOffice(exportArgs);
+        if (stdout.trim().length > 0) {
+          console.log('LibreOffice DOCX->EPUB stdout:', stdout.trim());
+        }
+        if (stderr.trim().length > 0) {
+          console.warn('LibreOffice DOCX->EPUB stderr:', stderr.trim());
+        }
+
+        const files = await fs.readdir(tmpDir);
+        const epubFile = files.find(name => name.toLowerCase().endsWith('.epub'));
+        if (!epubFile) {
+          console.warn('EPUB file not found after LibreOffice run, trying next variant...');
+          continue;
+        }
+
+        const outputPath = path.join(tmpDir, epubFile);
+        const outputBuffer = await fs.readFile(outputPath);
+        const downloadName = `${sanitizedBase}.epub`;
+
+        console.log('DOCX to EPUB conversion successful:', {
+          outputSize: outputBuffer.length,
+          filename: downloadName
+        });
+
+        if (persistToDisk) {
+          return persistOutputBuffer(outputBuffer, downloadName, 'application/epub+zip');
+        }
+
+        return {
+          buffer: outputBuffer,
+          filename: downloadName,
+          mime: 'application/epub+zip'
+        };
+      } catch (variantError) {
+        console.warn('LibreOffice DOCX->EPUB command failed, trying fallback...', variantError);
+        continue;
+      }
     }
-    if (stderr.trim().length > 0) {
-      console.warn('LibreOffice DOCX->EPUB stderr:', stderr.trim());
-    }
 
-    const files = await fs.readdir(tmpDir);
-    const epubFile = files.find(name => name.toLowerCase().endsWith('.epub'));
-    if (!epubFile) {
-      throw new Error('LibreOffice did not produce an EPUB file');
-    }
-
-    const outputPath = path.join(tmpDir, epubFile);
-    const outputBuffer = await fs.readFile(outputPath);
-    const downloadName = `${sanitizedBase}.epub`;
-
-    console.log('DOCX to EPUB conversion successful:', {
-      outputSize: outputBuffer.length,
-      filename: downloadName
-    });
-
-    if (persistToDisk) {
-      return persistOutputBuffer(outputBuffer, downloadName, 'application/epub+zip');
-    }
-
-    return {
-      buffer: outputBuffer,
-      filename: downloadName,
-      mime: 'application/epub+zip'
-    };
+    throw new Error('LibreOffice did not produce an EPUB file');
   } catch (error) {
     console.error('DOCX to EPUB via LibreOffice failed:', error);
     const message = error instanceof Error ? error.message : 'Unknown LibreOffice EPUB error';
@@ -2282,7 +2306,7 @@ app.post('/api/convert', upload.single('file'), async (req, res) => {
 
     console.log('=== CONVERSION REQUEST START ===');
     console.log('Request body options:', requestOptions);
-    
+
     if (!file) {
       console.log('ERROR: No file uploaded');
       return res.status(400).json({ error: 'No file uploaded' });
@@ -2370,67 +2394,67 @@ app.post('/api/convert', upload.single('file'), async (req, res) => {
         const height = requestOptions.height;
         const iconSize = requestOptions.iconSize ?? '16';
 
-        const inputBuffer = await prepareRawBuffer(file);
+    const inputBuffer = await prepareRawBuffer(file);
 
-        const qualityValue = quality === 'high' ? 95 : quality === 'medium' ? 80 : 60;
-        const isLossless = lossless === 'true';
+    const qualityValue = quality === 'high' ? 95 : quality === 'medium' ? 80 : 60;
+    const isLossless = lossless === 'true';
 
-        let pipeline = sharp(inputBuffer, {
-          failOn: 'truncated',
-          unlimited: true
-        });
+    let pipeline = sharp(inputBuffer, {
+      failOn: 'truncated',
+      unlimited: true
+    });
 
-        const metadata = await pipeline.metadata();
-        console.log(`Metadata => ${metadata.width}x${metadata.height}, format: ${metadata.format}`);
+    const metadata = await pipeline.metadata();
+    console.log(`Metadata => ${metadata.width}x${metadata.height}, format: ${metadata.format}`);
 
-        let contentType: string;
-        let fileExtension: string;
+    let contentType: string;
+    let fileExtension: string;
 
         switch (targetFormat) {
-          case 'webp':
-            pipeline = pipeline.webp({ quality: qualityValue, lossless: isLossless });
-            contentType = 'image/webp';
-            fileExtension = 'webp';
-            break;
-          case 'png':
-            pipeline = pipeline.png({ compressionLevel: 9 });
-            contentType = 'image/png';
-            fileExtension = 'png';
-            break;
-          case 'jpeg':
-          case 'jpg':
-            pipeline = pipeline.jpeg({ quality: qualityValue, progressive: true });
-            contentType = 'image/jpeg';
-            fileExtension = 'jpg';
-            break;
-          case 'ico':
+      case 'webp':
+        pipeline = pipeline.webp({ quality: qualityValue, lossless: isLossless });
+        contentType = 'image/webp';
+        fileExtension = 'webp';
+        break;
+      case 'png':
+        pipeline = pipeline.png({ compressionLevel: 9 });
+        contentType = 'image/png';
+        fileExtension = 'png';
+        break;
+      case 'jpeg':
+      case 'jpg':
+        pipeline = pipeline.jpeg({ quality: qualityValue, progressive: true });
+        contentType = 'image/jpeg';
+        fileExtension = 'jpg';
+        break;
+      case 'ico':
             const icoSize = parseInt(iconSize) || 16;
-            pipeline = pipeline
+        pipeline = pipeline
               .resize(icoSize, icoSize, {
-                fit: 'contain',
+            fit: 'contain',
                 background: { r: 255, g: 255, b: 255, alpha: 0 }
-              })
+          })
               .png({ compressionLevel: 0, quality: 100 });
-            contentType = 'image/x-icon';
-            fileExtension = 'ico';
-            break;
-          default:
-            return res.status(400).json({ error: 'Unsupported output format' });
-        }
+        contentType = 'image/x-icon';
+        fileExtension = 'ico';
+        break;
+      default:
+        return res.status(400).json({ error: 'Unsupported output format' });
+    }
 
-        if (width || height) {
-          pipeline = pipeline.resize(
-            width ? parseInt(width) : undefined,
-            height ? parseInt(height) : undefined,
-            {
-              fit: 'inside',
-              withoutEnlargement: true
-            }
-          );
+    if (width || height) {
+      pipeline = pipeline.resize(
+        width ? parseInt(width) : undefined,
+        height ? parseInt(height) : undefined,
+        {
+          fit: 'inside',
+          withoutEnlargement: true
         }
+      );
+    }
 
-        const outputBuffer = await pipeline.toBuffer();
-        const outputName = `${file.originalname.replace(/\.[^.]+$/, '')}.${fileExtension}`;
+    const outputBuffer = await pipeline.toBuffer();
+    const outputName = `${file.originalname.replace(/\.[^.]+$/, '')}.${fileExtension}`;
 
         result = await persistOutputBuffer(outputBuffer, outputName, contentType);
       }
