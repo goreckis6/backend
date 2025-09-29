@@ -936,35 +936,149 @@ const convertDocWithLibreOffice = async (
   try {
     await fs.writeFile(inputPath, file.buffer);
 
-    const args = [
-      '--headless',
-      '--nolockcheck',
-      '--nodefault',
-      '--nologo',
-      '--nofirststartwizard',
-      '--convert-to', conversion.convertTo,
-      '--outdir', tmpDir,
-      inputPath
+    // Try multiple LibreOffice command variants for DOC to CSV conversion
+    const commandVariants = [
+      [
+        '--headless',
+        '--nolockcheck',
+        '--nodefault',
+        '--nologo',
+        '--nofirststartwizard',
+        '--convert-to', 'csv:"Text - txt - csv (StarCalc)"',
+        '--outdir', tmpDir,
+        inputPath
+      ],
+      [
+        '--headless',
+        '--nolockcheck',
+        '--nodefault',
+        '--nologo',
+        '--nofirststartwizard',
+        '--convert-to', 'csv',
+        '--outdir', tmpDir,
+        inputPath
+      ],
+      [
+        '--headless',
+        '--nolockcheck',
+        '--nodefault',
+        '--nologo',
+        '--nofirststartwizard',
+        '--convert-to', 'csv:"Text - txt - csv (StarCalc)":44,34,UTF8',
+        '--outdir', tmpDir,
+        inputPath
+      ],
+      [
+        '--headless',
+        '--nolockcheck',
+        '--nodefault',
+        '--nologo',
+        '--nofirststartwizard',
+        '--convert-to', 'csv:"Text - txt - csv (StarCalc)":44,34,UTF8',
+        '--outdir', tmpDir,
+        inputPath,
+        '--calc'
+      ]
     ];
 
-    console.log('LibreOffice DOC to CSV args:', args);
+    let lastError: unknown;
+    let conversionSucceeded = false;
 
-    const { stdout, stderr } = await execLibreOffice(args);
-    
-    if (stdout.trim().length > 0) {
-      console.log('LibreOffice stdout:', stdout.trim());
-    }
-    if (stderr.trim().length > 0) {
-      console.warn('LibreOffice stderr:', stderr.trim());
+    for (const args of commandVariants) {
+      try {
+        console.log('Trying LibreOffice DOC to CSV command:', args);
+        const { stdout, stderr } = await execLibreOffice(args);
+        
+        if (stdout.trim().length > 0) {
+          console.log('LibreOffice stdout:', stdout.trim());
+        }
+        if (stderr.trim().length > 0) {
+          console.warn('LibreOffice stderr:', stderr.trim());
+        }
+
+        const files = await fs.readdir(tmpDir);
+        const targetExt = `.${conversion.extension.toLowerCase()}`;
+        const outputFile = files.find(name => name.toLowerCase().endsWith(targetExt));
+        
+        if (outputFile) {
+          console.log('DOC to CSV conversion successful with command:', args);
+          conversionSucceeded = true;
+          break;
+        } else {
+          console.log('Files in temp directory after LibreOffice:', files);
+          console.log('No CSV file found, trying next command variant...');
+        }
+      } catch (error) {
+        console.warn('LibreOffice command failed:', error);
+        lastError = error;
+        continue;
+      }
     }
 
+    if (!conversionSucceeded) {
+      console.log('All LibreOffice command variants failed, trying DOC -> TXT -> CSV approach');
+      
+      try {
+        // Try DOC to TXT first
+        const txtArgs = [
+          '--headless',
+          '--nolockcheck',
+          '--nodefault',
+          '--nologo',
+          '--nofirststartwizard',
+          '--convert-to', 'txt',
+          '--outdir', tmpDir,
+          inputPath
+        ];
+        
+        console.log('Trying DOC to TXT conversion:', txtArgs);
+        const { stdout: txtStdout, stderr: txtStderr } = await execLibreOffice(txtArgs);
+        
+        if (txtStdout.trim().length > 0) {
+          console.log('DOC to TXT stdout:', txtStdout.trim());
+        }
+        if (txtStderr.trim().length > 0) {
+          console.warn('DOC to TXT stderr:', txtStderr.trim());
+        }
+        
+        // Check if TXT file was created
+        const txtFiles = await fs.readdir(tmpDir);
+        const txtFile = txtFiles.find(name => name.toLowerCase().endsWith('.txt'));
+        
+        if (txtFile) {
+          console.log('DOC to TXT successful, now converting TXT to CSV');
+          const txtPath = path.join(tmpDir, txtFile);
+          const txtContent = await fs.readFile(txtPath, 'utf-8');
+          
+          // Convert TXT content to CSV format
+          const lines = txtContent.split('\n').filter(line => line.trim());
+          const csvContent = lines.map(line => `"${line.trim()}"`).join('\n');
+          
+          const csvPath = path.join(tmpDir, `${sanitizedBase}.csv`);
+          await fs.writeFile(csvPath, csvContent, 'utf-8');
+          
+          console.log('TXT to CSV conversion successful');
+          conversionSucceeded = true;
+        } else {
+          console.log('TXT file not found after DOC to TXT conversion');
+        }
+      } catch (txtError) {
+        console.error('DOC to TXT fallback failed:', txtError);
+      }
+      
+      if (!conversionSucceeded) {
+        throw new Error(`LibreOffice did not produce an output file for DOC to CSV conversion. Last error: ${lastError instanceof Error ? lastError.message : String(lastError)}`);
+      }
+    }
+
+    // Find the output file after successful conversion
     const files = await fs.readdir(tmpDir);
     const targetExt = `.${conversion.extension.toLowerCase()}`;
     const outputFile = files.find(name => name.toLowerCase().endsWith(targetExt));
     
     if (!outputFile) {
-      console.log('Files in temp directory after LibreOffice:', files);
-      throw new Error(`LibreOffice did not produce an output file for DOC to CSV conversion`);
+      console.log('Files in temp directory after successful conversion:', files);
+      throw new Error(`Output file not found after successful conversion`);
     }
 
     const outputPath = path.join(tmpDir, outputFile);
