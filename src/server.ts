@@ -69,7 +69,12 @@ const convertEpsFile = async (
   const inputPath = path.join(tmpDir, inputFilename);
 
   try {
-    await fs.writeFile(inputPath, file.buffer);
+    if (copyAsDocx) {
+      const docxFile = await convertDocxToDocxBuffer(file);
+      await fs.writeFile(inputPath, docxFile);
+    } else {
+      await fs.writeFile(inputPath, file.buffer);
+    }
 
     const quality = options.quality ?? 'high';
     const width = options.width;
@@ -666,6 +671,36 @@ const isDocFile = (file: Express.Multer.File) => {
   return result;
 };
 
+const isDocxFile = (file: Express.Multer.File) => {
+  const ext = path.extname(file.originalname).replace('.', '').toLowerCase();
+  const mimetype = file.mimetype?.toLowerCase() ?? '';
+  const result = ext === 'docx' || mimetype.includes('officedocument.wordprocessingml.document');
+
+  console.log('DOCX file detection:', {
+    filename: file.originalname,
+    extension: ext,
+    mimetype,
+    isDOCX: result
+  });
+
+  return result;
+};
+
+const isOdtFile = (file: Express.Multer.File) => {
+  const ext = path.extname(file.originalname).replace('.', '').toLowerCase();
+  const mimetype = file.mimetype?.toLowerCase() ?? '';
+  const result = ext === 'odt' || mimetype.includes('opendocument.text');
+
+  console.log('ODT file detection:', {
+    filename: file.originalname,
+    extension: ext,
+    mimetype,
+    isODT: result
+  });
+
+  return result;
+};
+
 const sanitizeFilename = (name: string) =>
   name.replace(/[^a-zA-Z0-9-_]+/g, '_').replace(/^_+|_+$/g, '') || 'file';
 
@@ -1081,78 +1116,92 @@ const parseHtmlToCsv = async (htmlContent: string): Promise<string> => {
 
 const parseHtmlTablesToCsv = async (htmlContent: string): Promise<string> => {
   console.log('Parsing HTML tables to CSV using cheerio...');
-  
+
   const $ = cheerio.load(htmlContent);
   const tables = $('table');
-  
-  if (tables.length === 0) {
-    console.log('No HTML tables found, extracting text content');
-    // No tables found, extract text content
-    const textContent = htmlContent
-      .replace(/<[^>]*>/g, '') // Remove HTML tags
-      .replace(/&nbsp;/g, ' ') // Replace &nbsp; with space
-      .replace(/&amp;/g, '&') // Replace &amp; with &
-      .replace(/&lt;/g, '<') // Replace &lt; with <
-      .replace(/&gt;/g, '>') // Replace &gt; with >
-      .replace(/&quot;/g, '"') // Replace &quot; with "
-      .split('\n')
-      .filter(line => line.trim())
-      .map(line => `"${line.trim()}"`)
-      .join('\n');
-    
-    return textContent;
-  }
 
-  console.log(`Found ${tables.length} table(s) in HTML`);
-  
   const allCsvRows: string[] = [];
-  
+
   tables.each((tableIndex, table) => {
     console.log(`Processing table ${tableIndex + 1}...`);
     const tableRows: string[] = [];
-    
+
     $(table).find('tr').each((rowIndex, row) => {
       const cells: string[] = [];
-      
+
+      let currentIndex = 0;
+
       $(row).find('td, th').each((cellIndex, cell) => {
-        let cellText = $(cell).text()
-          .replace(/\s+/g, ' ') // Normalize whitespace
-          .trim();
-        
-        // Handle empty cells
-        if (!cellText) {
+        let cellText = $(cell).text() || '';
+        cellText = cellText.replace(/\s+/g, ' ').trim();
+
+        if (!cellText || cellText.trim() === '') {
           cellText = '';
         }
-        
-        // Escape quotes and wrap in quotes
-        cellText = cellText.replace(/"/g, '""');
-        cells.push(`"${cellText}"`);
+
+        // Skip duplicated content for merged cells
+        if (cellText === '' || tableRows.some(existingRow => existingRow.includes(cellText))) {
+          const rowspan = parseInt($(cell).attr('rowspan') || '1', 10);
+          if (rowspan > 1) {
+            for (let i = 1; i < rowspan; i++) {
+              const nextRow = tableRows[rowIndex + i] ? tableRows[rowIndex + i].split(',') : [];
+              nextRow[currentIndex] = '""';
+              tableRows[rowIndex + i] = nextRow.join(',');
+            }
+          }
+          currentIndex++;
+          return;
+        }
+
+        const colspanAttr = $(cell).attr('colspan');
+        const colspan = colspanAttr ? Math.max(parseInt(colspanAttr, 10) || 1, 1) : 1;
+
+        const escaped = cellText.replace(/"/g, '""');
+        for (let i = 0; i < colspan; i++) {
+          cells.push(`"${escaped}"`);
+          currentIndex++;
+        }
       });
-      
+
       if (cells.length > 0) {
         tableRows.push(cells.join(','));
       }
     });
-    
+
     if (tableRows.length > 0) {
       console.log(`Table ${tableIndex + 1} has ${tableRows.length} rows`);
       allCsvRows.push(...tableRows);
-      
-      // Add separator between tables if there are multiple
       if (tableIndex < tables.length - 1) {
-        allCsvRows.push(''); // Empty line separator
+        allCsvRows.push('');
       }
     }
   });
-  
+
+  if (allCsvRows.length === 0) {
+    console.log('No HTML tables found, extracting text content');
+    const textContent = htmlContent
+      .replace(/<[^>]*>/g, '')
+      .replace(/&nbsp;/g, ' ')
+      .replace(/&amp;/g, '&')
+      .replace(/&lt;/g, '<')
+      .replace(/&gt;/g, '>')
+      .replace(/&quot;/g, '"')
+      .split('\n')
+      .filter(line => line.trim())
+      .map(line => `"${line.trim()}"`)
+      .join('\n');
+
+    return textContent;
+  }
+
   const csvContent = allCsvRows.join('\n');
-  
+
   console.log('HTML table parsing successful:', {
     totalTables: tables.length,
     totalRows: allCsvRows.length,
     csvLength: csvContent.length
   });
-  
+
   return csvContent;
 };
 
@@ -1173,30 +1222,29 @@ const convertDocWithLibreOffice = async (
   const originalBase = path.basename(file.originalname, path.extname(file.originalname));
   const sanitizedBase = sanitizeFilename(originalBase);
   const safeBase = `${sanitizedBase}_${randomUUID()}`;
-  const inputFilename = `${safeBase}.doc`;
+  const inputExtension = path.extname(file.originalname).toLowerCase() || '.doc';
+  const inputFilename = `${safeBase}${inputExtension}`;
   const inputPath = path.join(tmpDir, inputFilename);
 
   try {
     await fs.writeFile(inputPath, file.buffer);
 
-    // Step 1: Convert DOC to DOCX using LibreOffice
-    console.log('Step 1: Converting DOC to DOCX...');
-    const docxArgs = [
-      '--headless',
-      '--nolockcheck',
-      '--nodefault',
-      '--nologo',
-      '--nofirststartwizard',
-      '--convert-to', 'docx',
-      '--outdir', tmpDir,
-      inputPath
-    ];
+    // Step 1: Ensure we have a DOCX file (LibreOffice handles DOCX better for mammoth)
+    let docxFilename = inputFilename;
+    if (inputExtension !== '.docx') {
+      console.log('Step 1: Converting document to DOCX...');
+      const docxArgs = [
+        '--headless',
+        '--nolockcheck',
+        '--nodefault',
+        '--nologo',
+        '--nofirststartwizard',
+        '--convert-to', 'docx',
+        '--outdir', tmpDir,
+        inputPath
+      ];
 
-    let docxConversionSucceeded = false;
-    try {
-      console.log('Trying DOC to DOCX conversion:', docxArgs);
       const { stdout, stderr } = await execLibreOffice(docxArgs);
-      
       if (stdout.trim().length > 0) {
         console.log('DOC to DOCX stdout:', stdout.trim());
       }
@@ -1205,37 +1253,24 @@ const convertDocWithLibreOffice = async (
       }
 
       const files = await fs.readdir(tmpDir);
-      const docxFile = files.find(name => name.toLowerCase().endsWith('.docx'));
-      
-      if (docxFile) {
-        console.log('DOC to DOCX conversion successful');
-        docxConversionSucceeded = true;
-      } else {
-        console.log('Files in temp directory after DOC to DOCX:', files);
-        throw new Error('DOCX file not found after conversion');
+      const generatedDocx = files.find(name => name.toLowerCase().endsWith('.docx'));
+      if (!generatedDocx) {
+        throw new Error('DOCX file not produced by LibreOffice');
       }
-    } catch (error) {
-      console.error('DOC to DOCX conversion failed:', error);
-      throw new Error(`Failed to convert DOC to DOCX: ${error instanceof Error ? error.message : String(error)}`);
-    }
-
-    if (!docxConversionSucceeded) {
-      throw new Error('DOC to DOCX conversion failed');
+      docxFilename = generatedDocx;
     }
 
     // Step 2: Extract HTML from DOCX using mammoth
     console.log('Step 2: Extracting HTML from DOCX using mammoth...');
-    const docxPath = path.join(tmpDir, `${safeBase}.docx`);
+    const docxPath = path.join(tmpDir, docxFilename);
     const docxBuffer = await fs.readFile(docxPath);
-    
     const mammothResult = await mammoth.convertToHtml({ buffer: docxBuffer });
     const htmlContent = mammothResult.value;
-    
+
     console.log('Mammoth extraction successful:', {
       htmlLength: htmlContent.length,
       messages: mammothResult.messages.length
     });
-
     if (mammothResult.messages.length > 0) {
       console.log('Mammoth messages:', mammothResult.messages);
     }
@@ -1243,7 +1278,6 @@ const convertDocWithLibreOffice = async (
     // Step 3: Parse HTML tables and convert to CSV
     console.log('Step 3: Parsing HTML tables and converting to CSV...');
     const csvContent = await parseHtmlTablesToCsv(htmlContent);
-    
     console.log('HTML table parsing successful:', {
       csvLength: csvContent.length,
       csvLines: csvContent.split('\n').length
@@ -1258,8 +1292,7 @@ const convertDocWithLibreOffice = async (
 
     console.log('DOC to CSV conversion successful:', {
       outputSize: outputBuffer.length,
-      filename: downloadName,
-      csvContent: csvContent.substring(0, 200) + '...'
+      filename: downloadName
     });
 
     if (persistToDisk) {
@@ -2141,6 +2174,76 @@ const buildLibreOfficeFilterArgs = (
   return [`--infilter=CSV:${delimiter},34,UTF8`];
 };
 
+const convertDocxWithLibreOffice = async (
+  file: Express.Multer.File,
+  inputHint: 'doc' | 'docx' | 'odt',
+  options: Record<string, string | undefined> = {},
+  persistToDisk = false
+): Promise<ConversionResult> => {
+  console.log(`=== ${inputHint.toUpperCase()} TO EPUB VIA LIBREOFFICE ===`);
+  const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'morphy-lo-epub-'));
+  const originalBase = path.basename(file.originalname, path.extname(file.originalname));
+  const sanitizedBase = sanitizeFilename(originalBase);
+  const safeBase = `${sanitizedBase}_${randomUUID()}`;
+  const inputExt = inputHint === 'docx' ? '.docx' : inputHint === 'odt' ? '.odt' : '.doc';
+  const inputFilename = `${safeBase}${inputExt}`;
+  const inputPath = path.join(tmpDir, inputFilename);
+
+  try {
+    await fs.writeFile(inputPath, file.buffer);
+
+    const exportArgs = [
+      '--headless',
+      '--nolockcheck',
+      '--nodefault',
+      '--nologo',
+      '--nofirststartwizard',
+      '--convert-to', 'epub:"writer_epub_Export"',
+      '--outdir', tmpDir,
+      inputPath
+    ];
+
+    const { stdout, stderr } = await execLibreOffice(exportArgs);
+    if (stdout.trim().length > 0) {
+      console.log('LibreOffice DOCX->EPUB stdout:', stdout.trim());
+    }
+    if (stderr.trim().length > 0) {
+      console.warn('LibreOffice DOCX->EPUB stderr:', stderr.trim());
+    }
+
+    const files = await fs.readdir(tmpDir);
+    const epubFile = files.find(name => name.toLowerCase().endsWith('.epub'));
+    if (!epubFile) {
+      throw new Error('LibreOffice did not produce an EPUB file');
+    }
+
+    const outputPath = path.join(tmpDir, epubFile);
+    const outputBuffer = await fs.readFile(outputPath);
+    const downloadName = `${sanitizedBase}.epub`;
+
+    console.log('DOCX to EPUB conversion successful:', {
+      outputSize: outputBuffer.length,
+      filename: downloadName
+    });
+
+    if (persistToDisk) {
+      return persistOutputBuffer(outputBuffer, downloadName, 'application/epub+zip');
+    }
+
+    return {
+      buffer: outputBuffer,
+      filename: downloadName,
+      mime: 'application/epub+zip'
+    };
+  } catch (error) {
+    console.error('DOCX to EPUB via LibreOffice failed:', error);
+    const message = error instanceof Error ? error.message : 'Unknown LibreOffice EPUB error';
+    throw new Error(`Failed to convert to EPUB with LibreOffice: ${message}`);
+  } finally {
+    await fs.rm(tmpDir, { recursive: true, force: true }).catch(() => undefined);
+  }
+};
+
 app.use(helmet());
 app.use(cors({
   origin: process.env.FRONTEND_URL || '*',
@@ -2222,7 +2325,11 @@ app.post('/api/convert', upload.single('file'), async (req, res) => {
 
     let result: ConversionResult;
 
-    if (isEPUB && CALIBRE_CONVERSIONS[targetFormat]) {
+    if ((isDocFile(file) || isDocxFile(file) || isOdtFile(file)) && targetFormat === 'epub') {
+      console.log('Single: Routing to LibreOffice (DOC/DOCX/ODT to EPUB conversion)');
+      const inputHint = isDocxFile(file) ? 'docx' : isOdtFile(file) ? 'odt' : 'doc';
+      result = await convertDocxWithLibreOffice(file, inputHint, requestOptions, true);
+    } else if (isEPUB && CALIBRE_CONVERSIONS[targetFormat]) {
       console.log('Single: Routing to Calibre (EPUB conversion)');
       result = await convertWithCalibre(file, targetFormat, requestOptions, true);
     } else if (isCSV && LIBREOFFICE_CONVERSIONS[targetFormat]) {
@@ -2419,7 +2526,11 @@ app.post('/api/convert/batch', uploadBatch.array('files'), async (req, res) => {
       const isDOC = isDocFile(file);
       console.log(`Processing ${file.originalname}: isCSV=${isCSV}, isEPUB=${isEPUB}, isEPS=${isEPS}, isDNG=${isDNG}, isDOC=${isDOC}, format=${format}, mimetype=${file.mimetype}`);
 
-      if (isEPUB && CALIBRE_CONVERSIONS[format]) {
+      if ((isDocFile(file) || isDocxFile(file) || isOdtFile(file)) && format === 'epub') {
+        console.log('Batch: Routing to LibreOffice (DOC/DOCX/ODT to EPUB conversion)');
+        const inputHint = isDocxFile(file) ? 'docx' : isOdtFile(file) ? 'odt' : 'doc';
+        output = await convertDocxWithLibreOffice(file, inputHint, requestOptions, true);
+      } else if (isEPUB && CALIBRE_CONVERSIONS[format]) {
         console.log('Routing to Calibre (EPUB conversion)');
         output = await convertWithCalibre(file, format, requestOptions, true);
       } else if (isCSV && LIBREOFFICE_CONVERSIONS[format]) {
