@@ -402,7 +402,7 @@ const convertDngFile = async (
 };
 
 const app = express();
-const PORT = Number(process.env.PORT || 10000);
+const PORT = Number(process.env.PORT || 3000);
 
 const RAW_EXTENSIONS = new Set([
   'cr2','cr3','crw','nef','arw','dng','rw2','pef','orf','raf','x3f','raw','sr2','nrw','k25','kdc','dcr'
@@ -1582,18 +1582,8 @@ const buildLibreOfficeFilterArgs = (
 
 app.use(helmet());
 app.use(cors({
-  origin: process.env.FRONTEND_URL || 'https://morphy-1-ulvv.onrender.com',
-  methods: ['GET', 'POST', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization'],
-  credentials: false
-}));
-
-// Handle preflight requests
-app.options('*', cors({
-  origin: process.env.FRONTEND_URL || 'https://morphy-1-ulvv.onrender.com',
-  methods: ['GET', 'POST', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization'],
-  credentials: false
+  origin: process.env.FRONTEND_URL || '*',
+  credentials: true
 }));
 
 const limiter = rateLimit({
