@@ -913,6 +913,115 @@ const convertCsvDirectlyToMarkdown = async (
   }
 };
 
+const parseHtmlToCsv = async (htmlContent: string): Promise<string> => {
+  console.log('Parsing HTML to CSV...');
+  
+  // Simple HTML table parser
+  const csvLines: string[] = [];
+  
+  // Look for table elements
+  const tableRegex = /<table[^>]*>(.*?)<\/table>/gis;
+  const tableMatches = htmlContent.match(tableRegex);
+  
+  if (tableMatches && tableMatches.length > 0) {
+    console.log(`Found ${tableMatches.length} table(s) in HTML`);
+    
+    for (const tableHtml of tableMatches) {
+      // Extract rows
+      const rowRegex = /<tr[^>]*>(.*?)<\/tr>/gis;
+      const rowMatches = tableHtml.match(rowRegex);
+      
+      if (rowMatches) {
+        for (const rowHtml of rowMatches) {
+          // Extract cells (both th and td)
+          const cellRegex = /<(?:th|td)[^>]*>(.*?)<\/(?:th|td)>/gis;
+          const cellMatches = rowHtml.match(cellRegex);
+          
+          if (cellMatches) {
+            const cells = cellMatches.map(cell => {
+              // Remove HTML tags and clean up content
+              const cleanCell = cell
+                .replace(/<(?:th|td)[^>]*>/, '')
+                .replace(/<\/(?:th|td)>/, '')
+                .replace(/<[^>]*>/g, '') // Remove any remaining HTML tags
+                .replace(/&nbsp;/g, ' ')
+                .replace(/&amp;/g, '&')
+                .replace(/&lt;/g, '<')
+                .replace(/&gt;/g, '>')
+                .replace(/&quot;/g, '"')
+                .replace(/&#39;/g, "'")
+                .trim();
+              
+              // Escape quotes and wrap in quotes
+              const escapedCell = cleanCell.replace(/"/g, '""');
+              return `"${escapedCell}"`;
+            });
+            
+            csvLines.push(cells.join(','));
+          }
+        }
+      }
+    }
+  } else {
+    // No tables found, try to extract structured data from paragraphs
+    console.log('No tables found, extracting paragraph content');
+    
+    // Look for paragraphs or divs that might contain structured data
+    const paragraphRegex = /<(?:p|div)[^>]*>(.*?)<\/(?:p|div)>/gis;
+    const paragraphMatches = htmlContent.match(paragraphRegex);
+    
+    if (paragraphMatches) {
+      for (const paragraphHtml of paragraphMatches) {
+        const cleanText = paragraphHtml
+          .replace(/<(?:p|div)[^>]*>/, '')
+          .replace(/<\/(?:p|div)>/, '')
+          .replace(/<[^>]*>/g, '')
+          .replace(/&nbsp;/g, ' ')
+          .replace(/&amp;/g, '&')
+          .replace(/&lt;/g, '<')
+          .replace(/&gt;/g, '>')
+          .replace(/&quot;/g, '"')
+          .replace(/&#39;/g, "'")
+          .trim();
+        
+        if (cleanText.length > 0) {
+          // Try to split on common delimiters
+          if (cleanText.includes('\t')) {
+            const cells = cleanText.split('\t').map(cell => `"${cell.trim()}"`);
+            csvLines.push(cells.join(','));
+          } else if (cleanText.includes('  ') && cleanText.split('  ').length > 1) {
+            const cells = cleanText.split(/\s{2,}/).map(cell => `"${cell.trim()}"`);
+            csvLines.push(cells.join(','));
+          } else {
+            csvLines.push(`"${cleanText}"`);
+          }
+        }
+      }
+    }
+  }
+  
+  if (csvLines.length === 0) {
+    // Fallback: just extract all text content
+    const textContent = htmlContent
+      .replace(/<[^>]*>/g, '')
+      .replace(/&nbsp;/g, ' ')
+      .replace(/&amp;/g, '&')
+      .replace(/&lt;/g, '<')
+      .replace(/&gt;/g, '>')
+      .replace(/&quot;/g, '"')
+      .replace(/&#39;/g, "'")
+      .split('\n')
+      .filter(line => line.trim().length > 0);
+    
+    for (const line of textContent) {
+      csvLines.push(`"${line.trim()}"`);
+    }
+  }
+  
+  console.log(`HTML to CSV conversion: ${csvLines.length} rows generated`);
+  return csvLines.join('\n');
+};
+
 const convertDocWithLibreOffice = async (
   file: Express.Multer.File,
   targetFormat: string,
@@ -1016,51 +1125,145 @@ const convertDocWithLibreOffice = async (
     }
 
     if (!conversionSucceeded) {
-      console.log('All LibreOffice command variants failed, trying DOC -> TXT -> CSV approach');
+      console.log('All LibreOffice command variants failed, trying DOC -> HTML -> CSV approach');
       
       try {
-        // Try DOC to TXT first
-        const txtArgs = [
+        // Try DOC to HTML first (preserves table structure better)
+        const htmlArgs = [
           '--headless',
           '--nolockcheck',
           '--nodefault',
           '--nologo',
           '--nofirststartwizard',
-          '--convert-to', 'txt',
+          '--convert-to', 'html',
           '--outdir', tmpDir,
           inputPath
         ];
         
-        console.log('Trying DOC to TXT conversion:', txtArgs);
-        const { stdout: txtStdout, stderr: txtStderr } = await execLibreOffice(txtArgs);
+        console.log('Trying DOC to HTML conversion:', htmlArgs);
+        const { stdout: htmlStdout, stderr: htmlStderr } = await execLibreOffice(htmlArgs);
         
-        if (txtStdout.trim().length > 0) {
-          console.log('DOC to TXT stdout:', txtStdout.trim());
+        if (htmlStdout.trim().length > 0) {
+          console.log('DOC to HTML stdout:', htmlStdout.trim());
         }
-        if (txtStderr.trim().length > 0) {
-          console.warn('DOC to TXT stderr:', txtStderr.trim());
+        if (htmlStderr.trim().length > 0) {
+          console.warn('DOC to HTML stderr:', htmlStderr.trim());
         }
         
-        // Check if TXT file was created
-        const txtFiles = await fs.readdir(tmpDir);
-        const txtFile = txtFiles.find(name => name.toLowerCase().endsWith('.txt'));
+        // Check if HTML file was created
+        const htmlFiles = await fs.readdir(tmpDir);
+        const htmlFile = htmlFiles.find(name => name.toLowerCase().endsWith('.html'));
         
-        if (txtFile) {
-          console.log('DOC to TXT successful, now converting TXT to CSV');
-          const txtPath = path.join(tmpDir, txtFile);
-          const txtContent = await fs.readFile(txtPath, 'utf-8');
+        if (htmlFile) {
+          console.log('DOC to HTML successful, now converting HTML to CSV');
+          const htmlPath = path.join(tmpDir, htmlFile);
+          const htmlContent = await fs.readFile(htmlPath, 'utf-8');
           
-          // Convert TXT content to CSV format
-          const lines = txtContent.split('\n').filter(line => line.trim());
-          const csvContent = lines.map(line => `"${line.trim()}"`).join('\n');
+          // Parse HTML to extract table data
+          const csvContent = await parseHtmlToCsv(htmlContent);
           
           const csvPath = path.join(tmpDir, `${sanitizedBase}.csv`);
           await fs.writeFile(csvPath, csvContent, 'utf-8');
           
-          console.log('TXT to CSV conversion successful');
+          console.log('HTML to CSV conversion successful');
           conversionSucceeded = true;
         } else {
-          console.log('TXT file not found after DOC to TXT conversion');
+          console.log('HTML file not found, trying DOC -> TXT -> CSV approach');
+          
+          // Fallback to TXT approach
+          const txtArgs = [
+            '--headless',
+            '--nolockcheck',
+            '--nodefault',
+            '--nologo',
+            '--nofirststartwizard',
+            '--convert-to', 'txt',
+            '--outdir', tmpDir,
+            inputPath
+          ];
+        
+          console.log('Trying DOC to TXT conversion:', txtArgs);
+          const { stdout: txtStdout, stderr: txtStderr } = await execLibreOffice(txtArgs);
+        
+          if (txtStdout.trim().length > 0) {
+            console.log('DOC to TXT stdout:', txtStdout.trim());
+          }
+          if (txtStderr.trim().length > 0) {
+            console.warn('DOC to TXT stderr:', txtStderr.trim());
+          }
+          
+          // Check if TXT file was created
+          const txtFiles = await fs.readdir(tmpDir);
+          const txtFile = txtFiles.find(name => name.toLowerCase().endsWith('.txt'));
+        
+          if (txtFile) {
+            console.log('DOC to TXT successful, now converting TXT to CSV');
+            const txtPath = path.join(tmpDir, txtFile);
+            const txtContent = await fs.readFile(txtPath, 'utf-8');
+            
+            // Convert TXT content to proper CSV format
+            const lines = txtContent.split('\n').filter(line => line.trim());
+            
+            // Try to detect table structure in the text
+            const csvLines: string[] = [];
+            
+            // Look for lines that might be table headers (short lines, possibly with common separators)
+            const potentialHeaders = lines.filter(line => 
+              line.length < 100 && 
+              (line.includes('\t') || line.includes('  ') || line.includes('|'))
+            );
+            
+            if (potentialHeaders.length > 0) {
+              // Try to parse as tab-separated or space-separated table
+              for (const line of lines) {
+                if (line.includes('\t')) {
+                  // Tab-separated values
+                  const cells = line.split('\t').map(cell => `"${cell.trim()}"`);
+                  csvLines.push(cells.join(','));
+                } else if (line.includes('  ') && line.split('  ').length > 1) {
+                  // Space-separated values (multiple spaces)
+                  const cells = line.split(/\s{2,}/).map(cell => `"${cell.trim()}"`);
+                  csvLines.push(cells.join(','));
+                } else if (line.includes('|')) {
+                  // Pipe-separated values
+                  const cells = line.split('|').map(cell => `"${cell.trim()}"`);
+                  csvLines.push(cells.join(','));
+                } else if (line.trim().length > 0) {
+                  // Regular line - treat as single column
+                  csvLines.push(`"${line.trim()}"`);
+                }
+              }
+            } else {
+              // No clear table structure - create a simple CSV with each line as a row
+              for (const line of lines) {
+                if (line.trim().length > 0) {
+                  // Try to split on common delimiters
+                  if (line.includes(',')) {
+                    const cells = line.split(',').map(cell => `"${cell.trim()}"`);
+                    csvLines.push(cells.join(','));
+                  } else if (line.includes(';')) {
+                    const cells = line.split(';').map(cell => `"${cell.trim()}"`);
+                    csvLines.push(cells.join(','));
+                  } else {
+                    csvLines.push(`"${line.trim()}"`);
+                  }
+                }
+              }
+            }
+            
+            const csvContent = csvLines.join('\n');
+            const csvPath = path.join(tmpDir, `${sanitizedBase}.csv`);
+            await fs.writeFile(csvPath, csvContent, 'utf-8');
+            
+            console.log('TXT to CSV conversion successful:', {
+              originalLines: lines.length,
+              csvLines: csvLines.length,
+              csvContentLength: csvContent.length
+            });
+            conversionSucceeded = true;
+          } else {
+            console.log('TXT file not found after DOC to TXT conversion');
+          }
         }
       } catch (txtError) {
         console.error('DOC to TXT fallback failed:', txtError);
