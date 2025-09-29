@@ -1030,9 +1030,10 @@ const convertWithCalibre = async (
     }
 
     if (conversion.postProcessMarkdown) {
-      const result = await postProcessToMarkdown(
+      const result = await convertTxtToMarkdown(
         outputBuffer,
         originalBase,
+        options,
         persistToDisk
       );
       return result;
