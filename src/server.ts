@@ -1216,9 +1216,8 @@ const buildCalibreArgs = (
   
   // Special handling for HTML conversion to avoid common issues
   if (args[1].endsWith('.html')) {
-    args.push('--breadth-first');
-    args.push('--max-levels', '5');
-    args.push('--max-toc-links', '50');
+    // Keep it simple for HTML intermediate conversion
+    args.push('--no-default-epub-cover');
   }
 
   return args;
