@@ -647,6 +647,7 @@ const CALIBRE_CONVERSIONS: Record<string, {
   postProcessLibreOfficeTarget?: keyof typeof LIBREOFFICE_CONVERSIONS;
   postProcessExcelTarget?: 'csv' | 'xlsx';
   postProcessMarkdown?: boolean;
+  postProcessPresentationTarget?: 'odp' | 'ppt' | 'pptx';
 }> = {
   mobi: { extension: 'mobi', mime: 'application/x-mobipocket-ebook' },
   doc: { extension: 'doc', mime: 'application/msword', intermediateExtension: 'docx', postProcessLibreOfficeTarget: 'doc' },
@@ -1238,7 +1239,22 @@ const convertTxtToPresentation = async (
     const mime = mimeTypes[targetFormat];
     
     if (persistToDisk) {
-      return persistOutputBuffer(outputBuffer, downloadName, mime);
+      // Always persist presentation files to disk for better performance
+      console.log('Persisting presentation file to disk with 10-minute cleanup...');
+      const result = await persistOutputBuffer(outputBuffer, downloadName, mime);
+      
+      // Schedule cleanup after 10 minutes (600,000 ms) instead of default 5 minutes
+      const cleanupPath = path.join(UPLOAD_DIR, result.storedFilename);
+      setTimeout(async () => {
+        try {
+          await fs.unlink(cleanupPath);
+          console.log(`Cleaned up presentation file: ${result.storedFilename}`);
+        } catch (cleanupError) {
+          console.warn(`Cleanup failed for presentation file ${result.storedFilename}:`, cleanupError);
+        }
+      }, 10 * 60 * 1000); // 10 minutes
+      
+      return result;
     }
     
     return {
