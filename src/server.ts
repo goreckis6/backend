@@ -1022,6 +1022,7 @@ const parseHtmlToCsv = async (htmlContent: string): Promise<string> => {
   return csvLines.join('\n');
 };
 
+
 const convertDocWithLibreOffice = async (
   file: Express.Multer.File,
   targetFormat: string,
@@ -1053,7 +1054,7 @@ const convertDocWithLibreOffice = async (
         '--nodefault',
         '--nologo',
         '--nofirststartwizard',
-        '--convert-to', 'csv:"Text - txt - csv (StarCalc)"',
+        '--convert-to', 'txt',
         '--outdir', tmpDir,
         inputPath
       ],
@@ -1073,7 +1074,7 @@ const convertDocWithLibreOffice = async (
         '--nodefault',
         '--nologo',
         '--nofirststartwizard',
-        '--convert-to', 'csv:"Text - txt - csv (StarCalc)":44,34,UTF8',
+        '--convert-to', 'csv:"Text - txt - csv (StarCalc)"',
         '--outdir', tmpDir,
         inputPath
       ],
@@ -1085,8 +1086,7 @@ const convertDocWithLibreOffice = async (
         '--nofirststartwizard',
         '--convert-to', 'csv:"Text - txt - csv (StarCalc)":44,34,UTF8',
         '--outdir', tmpDir,
-        inputPath,
-        '--calc'
+        inputPath
       ]
     ];
 
@@ -1106,16 +1106,52 @@ const convertDocWithLibreOffice = async (
         }
 
         const files = await fs.readdir(tmpDir);
-        const targetExt = `.${conversion.extension.toLowerCase()}`;
-        const outputFile = files.find(name => name.toLowerCase().endsWith(targetExt));
+        const csvFile = files.find(name => name.toLowerCase().endsWith('.csv'));
+        const txtFile = files.find(name => name.toLowerCase().endsWith('.txt'));
         
-        if (outputFile) {
+        if (csvFile) {
           console.log('DOC to CSV conversion successful with command:', args);
+          conversionSucceeded = true;
+          break;
+        } else if (txtFile) {
+          console.log('DOC to TXT conversion successful, converting to CSV:', args);
+          // Convert TXT to CSV
+          const txtPath = path.join(tmpDir, txtFile);
+          const txtContent = await fs.readFile(txtPath, 'utf-8');
+          
+          // Convert TXT content to CSV format
+          const lines = txtContent.split('\n').filter(line => line.trim());
+          
+          // Try to detect if this looks like tabular data
+          const hasTabs = lines.some(line => line.includes('\t'));
+          const hasMultipleSpaces = lines.some(line => line.split(/\s{2,}/).length > 1);
+          
+          let csvContent: string;
+          
+          if (hasTabs) {
+            // Convert tab-separated data to CSV
+            csvContent = lines.map(line => 
+              line.split('\t').map(cell => `"${cell.trim()}"`).join(',')
+            ).join('\n');
+          } else if (hasMultipleSpaces) {
+            // Convert space-separated data to CSV
+            csvContent = lines.map(line => 
+              line.split(/\s{2,}/).map(cell => `"${cell.trim()}"`).join(',')
+            ).join('\n');
+          } else {
+            // Convert each line to a single CSV column
+            csvContent = lines.map(line => `"${line.trim()}"`).join('\n');
+          }
+          
+          const csvPath = path.join(tmpDir, `${sanitizedBase}.csv`);
+          await fs.writeFile(csvPath, csvContent, 'utf-8');
+          
+          console.log('TXT to CSV conversion successful');
           conversionSucceeded = true;
           break;
         } else {
           console.log('Files in temp directory after LibreOffice:', files);
-          console.log('No CSV file found, trying next command variant...');
+          console.log('No CSV or TXT file found, trying next command variant...');
         }
       } catch (error) {
         console.warn('LibreOffice command failed:', error);
