@@ -1182,26 +1182,53 @@ const convertTxtToPresentation = async (
     
     console.log(`Converting HTML to ${targetFormat}...`);
     
-    const conversionMap = {
+    // Try preferred filter first using ext:filter syntax; fallback to just ext
+    const filterMap: Record<'odp' | 'ppt' | 'pptx', string> = {
       odp: 'impress8',
       ppt: 'MS PowerPoint 97',
       pptx: 'Impress MS PowerPoint 2007 XML'
     };
-    
-    const args = [
-      '--headless',
-      '--nolockcheck',
-      '--nodefault',
-      '--nologo',
-      '--nofirststartwizard',
-      '--convert-to', conversionMap[targetFormat],
-      '--outdir', tmpDir,
-      htmlPath
+
+    const tryArgsVariants: string[][] = [
+      [
+        '--headless', '--nolockcheck', '--nodefault', '--nologo', '--nofirststartwizard',
+        '--convert-to', `${targetFormat}:${filterMap[targetFormat]}`,
+        '--outdir', tmpDir, htmlPath
+      ],
+      [
+        '--headless', '--nolockcheck', '--nodefault', '--nologo', '--nofirststartwizard',
+        '--convert-to', targetFormat,
+        '--outdir', tmpDir, htmlPath
+      ]
     ];
+
+    let stdout = '';
+    let stderr = '';
+    let convertSucceeded = false;
+
+    for (const variant of tryArgsVariants) {
+      console.log('LibreOffice presentation conversion args:', variant);
+      try {
+        const res = await execLibreOffice(variant);
+        stdout = res.stdout;
+        stderr = res.stderr;
+        convertSucceeded = true;
+        break;
+      } catch (err) {
+        console.warn('LibreOffice conversion attempt failed, trying fallback...', err);
+      }
+    }
+
+    if (!convertSucceeded) {
+      throw new Error('LibreOffice conversion failed for presentation output');
+    }
     
-    console.log('LibreOffice presentation conversion args:', args);
-    
-    const { stdout, stderr } = await execLibreOffice(args);
+    if (stdout.trim().length > 0) {
+      console.log('LibreOffice presentation stdout:', stdout.trim());
+    }
+    if (stderr.trim().length > 0) {
+      console.warn('LibreOffice presentation stderr:', stderr.trim());
+    }
     if (stdout.trim().length > 0) {
       console.log('LibreOffice presentation stdout:', stdout.trim());
     }
