@@ -1244,15 +1244,18 @@ const convertTxtToPresentation = async (
       const result = await persistOutputBuffer(outputBuffer, downloadName, mime);
       
       // Schedule cleanup after 10 minutes (600,000 ms) instead of default 5 minutes
-      const cleanupPath = path.join(UPLOAD_DIR, result.storedFilename);
-      setTimeout(async () => {
-        try {
-          await fs.unlink(cleanupPath);
-          console.log(`Cleaned up presentation file: ${result.storedFilename}`);
-        } catch (cleanupError) {
-          console.warn(`Cleanup failed for presentation file ${result.storedFilename}:`, cleanupError);
-        }
-      }, 10 * 60 * 1000); // 10 minutes
+      if (result.storedFilename) {
+        const cleanupPath = path.join(BATCH_OUTPUT_DIR, result.storedFilename);
+        setTimeout(async () => {
+          try {
+            await fs.unlink(cleanupPath);
+            console.log(`Cleaned up presentation file: ${result.storedFilename}`);
+            batchFileMetadata.delete(result.storedFilename!);
+          } catch (cleanupError) {
+            console.warn(`Cleanup failed for presentation file ${result.storedFilename}:`, cleanupError);
+          }
+        }, 10 * 60 * 1000); // 10 minutes
+      }
       
       return result;
     }
