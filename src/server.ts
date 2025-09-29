@@ -1580,10 +1580,23 @@ const buildLibreOfficeFilterArgs = (
   return [`--infilter=CSV:${delimiter},34,UTF8`];
 };
 
+const app = express();
+const PORT = process.env.PORT || 10000;
+
 app.use(helmet());
 app.use(cors({
-  origin: process.env.FRONTEND_URL || '*',
-  credentials: true
+  origin: process.env.FRONTEND_URL || 'https://morphy-1-ulvv.onrender.com',
+  methods: ['GET', 'POST', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization'],
+  credentials: false
+}));
+
+// Handle preflight requests
+app.options('*', cors({
+  origin: process.env.FRONTEND_URL || 'https://morphy-1-ulvv.onrender.com',
+  methods: ['GET', 'POST', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization'],
+  credentials: false
 }));
 
 const limiter = rateLimit({
