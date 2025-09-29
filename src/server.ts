@@ -13,6 +13,8 @@ import { randomUUID } from 'crypto';
 import Papa from 'papaparse';
 import * as XLSX from 'xlsx';
 import PptxGenJS from 'pptxgenjs';
+import mammoth from 'mammoth';
+import * as cheerio from 'cheerio';
 
 const BATCH_OUTPUT_DIR = path.join(os.tmpdir(), 'morphy-batch-outputs');
 fs.mkdir(BATCH_OUTPUT_DIR, { recursive: true }).catch(() => undefined);
@@ -447,7 +449,23 @@ const RAW_EXTENSIONS = new Set([
 const isRawFile = (file: Express.Multer.File) => {
   const ext = path.extname(file.originalname).replace('.', '').toLowerCase();
   const mimetype = file.mimetype?.toLowerCase() ?? '';
-  return RAW_EXTENSIONS.has(ext) || mimetype.includes('raw') || mimetype.includes('x-');
+  
+  // Check if it's a known RAW file extension
+  if (RAW_EXTENSIONS.has(ext)) {
+    return true;
+  }
+  
+  // Check for RAW MIME types, but exclude common non-RAW x- types
+  if (mimetype.includes('raw')) {
+    return true;
+  }
+  
+  // Only consider x- MIME types as RAW if they're not common image formats
+  if (mimetype.includes('x-') && !mimetype.includes('x-icon') && !mimetype.includes('x-png') && !mimetype.includes('x-jpeg')) {
+    return true;
+  }
+  
+  return false;
 };
 
 const prepareRawBuffer = async (file: Express.Multer.File): Promise<Buffer> => {
@@ -461,7 +479,45 @@ const prepareRawBuffer = async (file: Express.Multer.File): Promise<Buffer> => {
 
   try {
     await fs.writeFile(inputPath, file.buffer);
-    await execFileAsync('dcraw', ['-T', '-6', '-O', outputPath, inputPath]);
+    
+    // Try multiple dcraw command variants
+    const dcrawCommands = [
+      ['-T', '-6', '-O', outputPath, inputPath], // With output file
+      ['-T', '-6', inputPath], // Without output file (uses current directory)
+      ['-T', '-4', '-O', outputPath, inputPath], // 16-bit output
+      ['-T', '-8', '-O', outputPath, inputPath], // 8-bit output
+      ['-T', '-6', '-w', '-O', outputPath, inputPath] // With white balance
+    ];
+    
+    let conversionSucceeded = false;
+    let lastError: unknown;
+    
+    for (const args of dcrawCommands) {
+      try {
+        console.log('Trying dcraw command:', args);
+        await execFileAsync('dcraw', args);
+        
+        // Check if output file was created
+        try {
+          await fs.access(outputPath);
+          conversionSucceeded = true;
+          console.log('dcraw conversion successful');
+          break;
+        } catch (accessError) {
+          // Output file doesn't exist, try next command
+          console.log('Output file not found, trying next command...');
+        }
+      } catch (error) {
+        console.warn('dcraw command failed:', error);
+        lastError = error;
+        continue;
+      }
+    }
+    
+    if (!conversionSucceeded) {
+      throw new Error(`All dcraw commands failed. Last error: ${lastError instanceof Error ? lastError.message : String(lastError)}`);
+    }
+    
     return await fs.readFile(outputPath);
   } catch (error) {
     console.error('dcraw conversion failed:', error);
@@ -1023,13 +1079,90 @@ const parseHtmlToCsv = async (htmlContent: string): Promise<string> => {
 };
 
 
+const parseHtmlTablesToCsv = async (htmlContent: string): Promise<string> => {
+  console.log('Parsing HTML tables to CSV using cheerio...');
+  
+  const $ = cheerio.load(htmlContent);
+  const tables = $('table');
+  
+  if (tables.length === 0) {
+    console.log('No HTML tables found, extracting text content');
+    // No tables found, extract text content
+    const textContent = htmlContent
+      .replace(/<[^>]*>/g, '') // Remove HTML tags
+      .replace(/&nbsp;/g, ' ') // Replace &nbsp; with space
+      .replace(/&amp;/g, '&') // Replace &amp; with &
+      .replace(/&lt;/g, '<') // Replace &lt; with <
+      .replace(/&gt;/g, '>') // Replace &gt; with >
+      .replace(/&quot;/g, '"') // Replace &quot; with "
+      .split('\n')
+      .filter(line => line.trim())
+      .map(line => `"${line.trim()}"`)
+      .join('\n');
+    
+    return textContent;
+  }
+
+  console.log(`Found ${tables.length} table(s) in HTML`);
+  
+  const allCsvRows: string[] = [];
+  
+  tables.each((tableIndex, table) => {
+    console.log(`Processing table ${tableIndex + 1}...`);
+    const tableRows: string[] = [];
+    
+    $(table).find('tr').each((rowIndex, row) => {
+      const cells: string[] = [];
+      
+      $(row).find('td, th').each((cellIndex, cell) => {
+        let cellText = $(cell).text()
+          .replace(/\s+/g, ' ') // Normalize whitespace
+          .trim();
+        
+        // Handle empty cells
+        if (!cellText) {
+          cellText = '';
+        }
+        
+        // Escape quotes and wrap in quotes
+        cellText = cellText.replace(/"/g, '""');
+        cells.push(`"${cellText}"`);
+      });
+      
+      if (cells.length > 0) {
+        tableRows.push(cells.join(','));
+      }
+    });
+    
+    if (tableRows.length > 0) {
+      console.log(`Table ${tableIndex + 1} has ${tableRows.length} rows`);
+      allCsvRows.push(...tableRows);
+      
+      // Add separator between tables if there are multiple
+      if (tableIndex < tables.length - 1) {
+        allCsvRows.push(''); // Empty line separator
+      }
+    }
+  });
+  
+  const csvContent = allCsvRows.join('\n');
+  
+  console.log('HTML table parsing successful:', {
+    totalTables: tables.length,
+    totalRows: allCsvRows.length,
+    csvLength: csvContent.length
+  });
+  
+  return csvContent;
+};
+
 const convertDocWithLibreOffice = async (
   file: Express.Multer.File,
   targetFormat: string,
   options: Record<string, string | undefined> = {},
   persistToDisk = false
 ): Promise<ConversionResult> => {
-  console.log('=== DOC TO CSV CONVERSION START ===');
+  console.log('=== DOC TO CSV CONVERSION START (ENHANCED) ===');
   
   const conversion = LIBREOFFICE_CONVERSIONS[targetFormat];
   if (!conversion) {
@@ -1046,287 +1179,87 @@ const convertDocWithLibreOffice = async (
   try {
     await fs.writeFile(inputPath, file.buffer);
 
-    // Try multiple LibreOffice command variants for DOC to CSV conversion
-    const commandVariants = [
-      [
-        '--headless',
-        '--nolockcheck',
-        '--nodefault',
-        '--nologo',
-        '--nofirststartwizard',
-        '--convert-to', 'txt',
-        '--outdir', tmpDir,
-        inputPath
-      ],
-      [
-        '--headless',
-        '--nolockcheck',
-        '--nodefault',
-        '--nologo',
-        '--nofirststartwizard',
-        '--convert-to', 'csv',
-        '--outdir', tmpDir,
-        inputPath
-      ],
-      [
-        '--headless',
-        '--nolockcheck',
-        '--nodefault',
-        '--nologo',
-        '--nofirststartwizard',
-        '--convert-to', 'csv:"Text - txt - csv (StarCalc)"',
-        '--outdir', tmpDir,
-        inputPath
-      ],
-      [
-        '--headless',
-        '--nolockcheck',
-        '--nodefault',
-        '--nologo',
-        '--nofirststartwizard',
-        '--convert-to', 'csv:"Text - txt - csv (StarCalc)":44,34,UTF8',
-        '--outdir', tmpDir,
-        inputPath
-      ]
+    // Step 1: Convert DOC to DOCX using LibreOffice
+    console.log('Step 1: Converting DOC to DOCX...');
+    const docxArgs = [
+      '--headless',
+      '--nolockcheck',
+      '--nodefault',
+      '--nologo',
+      '--nofirststartwizard',
+      '--convert-to', 'docx',
+      '--outdir', tmpDir,
+      inputPath
     ];
 
-    let lastError: unknown;
-    let conversionSucceeded = false;
-
-    for (const args of commandVariants) {
-      try {
-        console.log('Trying LibreOffice DOC to CSV command:', args);
-        const { stdout, stderr } = await execLibreOffice(args);
-        
-        if (stdout.trim().length > 0) {
-          console.log('LibreOffice stdout:', stdout.trim());
-        }
-        if (stderr.trim().length > 0) {
-          console.warn('LibreOffice stderr:', stderr.trim());
-        }
-
-        const files = await fs.readdir(tmpDir);
-        const csvFile = files.find(name => name.toLowerCase().endsWith('.csv'));
-        const txtFile = files.find(name => name.toLowerCase().endsWith('.txt'));
-        
-        if (csvFile) {
-          console.log('DOC to CSV conversion successful with command:', args);
-          conversionSucceeded = true;
-          break;
-        } else if (txtFile) {
-          console.log('DOC to TXT conversion successful, converting to CSV:', args);
-          // Convert TXT to CSV
-          const txtPath = path.join(tmpDir, txtFile);
-          const txtContent = await fs.readFile(txtPath, 'utf-8');
-          
-          // Convert TXT content to CSV format
-          const lines = txtContent.split('\n').filter(line => line.trim());
-          
-          // Try to detect if this looks like tabular data
-          const hasTabs = lines.some(line => line.includes('\t'));
-          const hasMultipleSpaces = lines.some(line => line.split(/\s{2,}/).length > 1);
-          
-          let csvContent: string;
-          
-          if (hasTabs) {
-            // Convert tab-separated data to CSV
-            csvContent = lines.map(line => 
-              line.split('\t').map(cell => `"${cell.trim()}"`).join(',')
-            ).join('\n');
-          } else if (hasMultipleSpaces) {
-            // Convert space-separated data to CSV
-            csvContent = lines.map(line => 
-              line.split(/\s{2,}/).map(cell => `"${cell.trim()}"`).join(',')
-            ).join('\n');
-          } else {
-            // Convert each line to a single CSV column
-            csvContent = lines.map(line => `"${line.trim()}"`).join('\n');
-          }
-          
-          const csvPath = path.join(tmpDir, `${sanitizedBase}.csv`);
-          await fs.writeFile(csvPath, csvContent, 'utf-8');
-          
-          console.log('TXT to CSV conversion successful');
-          conversionSucceeded = true;
-          break;
-        } else {
-          console.log('Files in temp directory after LibreOffice:', files);
-          console.log('No CSV or TXT file found, trying next command variant...');
-        }
-      } catch (error) {
-        console.warn('LibreOffice command failed:', error);
-        lastError = error;
-        continue;
+    let docxConversionSucceeded = false;
+    try {
+      console.log('Trying DOC to DOCX conversion:', docxArgs);
+      const { stdout, stderr } = await execLibreOffice(docxArgs);
+      
+      if (stdout.trim().length > 0) {
+        console.log('DOC to DOCX stdout:', stdout.trim());
       }
+      if (stderr.trim().length > 0) {
+        console.warn('DOC to DOCX stderr:', stderr.trim());
+      }
+
+      const files = await fs.readdir(tmpDir);
+      const docxFile = files.find(name => name.toLowerCase().endsWith('.docx'));
+      
+      if (docxFile) {
+        console.log('DOC to DOCX conversion successful');
+        docxConversionSucceeded = true;
+      } else {
+        console.log('Files in temp directory after DOC to DOCX:', files);
+        throw new Error('DOCX file not found after conversion');
+      }
+    } catch (error) {
+      console.error('DOC to DOCX conversion failed:', error);
+      throw new Error(`Failed to convert DOC to DOCX: ${error instanceof Error ? error.message : String(error)}`);
     }
 
-    if (!conversionSucceeded) {
-      console.log('All LibreOffice command variants failed, trying DOC -> HTML -> CSV approach');
-      
-      try {
-        // Try DOC to HTML first (preserves table structure better)
-        const htmlArgs = [
-          '--headless',
-          '--nolockcheck',
-          '--nodefault',
-          '--nologo',
-          '--nofirststartwizard',
-          '--convert-to', 'html',
-          '--outdir', tmpDir,
-          inputPath
-        ];
-        
-        console.log('Trying DOC to HTML conversion:', htmlArgs);
-        const { stdout: htmlStdout, stderr: htmlStderr } = await execLibreOffice(htmlArgs);
-        
-        if (htmlStdout.trim().length > 0) {
-          console.log('DOC to HTML stdout:', htmlStdout.trim());
-        }
-        if (htmlStderr.trim().length > 0) {
-          console.warn('DOC to HTML stderr:', htmlStderr.trim());
-        }
-        
-        // Check if HTML file was created
-        const htmlFiles = await fs.readdir(tmpDir);
-        const htmlFile = htmlFiles.find(name => name.toLowerCase().endsWith('.html'));
-        
-        if (htmlFile) {
-          console.log('DOC to HTML successful, now converting HTML to CSV');
-          const htmlPath = path.join(tmpDir, htmlFile);
-          const htmlContent = await fs.readFile(htmlPath, 'utf-8');
-          
-          // Parse HTML to extract table data
-          const csvContent = await parseHtmlToCsv(htmlContent);
-          
-          const csvPath = path.join(tmpDir, `${sanitizedBase}.csv`);
-          await fs.writeFile(csvPath, csvContent, 'utf-8');
-          
-          console.log('HTML to CSV conversion successful');
-          conversionSucceeded = true;
-        } else {
-          console.log('HTML file not found, trying DOC -> TXT -> CSV approach');
-          
-          // Fallback to TXT approach
-          const txtArgs = [
-            '--headless',
-            '--nolockcheck',
-            '--nodefault',
-            '--nologo',
-            '--nofirststartwizard',
-            '--convert-to', 'txt',
-            '--outdir', tmpDir,
-            inputPath
-          ];
-        
-          console.log('Trying DOC to TXT conversion:', txtArgs);
-          const { stdout: txtStdout, stderr: txtStderr } = await execLibreOffice(txtArgs);
-        
-          if (txtStdout.trim().length > 0) {
-            console.log('DOC to TXT stdout:', txtStdout.trim());
-          }
-          if (txtStderr.trim().length > 0) {
-            console.warn('DOC to TXT stderr:', txtStderr.trim());
-          }
-          
-          // Check if TXT file was created
-          const txtFiles = await fs.readdir(tmpDir);
-          const txtFile = txtFiles.find(name => name.toLowerCase().endsWith('.txt'));
-        
-          if (txtFile) {
-            console.log('DOC to TXT successful, now converting TXT to CSV');
-            const txtPath = path.join(tmpDir, txtFile);
-            const txtContent = await fs.readFile(txtPath, 'utf-8');
-            
-            // Convert TXT content to proper CSV format
-            const lines = txtContent.split('\n').filter(line => line.trim());
-            
-            // Try to detect table structure in the text
-            const csvLines: string[] = [];
-            
-            // Look for lines that might be table headers (short lines, possibly with common separators)
-            const potentialHeaders = lines.filter(line => 
-              line.length < 100 && 
-              (line.includes('\t') || line.includes('  ') || line.includes('|'))
-            );
-            
-            if (potentialHeaders.length > 0) {
-              // Try to parse as tab-separated or space-separated table
-              for (const line of lines) {
-                if (line.includes('\t')) {
-                  // Tab-separated values
-                  const cells = line.split('\t').map(cell => `"${cell.trim()}"`);
-                  csvLines.push(cells.join(','));
-                } else if (line.includes('  ') && line.split('  ').length > 1) {
-                  // Space-separated values (multiple spaces)
-                  const cells = line.split(/\s{2,}/).map(cell => `"${cell.trim()}"`);
-                  csvLines.push(cells.join(','));
-                } else if (line.includes('|')) {
-                  // Pipe-separated values
-                  const cells = line.split('|').map(cell => `"${cell.trim()}"`);
-                  csvLines.push(cells.join(','));
-                } else if (line.trim().length > 0) {
-                  // Regular line - treat as single column
-                  csvLines.push(`"${line.trim()}"`);
-                }
-              }
-            } else {
-              // No clear table structure - create a simple CSV with each line as a row
-              for (const line of lines) {
-                if (line.trim().length > 0) {
-                  // Try to split on common delimiters
-                  if (line.includes(',')) {
-                    const cells = line.split(',').map(cell => `"${cell.trim()}"`);
-                    csvLines.push(cells.join(','));
-                  } else if (line.includes(';')) {
-                    const cells = line.split(';').map(cell => `"${cell.trim()}"`);
-                    csvLines.push(cells.join(','));
-                  } else {
-                    csvLines.push(`"${line.trim()}"`);
-                  }
-                }
-              }
-            }
-            
-            const csvContent = csvLines.join('\n');
-            const csvPath = path.join(tmpDir, `${sanitizedBase}.csv`);
-            await fs.writeFile(csvPath, csvContent, 'utf-8');
-            
-            console.log('TXT to CSV conversion successful:', {
-              originalLines: lines.length,
-              csvLines: csvLines.length,
-              csvContentLength: csvContent.length
-            });
-            conversionSucceeded = true;
-          } else {
-            console.log('TXT file not found after DOC to TXT conversion');
-          }
-        }
-      } catch (txtError) {
-        console.error('DOC to TXT fallback failed:', txtError);
-      }
-      
-      if (!conversionSucceeded) {
-        throw new Error(`LibreOffice did not produce an output file for DOC to CSV conversion. Last error: ${lastError instanceof Error ? lastError.message : String(lastError)}`);
-      }
+    if (!docxConversionSucceeded) {
+      throw new Error('DOC to DOCX conversion failed');
     }
 
-    // Find the output file after successful conversion
-    const files = await fs.readdir(tmpDir);
-    const targetExt = `.${conversion.extension.toLowerCase()}`;
-    const outputFile = files.find(name => name.toLowerCase().endsWith(targetExt));
+    // Step 2: Extract HTML from DOCX using mammoth
+    console.log('Step 2: Extracting HTML from DOCX using mammoth...');
+    const docxPath = path.join(tmpDir, `${safeBase}.docx`);
+    const docxBuffer = await fs.readFile(docxPath);
     
-    if (!outputFile) {
-      console.log('Files in temp directory after successful conversion:', files);
-      throw new Error(`Output file not found after successful conversion`);
+    const mammothResult = await mammoth.convertToHtml({ buffer: docxBuffer });
+    const htmlContent = mammothResult.value;
+    
+    console.log('Mammoth extraction successful:', {
+      htmlLength: htmlContent.length,
+      messages: mammothResult.messages.length
+    });
+
+    if (mammothResult.messages.length > 0) {
+      console.log('Mammoth messages:', mammothResult.messages);
     }
 
-    const outputPath = path.join(tmpDir, outputFile);
-    const outputBuffer = await fs.readFile(outputPath);
+    // Step 3: Parse HTML tables and convert to CSV
+    console.log('Step 3: Parsing HTML tables and converting to CSV...');
+    const csvContent = await parseHtmlTablesToCsv(htmlContent);
+    
+    console.log('HTML table parsing successful:', {
+      csvLength: csvContent.length,
+      csvLines: csvContent.split('\n').length
+    });
+
+    // Write CSV file
+    const csvPath = path.join(tmpDir, `${sanitizedBase}.csv`);
+    await fs.writeFile(csvPath, csvContent, 'utf-8');
+
+    const outputBuffer = await fs.readFile(csvPath);
     const downloadName = `${sanitizedBase}.${conversion.extension}`;
 
     console.log('DOC to CSV conversion successful:', {
       outputSize: outputBuffer.length,
-      filename: downloadName
+      filename: downloadName,
+      csvContent: csvContent.substring(0, 200) + '...'
     });
 
     if (persistToDisk) {
@@ -1341,7 +1274,7 @@ const convertDocWithLibreOffice = async (
 
   } catch (error) {
     console.error('DOC to CSV conversion failed:', error);
-    const message = error instanceof Error ? error.message : 'Unknown LibreOffice error';
+    const message = error instanceof Error ? error.message : 'Unknown conversion error';
     throw new Error(`Failed to convert DOC to CSV: ${message}`);
   } finally {
     await fs.rm(tmpDir, { recursive: true, force: true }).catch(() => undefined);
