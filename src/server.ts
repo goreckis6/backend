@@ -402,7 +402,7 @@ const convertDngFile = async (
 };
 
 const app = express();
-const PORT = Number(process.env.PORT || 3000);
+const PORT = Number(process.env.PORT || 10000);
 
 const RAW_EXTENSIONS = new Set([
   'cr2','cr3','crw','nef','arw','dng','rw2','pef','orf','raf','x3f','raw','sr2','nrw','k25','kdc','dcr'
@@ -1579,9 +1579,6 @@ const buildLibreOfficeFilterArgs = (
   const delimiter = options.delimiter === '\t' ? '9' : options.delimiter === ';' ? '59' : '44';
   return [`--infilter=CSV:${delimiter},34,UTF8`];
 };
-
-const app = express();
-const PORT = process.env.PORT || 10000;
 
 app.use(helmet());
 app.use(cors({
