@@ -1309,6 +1309,179 @@ const convertDocWithLibreOffice = async (
   }
 };
 
+const convertCsvToDocxFallback = async (
+  file: Express.Multer.File,
+  options: Record<string, string | undefined> = {},
+  persistToDisk = false
+): Promise<ConversionResult> => {
+  console.log('=== CSV TO DOCX FALLBACK CONVERSION START ===');
+  
+  const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'morphy-csv-docx-fallback-'));
+  const originalBase = path.basename(file.originalname, path.extname(file.originalname));
+  const sanitizedBase = sanitizeFilename(originalBase);
+  const safeBase = `${sanitizedBase}_${randomUUID()}`;
+  const normalized = normalizeCsvBuffer(file.buffer);
+  const inputFilename = `${safeBase}.csv`;
+  const inputPath = path.join(tmpDir, inputFilename);
+
+  try {
+    await fs.writeFile(inputPath, normalized.normalizedCsv, 'utf8');
+
+    // Try CSV to RTF first, then RTF to DOCX (more reliable)
+    const rtfPath = path.join(tmpDir, `${safeBase}.rtf`);
+    
+    // Step 1: Convert CSV to RTF
+    const csvToRtfArgs = [
+      '--headless',
+      '--nolockcheck',
+      '--nodefault',
+      '--nologo',
+      '--nofirststartwizard',
+      '--convert-to', 'rtf',
+      '--outdir', tmpDir,
+      inputPath
+    ];
+    
+    console.log('Converting CSV to RTF:', csvToRtfArgs);
+    const { stdout: rtfStdout, stderr: rtfStderr } = await execLibreOffice(csvToRtfArgs);
+    
+    if (rtfStdout.trim().length > 0) {
+      console.log('CSV to RTF stdout:', rtfStdout.trim());
+    }
+    if (rtfStderr.trim().length > 0) {
+      console.warn('CSV to RTF stderr:', rtfStderr.trim());
+    }
+    
+    // Check if RTF file was created
+    const files = await fs.readdir(tmpDir);
+    const rtfFile = files.find(name => name.toLowerCase().endsWith('.rtf'));
+    
+    if (!rtfFile) {
+      throw new Error('LibreOffice did not produce an RTF file from CSV');
+    }
+    
+    console.log('RTF file created successfully:', rtfFile);
+    
+    // Step 2: Convert RTF to DOCX
+    const rtfFilePath = path.join(tmpDir, rtfFile);
+    const commandVariants: string[][] = [
+      [
+        '--headless',
+        '--nolockcheck',
+        '--nodefault',
+        '--nologo',
+        '--nofirststartwizard',
+        '--convert-to', 'docx',
+        '--outdir', tmpDir,
+        rtfFilePath
+      ],
+      [
+        '--headless',
+        '--nolockcheck',
+        '--nodefault',
+        '--nologo',
+        '--nofirststartwizard',
+        '--convert-to', 'docx:"MS Word 2007 XML"',
+        '--outdir', tmpDir,
+        rtfFilePath
+      ],
+      [
+        '--headless',
+        '--nolockcheck',
+        '--nodefault',
+        '--nologo',
+        '--nofirststartwizard',
+        '--convert-to', 'docx',
+        '--outdir', tmpDir,
+        rtfFilePath,
+        '--writer'
+      ]
+    ];
+
+    let lastError: unknown;
+    let outputBuffer: Buffer | null = null;
+    let docxFile: string | null = null;
+
+    for (const args of commandVariants) {
+      try {
+        console.log('Trying LibreOffice RTF to DOCX command:', args);
+        const { stdout, stderr } = await execLibreOffice(args);
+        
+        if (stdout.trim().length > 0) {
+          console.log('LibreOffice RTF to DOCX stdout:', stdout.trim());
+        }
+        if (stderr.trim().length > 0) {
+          console.warn('LibreOffice RTF to DOCX stderr:', stderr.trim());
+        }
+
+        // Check if DOCX file was created
+        const finalFiles = await fs.readdir(tmpDir);
+        docxFile = finalFiles.find(name => name.toLowerCase().endsWith('.docx')) || null;
+        
+        if (docxFile) {
+          const outputPath = path.join(tmpDir, docxFile);
+          outputBuffer = await fs.readFile(outputPath);
+          
+          // Validate the DOCX file
+          if (outputBuffer.length > 0 && outputBuffer[0] === 0x50 && outputBuffer[1] === 0x4B) {
+            console.log('Valid DOCX file created from RTF:', docxFile);
+            break;
+          } else {
+            console.warn('Invalid DOCX file created from RTF, trying next variant...');
+            outputBuffer = null;
+            docxFile = null;
+          }
+        }
+      } catch (error) {
+        console.warn('LibreOffice RTF to DOCX command failed:', error);
+        lastError = error;
+        continue;
+      }
+    }
+
+    if (!docxFile || !outputBuffer) {
+      throw new Error(`LibreOffice did not produce a valid DOCX file. Last error: ${lastError instanceof Error ? lastError.message : String(lastError)}`);
+    }
+
+    const downloadName = `${sanitizedBase}.docx`;
+    
+    console.log('CSV to DOCX fallback conversion successful:', {
+      outputSize: outputBuffer.length,
+      filename: downloadName,
+      docxFile,
+      isValidDocx: outputBuffer[0] === 0x50 && outputBuffer[1] === 0x4B
+    });
+
+    if (persistToDisk) {
+      console.log('Persisting fallback DOCX file to disk:', {
+        bufferSize: outputBuffer.length,
+        downloadName,
+        isValidDocx: outputBuffer[0] === 0x50 && outputBuffer[1] === 0x4B
+      });
+      const result = await persistOutputBuffer(outputBuffer, downloadName, 'application/vnd.openxmlformats-officedocument.wordprocessingml.document');
+      console.log('Fallback file persisted successfully:', {
+        storedFilename: result.storedFilename,
+        filename: result.filename,
+        mime: result.mime
+      });
+      return result;
+    }
+
+    return {
+      buffer: outputBuffer,
+      filename: downloadName,
+      mime: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+    };
+
+  } catch (error) {
+    console.error('CSV to DOCX fallback conversion failed:', error);
+    const message = error instanceof Error ? error.message : 'Unknown conversion error';
+    throw new Error(`Failed to convert CSV to DOCX: ${message}`);
+  } finally {
+    await fs.rm(tmpDir, { recursive: true, force: true }).catch(() => undefined);
+  }
+};
+
 const convertCsvToDocxEnhanced = async (
   file: Express.Multer.File,
   options: Record<string, string | undefined> = {},
@@ -1534,7 +1707,9 @@ const convertCsvWithLibreOffice = async (
   // Special handling for DOCX conversion - use a more reliable approach
   if (targetFormat === 'docx') {
     console.log('Using enhanced CSV to DOCX conversion');
-    return await convertCsvToDocxEnhanced(file, options, persistToDisk);
+    // Always use the fallback method for now since the enhanced method is having issues
+    console.log('Using fallback method for CSV to DOCX conversion');
+    return await convertCsvToDocxFallback(file, options, persistToDisk);
   }
 
   const conversion = LIBREOFFICE_CONVERSIONS[targetFormat];
