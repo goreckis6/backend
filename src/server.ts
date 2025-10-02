@@ -1309,6 +1309,158 @@ const convertDocWithLibreOffice = async (
   }
 };
 
+const convertCsvToDocxEnhanced = async (
+  file: Express.Multer.File,
+  options: Record<string, string | undefined> = {},
+  persistToDisk = false
+): Promise<ConversionResult> => {
+  console.log('=== CSV TO DOCX ENHANCED CONVERSION START ===');
+  
+  const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'morphy-csv-docx-'));
+  const originalBase = path.basename(file.originalname, path.extname(file.originalname));
+  const sanitizedBase = sanitizeFilename(originalBase);
+  const safeBase = `${sanitizedBase}_${randomUUID()}`;
+  
+  try {
+    // Step 1: Parse CSV data
+    const csvText = file.buffer.toString('utf-8');
+    const parsed = Papa.parse(csvText, {
+      header: false,
+      skipEmptyLines: true,
+      transform: (value) => value.trim()
+    });
+    
+    console.log('CSV parsing successful:', {
+      rows: parsed.data.length,
+      errors: parsed.errors.length
+    });
+    
+    if (parsed.errors.length > 0) {
+      console.warn('CSV parsing warnings:', parsed.errors);
+    }
+    
+    // Step 2: Convert to XLSX format first (more reliable)
+    const workbook = XLSX.utils.book_new();
+    const worksheet = XLSX.utils.aoa_to_sheet(parsed.data as any[][]);
+    XLSX.utils.book_append_sheet(workbook, worksheet, 'Sheet1');
+    
+    const xlsxPath = path.join(tmpDir, `${safeBase}.xlsx`);
+    XLSX.writeFile(workbook, xlsxPath);
+    
+    console.log('XLSX intermediate file created successfully');
+    
+    // Step 3: Convert XLSX to DOCX using LibreOffice with multiple variants
+    const libreOfficeVariants = [
+      [
+        '--headless',
+        '--nolockcheck',
+        '--nodefault',
+        '--nologo',
+        '--nofirststartwizard',
+        '--convert-to', 'docx',
+        '--outdir', tmpDir,
+        xlsxPath
+      ],
+      [
+        '--headless',
+        '--nolockcheck',
+        '--nodefault',
+        '--nologo',
+        '--nofirststartwizard',
+        '--convert-to', 'docx:"MS Word 2007 XML"',
+        '--outdir', tmpDir,
+        xlsxPath
+      ],
+      [
+        '--headless',
+        '--nolockcheck',
+        '--nodefault',
+        '--nologo',
+        '--nofirststartwizard',
+        '--convert-to', 'docx',
+        '--outdir', tmpDir,
+        xlsxPath,
+        '--calc'
+      ]
+    ];
+    
+    let docxFile: string | null = null;
+    let lastError: unknown;
+    
+    for (const libreOfficeArgs of libreOfficeVariants) {
+      try {
+        console.log('Running LibreOffice XLSX to DOCX conversion:', libreOfficeArgs);
+        const { stdout, stderr } = await execLibreOffice(libreOfficeArgs);
+        
+        if (stdout.trim().length > 0) {
+          console.log('LibreOffice XLSX->DOCX stdout:', stdout.trim());
+        }
+        if (stderr.trim().length > 0) {
+          console.warn('LibreOffice XLSX->DOCX stderr:', stderr.trim());
+        }
+        
+        // Check if DOCX file was created
+        const files = await fs.readdir(tmpDir);
+        docxFile = files.find(name => name.toLowerCase().endsWith('.docx')) || null;
+        
+        if (docxFile) {
+          console.log('DOCX file created successfully:', docxFile);
+          break;
+        } else {
+          console.log('No DOCX file found, trying next variant...');
+          console.log('Available files:', files);
+        }
+      } catch (error) {
+        console.warn('LibreOffice variant failed:', error);
+        lastError = error;
+        continue;
+      }
+    }
+    
+    if (!docxFile) {
+      throw new Error(`LibreOffice did not produce a DOCX file. Last error: ${lastError instanceof Error ? lastError.message : String(lastError)}`);
+    }
+    
+    const finalDocxPath = path.join(tmpDir, docxFile);
+    const outputBuffer = await fs.readFile(finalDocxPath);
+    const downloadName = `${sanitizedBase}.docx`;
+    
+    // Validate the DOCX file
+    if (outputBuffer.length === 0) {
+      throw new Error('Generated DOCX file is empty');
+    }
+    
+    // Check if it's a valid DOCX file (should start with PK signature)
+    if (outputBuffer.length < 4 || outputBuffer[0] !== 0x50 || outputBuffer[1] !== 0x4B) {
+      throw new Error('Generated file does not appear to be a valid DOCX file');
+    }
+    
+    console.log('CSV to DOCX conversion successful:', {
+      outputSize: outputBuffer.length,
+      filename: downloadName,
+      docxFile,
+      isValidDocx: outputBuffer[0] === 0x50 && outputBuffer[1] === 0x4B
+    });
+    
+    if (persistToDisk) {
+      return persistOutputBuffer(outputBuffer, downloadName, 'application/vnd.openxmlformats-officedocument.wordprocessingml.document');
+    }
+    
+    return {
+      buffer: outputBuffer,
+      filename: downloadName,
+      mime: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+    };
+    
+  } catch (error) {
+    console.error('CSV to DOCX enhanced conversion failed:', error);
+    const message = error instanceof Error ? error.message : 'Unknown conversion error';
+    throw new Error(`Failed to convert CSV to DOCX: ${message}`);
+  } finally {
+    await fs.rm(tmpDir, { recursive: true, force: true }).catch(() => undefined);
+  }
+};
+
 const convertCsvWithLibreOffice = async (
   file: Express.Multer.File,
   targetFormat: string,
@@ -1319,6 +1471,12 @@ const convertCsvWithLibreOffice = async (
   if (targetFormat === 'md') {
     console.log('Using direct CSV to Markdown conversion (bypassing LibreOffice)');
     return await convertCsvDirectlyToMarkdown(file, options, persistToDisk);
+  }
+
+  // Special handling for DOCX conversion - use a more reliable approach
+  if (targetFormat === 'docx') {
+    console.log('Using enhanced CSV to DOCX conversion');
+    return await convertCsvToDocxEnhanced(file, options, persistToDisk);
   }
 
   const conversion = LIBREOFFICE_CONVERSIONS[targetFormat];
