@@ -1327,43 +1327,42 @@ const convertCsvToDocxFallback = async (
   try {
     await fs.writeFile(inputPath, normalized.normalizedCsv, 'utf8');
 
-    // Try CSV to RTF first, then RTF to DOCX (more reliable)
-    const rtfPath = path.join(tmpDir, `${safeBase}.rtf`);
+    // Try CSV to ODT first, then ODT to DOCX (more reliable)
     
-    // Step 1: Convert CSV to RTF
-    const csvToRtfArgs = [
+    // Step 1: Convert CSV to ODT
+    const csvToOdtArgs = [
       '--headless',
       '--nolockcheck',
       '--nodefault',
       '--nologo',
       '--nofirststartwizard',
-      '--convert-to', 'rtf',
+      '--convert-to', 'odt',
       '--outdir', tmpDir,
       inputPath
     ];
     
-    console.log('Converting CSV to RTF:', csvToRtfArgs);
-    const { stdout: rtfStdout, stderr: rtfStderr } = await execLibreOffice(csvToRtfArgs);
+    console.log('Converting CSV to ODT:', csvToOdtArgs);
+    const { stdout: odtStdout, stderr: odtStderr } = await execLibreOffice(csvToOdtArgs);
     
-    if (rtfStdout.trim().length > 0) {
-      console.log('CSV to RTF stdout:', rtfStdout.trim());
+    if (odtStdout.trim().length > 0) {
+      console.log('CSV to ODT stdout:', odtStdout.trim());
     }
-    if (rtfStderr.trim().length > 0) {
-      console.warn('CSV to RTF stderr:', rtfStderr.trim());
+    if (odtStderr.trim().length > 0) {
+      console.warn('CSV to ODT stderr:', odtStderr.trim());
     }
     
-    // Check if RTF file was created
+    // Check if ODT file was created
     const files = await fs.readdir(tmpDir);
-    const rtfFile = files.find(name => name.toLowerCase().endsWith('.rtf'));
+    const odtFile = files.find(name => name.toLowerCase().endsWith('.odt'));
     
-    if (!rtfFile) {
-      throw new Error('LibreOffice did not produce an RTF file from CSV');
+    if (!odtFile) {
+      throw new Error('LibreOffice did not produce an ODT file from CSV');
     }
     
-    console.log('RTF file created successfully:', rtfFile);
+    console.log('ODT file created successfully:', odtFile);
     
-    // Step 2: Convert RTF to DOCX
-    const rtfFilePath = path.join(tmpDir, rtfFile);
+    // Step 2: Convert ODT to DOCX
+    const odtFilePath = path.join(tmpDir, odtFile);
     const commandVariants: string[][] = [
       [
         '--headless',
@@ -1373,7 +1372,7 @@ const convertCsvToDocxFallback = async (
         '--nofirststartwizard',
         '--convert-to', 'docx',
         '--outdir', tmpDir,
-        rtfFilePath
+        odtFilePath
       ],
       [
         '--headless',
@@ -1383,7 +1382,7 @@ const convertCsvToDocxFallback = async (
         '--nofirststartwizard',
         '--convert-to', 'docx:"MS Word 2007 XML"',
         '--outdir', tmpDir,
-        rtfFilePath
+        odtFilePath
       ],
       [
         '--headless',
@@ -1393,7 +1392,7 @@ const convertCsvToDocxFallback = async (
         '--nofirststartwizard',
         '--convert-to', 'docx',
         '--outdir', tmpDir,
-        rtfFilePath,
+        odtFilePath,
         '--writer'
       ]
     ];
@@ -1404,14 +1403,14 @@ const convertCsvToDocxFallback = async (
 
     for (const args of commandVariants) {
       try {
-        console.log('Trying LibreOffice RTF to DOCX command:', args);
+        console.log('Trying LibreOffice ODT to DOCX command:', args);
         const { stdout, stderr } = await execLibreOffice(args);
         
         if (stdout.trim().length > 0) {
-          console.log('LibreOffice RTF to DOCX stdout:', stdout.trim());
+          console.log('LibreOffice ODT to DOCX stdout:', stdout.trim());
         }
         if (stderr.trim().length > 0) {
-          console.warn('LibreOffice RTF to DOCX stderr:', stderr.trim());
+          console.warn('LibreOffice ODT to DOCX stderr:', stderr.trim());
         }
 
         // Check if DOCX file was created
@@ -1424,16 +1423,16 @@ const convertCsvToDocxFallback = async (
           
           // Validate the DOCX file
           if (outputBuffer.length > 0 && outputBuffer[0] === 0x50 && outputBuffer[1] === 0x4B) {
-            console.log('Valid DOCX file created from RTF:', docxFile);
+            console.log('Valid DOCX file created from ODT:', docxFile);
             break;
           } else {
-            console.warn('Invalid DOCX file created from RTF, trying next variant...');
+            console.warn('Invalid DOCX file created from ODT, trying next variant...');
             outputBuffer = null;
             docxFile = null;
           }
         }
       } catch (error) {
-        console.warn('LibreOffice RTF to DOCX command failed:', error);
+        console.warn('LibreOffice ODT to DOCX command failed:', error);
         lastError = error;
         continue;
       }
