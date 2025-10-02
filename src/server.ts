@@ -1339,87 +1339,77 @@ const convertCsvToDocxEnhanced = async (
       console.warn('CSV parsing warnings:', parsed.errors);
     }
     
-    // Step 2: Convert to XLSX format first (more reliable)
-    const workbook = XLSX.utils.book_new();
-    const worksheet = XLSX.utils.aoa_to_sheet(parsed.data as any[][]);
-    XLSX.utils.book_append_sheet(workbook, worksheet, 'Sheet1');
+    // Step 2: Convert CSV to ODT first (more reliable than XLSX->DOCX)
+    const csvPath = path.join(tmpDir, `${safeBase}.csv`);
+    await fs.writeFile(csvPath, csvText, 'utf-8');
     
-    const xlsxPath = path.join(tmpDir, `${safeBase}.xlsx`);
-    XLSX.writeFile(workbook, xlsxPath);
-    
-    console.log('XLSX intermediate file created successfully');
-    
-    // Step 3: Convert XLSX to DOCX using LibreOffice with multiple variants
-    const libreOfficeVariants = [
-      [
-        '--headless',
-        '--nolockcheck',
-        '--nodefault',
-        '--nologo',
-        '--nofirststartwizard',
-        '--convert-to', 'docx',
-        '--outdir', tmpDir,
-        xlsxPath
-      ],
-      [
-        '--headless',
-        '--nolockcheck',
-        '--nodefault',
-        '--nologo',
-        '--nofirststartwizard',
-        '--convert-to', 'docx:"MS Word 2007 XML"',
-        '--outdir', tmpDir,
-        xlsxPath
-      ],
-      [
-        '--headless',
-        '--nolockcheck',
-        '--nodefault',
-        '--nologo',
-        '--nofirststartwizard',
-        '--convert-to', 'docx',
-        '--outdir', tmpDir,
-        xlsxPath,
-        '--calc'
-      ]
+    // Step 3: Convert CSV to ODT using LibreOffice
+    const odtPath = path.join(tmpDir, `${safeBase}.odt`);
+    const csvToOdtArgs = [
+      '--headless',
+      '--nolockcheck',
+      '--nodefault',
+      '--nologo',
+      '--nofirststartwizard',
+      '--convert-to', 'odt',
+      '--outdir', tmpDir,
+      csvPath
     ];
     
-    let docxFile: string | null = null;
-    let lastError: unknown;
+    console.log('Running LibreOffice CSV to ODT conversion:', csvToOdtArgs);
+    const { stdout: odtStdout, stderr: odtStderr } = await execLibreOffice(csvToOdtArgs);
     
-    for (const libreOfficeArgs of libreOfficeVariants) {
-      try {
-        console.log('Running LibreOffice XLSX to DOCX conversion:', libreOfficeArgs);
-        const { stdout, stderr } = await execLibreOffice(libreOfficeArgs);
-        
-        if (stdout.trim().length > 0) {
-          console.log('LibreOffice XLSX->DOCX stdout:', stdout.trim());
-        }
-        if (stderr.trim().length > 0) {
-          console.warn('LibreOffice XLSX->DOCX stderr:', stderr.trim());
-        }
-        
-        // Check if DOCX file was created
-        const files = await fs.readdir(tmpDir);
-        docxFile = files.find(name => name.toLowerCase().endsWith('.docx')) || null;
-        
-        if (docxFile) {
-          console.log('DOCX file created successfully:', docxFile);
-          break;
-        } else {
-          console.log('No DOCX file found, trying next variant...');
-          console.log('Available files:', files);
-        }
-      } catch (error) {
-        console.warn('LibreOffice variant failed:', error);
-        lastError = error;
-        continue;
-      }
+    if (odtStdout.trim().length > 0) {
+      console.log('LibreOffice CSV->ODT stdout:', odtStdout.trim());
     }
+    if (odtStderr.trim().length > 0) {
+      console.warn('LibreOffice CSV->ODT stderr:', odtStderr.trim());
+    }
+    
+    // Check if ODT file was created
+    const files = await fs.readdir(tmpDir);
+    const odtFile = files.find(name => name.toLowerCase().endsWith('.odt'));
+    
+    if (!odtFile) {
+      throw new Error('LibreOffice did not produce an ODT file from CSV');
+    }
+    
+    console.log('ODT file created successfully:', odtFile);
+    
+    // Step 4: Convert ODT to DOCX using LibreOffice
+    const odtFilePath = path.join(tmpDir, odtFile);
+    const docxPath = path.join(tmpDir, `${safeBase}.docx`);
+    
+    const odtToDocxArgs = [
+      '--headless',
+      '--nolockcheck',
+      '--nodefault',
+      '--nologo',
+      '--nofirststartwizard',
+      '--convert-to', 'docx',
+      '--outdir', tmpDir,
+      odtFilePath
+    ];
+    
+    console.log('Running LibreOffice ODT to DOCX conversion:', odtToDocxArgs);
+    const { stdout: docxStdout, stderr: docxStderr } = await execLibreOffice(odtToDocxArgs);
+    
+    if (docxStdout.trim().length > 0) {
+      console.log('LibreOffice ODT->DOCX stdout:', docxStdout.trim());
+    }
+    if (docxStderr.trim().length > 0) {
+      console.warn('LibreOffice ODT->DOCX stderr:', docxStderr.trim());
+    }
+    
+    // Check if DOCX file was created
+    const finalFiles = await fs.readdir(tmpDir);
+    const docxFile = finalFiles.find(name => name.toLowerCase().endsWith('.docx'));
     
     if (!docxFile) {
-      throw new Error(`LibreOffice did not produce a DOCX file. Last error: ${lastError instanceof Error ? lastError.message : String(lastError)}`);
+      throw new Error('LibreOffice did not produce a DOCX file from ODT');
     }
+    
+    console.log('DOCX file created successfully:', docxFile);
     
     const finalDocxPath = path.join(tmpDir, docxFile);
     const outputBuffer = await fs.readFile(finalDocxPath);
