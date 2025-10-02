@@ -1322,7 +1322,7 @@ const convertCsvToDocxEnhanced = async (
   const safeBase = `${sanitizedBase}_${randomUUID()}`;
   
   try {
-    // Step 1: Parse CSV data
+    // Step 1: Parse CSV data and create a simple HTML table
     const csvText = file.buffer.toString('utf-8');
     const parsed = Papa.parse(csvText, {
       header: false,
@@ -1339,77 +1339,84 @@ const convertCsvToDocxEnhanced = async (
       console.warn('CSV parsing warnings:', parsed.errors);
     }
     
-    // Step 2: Convert CSV to ODT first (more reliable than XLSX->DOCX)
-    const csvPath = path.join(tmpDir, `${safeBase}.csv`);
-    await fs.writeFile(csvPath, csvText, 'utf-8');
+    // Step 2: Create HTML table from CSV data
+    const htmlContent = createHtmlTableFromCsv(parsed.data as string[][]);
+    const htmlPath = path.join(tmpDir, `${safeBase}.html`);
+    await fs.writeFile(htmlPath, htmlContent, 'utf-8');
     
-    // Step 3: Convert CSV to ODT using LibreOffice
-    const odtPath = path.join(tmpDir, `${safeBase}.odt`);
-    const csvToOdtArgs = [
-      '--headless',
-      '--nolockcheck',
-      '--nodefault',
-      '--nologo',
-      '--nofirststartwizard',
-      '--convert-to', 'odt',
-      '--outdir', tmpDir,
-      csvPath
+    console.log('HTML table created successfully');
+    
+    // Step 3: Convert HTML to DOCX using LibreOffice with multiple variants
+    const libreOfficeVariants = [
+      [
+        '--headless',
+        '--nolockcheck',
+        '--nodefault',
+        '--nologo',
+        '--nofirststartwizard',
+        '--convert-to', 'docx',
+        '--outdir', tmpDir,
+        htmlPath
+      ],
+      [
+        '--headless',
+        '--nolockcheck',
+        '--nodefault',
+        '--nologo',
+        '--nofirststartwizard',
+        '--convert-to', 'docx:"MS Word 2007 XML"',
+        '--outdir', tmpDir,
+        htmlPath
+      ],
+      [
+        '--headless',
+        '--nolockcheck',
+        '--nodefault',
+        '--nologo',
+        '--nofirststartwizard',
+        '--convert-to', 'docx',
+        '--outdir', tmpDir,
+        htmlPath,
+        '--writer'
+      ]
     ];
     
-    console.log('Running LibreOffice CSV to ODT conversion:', csvToOdtArgs);
-    const { stdout: odtStdout, stderr: odtStderr } = await execLibreOffice(csvToOdtArgs);
+    let docxFile: string | null = null;
+    let lastError: unknown;
     
-    if (odtStdout.trim().length > 0) {
-      console.log('LibreOffice CSV->ODT stdout:', odtStdout.trim());
+    for (const libreOfficeArgs of libreOfficeVariants) {
+      try {
+        console.log('Running LibreOffice HTML to DOCX conversion:', libreOfficeArgs);
+        const { stdout, stderr } = await execLibreOffice(libreOfficeArgs);
+        
+        if (stdout.trim().length > 0) {
+          console.log('LibreOffice HTML->DOCX stdout:', stdout.trim());
+        }
+        if (stderr.trim().length > 0) {
+          console.warn('LibreOffice HTML->DOCX stderr:', stderr.trim());
+        }
+        
+        // Check if DOCX file was created
+        const files = await fs.readdir(tmpDir);
+        docxFile = files.find(name => name.toLowerCase().endsWith('.docx')) || null;
+        
+        if (docxFile) {
+          console.log('DOCX file created successfully:', docxFile);
+          break;
+        } else {
+          console.log('No DOCX file found, trying next variant...');
+          console.log('Available files:', files);
+        }
+      } catch (error) {
+        console.warn('LibreOffice variant failed:', error);
+        lastError = error;
+        continue;
+      }
     }
-    if (odtStderr.trim().length > 0) {
-      console.warn('LibreOffice CSV->ODT stderr:', odtStderr.trim());
-    }
-    
-    // Check if ODT file was created
-    const files = await fs.readdir(tmpDir);
-    const odtFile = files.find(name => name.toLowerCase().endsWith('.odt'));
-    
-    if (!odtFile) {
-      throw new Error('LibreOffice did not produce an ODT file from CSV');
-    }
-    
-    console.log('ODT file created successfully:', odtFile);
-    
-    // Step 4: Convert ODT to DOCX using LibreOffice
-    const odtFilePath = path.join(tmpDir, odtFile);
-    const docxPath = path.join(tmpDir, `${safeBase}.docx`);
-    
-    const odtToDocxArgs = [
-      '--headless',
-      '--nolockcheck',
-      '--nodefault',
-      '--nologo',
-      '--nofirststartwizard',
-      '--convert-to', 'docx',
-      '--outdir', tmpDir,
-      odtFilePath
-    ];
-    
-    console.log('Running LibreOffice ODT to DOCX conversion:', odtToDocxArgs);
-    const { stdout: docxStdout, stderr: docxStderr } = await execLibreOffice(odtToDocxArgs);
-    
-    if (docxStdout.trim().length > 0) {
-      console.log('LibreOffice ODT->DOCX stdout:', docxStdout.trim());
-    }
-    if (docxStderr.trim().length > 0) {
-      console.warn('LibreOffice ODT->DOCX stderr:', docxStderr.trim());
-    }
-    
-    // Check if DOCX file was created
-    const finalFiles = await fs.readdir(tmpDir);
-    const docxFile = finalFiles.find(name => name.toLowerCase().endsWith('.docx'));
     
     if (!docxFile) {
-      throw new Error('LibreOffice did not produce a DOCX file from ODT');
+      throw new Error(`LibreOffice did not produce a DOCX file. Last error: ${lastError instanceof Error ? lastError.message : String(lastError)}`);
     }
-    
-    console.log('DOCX file created successfully:', docxFile);
     
     const finalDocxPath = path.join(tmpDir, docxFile);
     const outputBuffer = await fs.readFile(finalDocxPath);
@@ -1449,6 +1456,56 @@ const convertCsvToDocxEnhanced = async (
   } finally {
     await fs.rm(tmpDir, { recursive: true, force: true }).catch(() => undefined);
   }
+};
+
+const createHtmlTableFromCsv = (csvData: string[][]): string => {
+  if (csvData.length === 0) {
+    return '<html><body><p>No data available</p></body></html>';
+  }
+  
+  let html = '<!DOCTYPE html>\n<html>\n<head>\n<meta charset="UTF-8">\n<title>CSV Data</title>\n';
+  html += '<style>\n';
+  html += 'table { border-collapse: collapse; width: 100%; margin: 20px 0; }\n';
+  html += 'th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }\n';
+  html += 'th { background-color: #f2f2f2; font-weight: bold; }\n';
+  html += 'tr:nth-child(even) { background-color: #f9f9f9; }\n';
+  html += '</style>\n';
+  html += '</head>\n<body>\n';
+  html += '<h1>CSV Data</h1>\n';
+  html += '<table>\n';
+  
+  // Add header row
+  if (csvData.length > 0) {
+    html += '<thead>\n<tr>\n';
+    csvData[0].forEach(cell => {
+      html += `<th>${escapeHtml(cell)}</th>\n`;
+    });
+    html += '</tr>\n</thead>\n';
+  }
+  
+  // Add data rows
+  html += '<tbody>\n';
+  for (let i = 1; i < csvData.length; i++) {
+    html += '<tr>\n';
+    csvData[i].forEach(cell => {
+      html += `<td>${escapeHtml(cell)}</td>\n`;
+    });
+    html += '</tr>\n';
+  }
+  html += '</tbody>\n';
+  
+  html += '</table>\n</body>\n</html>';
+  
+  return html;
+};
+
+const escapeHtml = (text: string): string => {
+  return text
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
 };
 
 const convertCsvWithLibreOffice = async (
