@@ -1705,19 +1705,15 @@ const convertCsvToDocxWithDocxLib = async (
   try {
     const csvText = file.buffer.toString('utf-8');
     const parsed = Papa.parse<string[]>(csvText, {
-      delimiter: '',
-      newline: '',
-      quoteChar: '"',
-      escapeChar: '"',
       skipEmptyLines: false
     });
 
-    if (parsed.errors?.length) {
-      console.warn('CSV parse warnings:', parsed.errors.map(e => ({ message: e.message, row: e.row })));
+    if (parsed && Array.isArray(parsed.errors) && parsed.errors.length) {
+      console.warn('CSV parse warnings:', parsed.errors.map((e: any) => ({ message: e.message, row: e.row })));
     }
 
-    const rows: string[][] = Array.isArray(parsed.data)
-      ? (parsed.data as unknown as string[][]).map(r => (Array.isArray(r) ? r : [String(r ?? '')]))
+    const rows: string[][] = parsed && Array.isArray((parsed as any).data)
+      ? ((parsed as any).data as unknown as string[][]).map((r: unknown) => (Array.isArray(r) ? (r as string[]) : [String(r ?? '')]))
       : [];
 
     // Ensure at least one row
