@@ -1440,7 +1440,18 @@ const convertCsvToDocxEnhanced = async (
     });
     
     if (persistToDisk) {
-      return persistOutputBuffer(outputBuffer, downloadName, 'application/vnd.openxmlformats-officedocument.wordprocessingml.document');
+      console.log('Persisting DOCX file to disk:', {
+        bufferSize: outputBuffer.length,
+        downloadName,
+        isValidDocx: outputBuffer[0] === 0x50 && outputBuffer[1] === 0x4B
+      });
+      const result = await persistOutputBuffer(outputBuffer, downloadName, 'application/vnd.openxmlformats-officedocument.wordprocessingml.document');
+      console.log('File persisted successfully:', {
+        storedFilename: result.storedFilename,
+        filename: result.filename,
+        mime: result.mime
+      });
+      return result;
     }
     
     return {
@@ -2812,6 +2823,12 @@ app.get('/download/:filename', async (req, res) => {
     const storedFilename = req.params.filename;
     const metadata = batchFileMetadata.get(storedFilename);
 
+    console.log('Download request:', {
+      storedFilename,
+      hasMetadata: !!metadata,
+      metadata: metadata ? { downloadName: metadata.downloadName, mime: metadata.mime } : null
+    });
+
     if (!metadata) {
       return res.status(404).json({ error: 'File not found or expired' });
     }
@@ -2822,6 +2839,22 @@ app.get('/download/:filename', async (req, res) => {
       batchFileMetadata.delete(storedFilename);
       return res.status(404).json({ error: 'File not found or expired' });
     }
+
+    console.log('File stats:', {
+      size: stat.size,
+      mtime: stat.mtime,
+      isFile: stat.isFile()
+    });
+
+    // Read the first few bytes to check if it's a valid DOCX file
+    const fileBuffer = await fs.readFile(filePath);
+    const isValidDocx = fileBuffer.length > 4 && fileBuffer[0] === 0x50 && fileBuffer[1] === 0x4B;
+    
+    console.log('File validation:', {
+      bufferSize: fileBuffer.length,
+      isValidDocx,
+      firstBytes: fileBuffer.slice(0, 4).toString('hex')
+    });
 
     scheduleBatchFileCleanup(storedFilename);
 
