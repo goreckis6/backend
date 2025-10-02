@@ -1692,6 +1692,86 @@ const escapeHtml = (text: string): string => {
     .replace(/'/g, '&#39;');
 };
 
+// CSV -> EPUB using Calibre via an HTML intermediate
+const convertCsvToEpubViaCalibre = async (
+  file: Express.Multer.File,
+  options: Record<string, string | undefined> = {},
+  persistToDisk = false
+): Promise<ConversionResult> => {
+  console.log('=== CSV TO EPUB (Calibre) START ===');
+  const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'morphy-csv-epub-'));
+  const originalBase = path.basename(file.originalname, path.extname(file.originalname));
+  const sanitizedBase = sanitizeFilename(originalBase);
+  const safeBase = `${sanitizedBase}_${randomUUID()}`;
+
+  try {
+    // Parse CSV
+    const csvText = file.buffer.toString('utf-8');
+    const parsed = Papa.parse<string[]>(csvText, { skipEmptyLines: false });
+    const rows: string[][] = parsed && Array.isArray((parsed as any).data)
+      ? ((parsed as any).data as unknown as string[][]).map((r: unknown) => (Array.isArray(r) ? (r as string[]) : [String(r ?? '')]))
+      : [];
+
+    // Create HTML from CSV
+    const htmlContent = createHtmlTableFromCsv(rows);
+    const htmlPath = path.join(tmpDir, `${safeBase}.html`);
+    await fs.writeFile(htmlPath, htmlContent, 'utf-8');
+
+    // Convert HTML -> EPUB using Calibre
+    const outputPath = path.join(tmpDir, `${safeBase}.epub`);
+    const calibreArgs = [
+      htmlPath,
+      outputPath,
+      '--no-default-epub-cover',
+      '--disable-font-rescaling',
+      '--breadth-first'
+    ];
+
+    // Optional metadata
+    if (options.title) {
+      calibreArgs.push('--title', String(options.title));
+    }
+    if (options.author) {
+      calibreArgs.push('--authors', String(options.author));
+    }
+
+    console.log('Running Calibre ebook-convert for CSV->EPUB with args:', calibreArgs);
+    try {
+      const { stdout, stderr } = await execFileAsync('ebook-convert', calibreArgs);
+      if (stdout.trim().length > 0) console.log('Calibre stdout:', stdout.trim());
+      if (stderr.trim().length > 0) console.warn('Calibre stderr:', stderr.trim());
+    } catch (calibreError) {
+      console.error('Calibre conversion failed for CSV->EPUB:', calibreError);
+      throw new Error('Calibre conversion failed for CSV->EPUB');
+    }
+
+    // Read output
+    const outputBuffer = await fs.readFile(outputPath);
+    if (!outputBuffer || outputBuffer.length === 0) {
+      throw new Error('Calibre did not produce an EPUB file');
+    }
+
+    const downloadName = `${sanitizedBase}.epub`;
+    console.log('CSV->EPUB conversion successful:', { filename: downloadName, size: outputBuffer.length });
+
+    if (persistToDisk) {
+      return await persistOutputBuffer(outputBuffer, downloadName, 'application/epub+zip');
+    }
+
+    return {
+      buffer: outputBuffer,
+      filename: downloadName,
+      mime: 'application/epub+zip'
+    };
+  } catch (error) {
+    console.error('CSV->EPUB conversion error:', error);
+    const message = error instanceof Error ? error.message : 'Unknown CSV->EPUB error';
+    throw new Error(`Failed to convert CSV to EPUB: ${message}`);
+  } finally {
+    await fs.rm(tmpDir, { recursive: true, force: true }).catch(() => undefined);
+  }
+};
+
 // CSV -> DOCX using pure Node (docx library). Avoids LibreOffice filter issues entirely.
 const convertCsvToDocxWithDocxLib = async (
   file: Express.Multer.File,
@@ -2818,6 +2898,9 @@ app.post('/api/convert', upload.single('file'), async (req, res) => {
     } else if (isEPUB && CALIBRE_CONVERSIONS[targetFormat]) {
       console.log('Single: Routing to Calibre (EPUB conversion)');
       result = await convertWithCalibre(file, targetFormat, requestOptions, true);
+    } else if (isCSV && targetFormat === 'epub') {
+      console.log('Single: Routing to Calibre (CSV->EPUB via HTML)');
+      result = await convertCsvToEpubViaCalibre(file, requestOptions, true);
     } else if (isCSV && LIBREOFFICE_CONVERSIONS[targetFormat]) {
       console.log('Single: Routing to LibreOffice (CSV conversion)');
       result = await convertCsvWithLibreOffice(file, targetFormat, requestOptions, true);
@@ -3019,6 +3102,9 @@ app.post('/api/convert/batch', uploadBatch.array('files'), async (req, res) => {
       } else if (isEPUB && CALIBRE_CONVERSIONS[format]) {
         console.log('Routing to Calibre (EPUB conversion)');
         output = await convertWithCalibre(file, format, requestOptions, true);
+      } else if (isCSV && format === 'epub') {
+        console.log('Batch: Routing to Calibre (CSV->EPUB via HTML)');
+        output = await convertCsvToEpubViaCalibre(file, requestOptions, true);
       } else if (isCSV && LIBREOFFICE_CONVERSIONS[format]) {
         console.log('Routing to LibreOffice (CSV conversion)');
         output = await convertCsvWithLibreOffice(file, format, requestOptions, true);
