@@ -15,6 +15,7 @@ import * as XLSX from 'xlsx';
 import PptxGenJS from 'pptxgenjs';
 import mammoth from 'mammoth';
 import * as cheerio from 'cheerio';
+import { Document, Packer, Paragraph, Table, TableCell, TableRow, WidthType } from 'docx';
 
 const BATCH_OUTPUT_DIR = path.join(os.tmpdir(), 'morphy-batch-outputs');
 fs.mkdir(BATCH_OUTPUT_DIR, { recursive: true }).catch(() => undefined);
@@ -1691,6 +1692,88 @@ const escapeHtml = (text: string): string => {
     .replace(/'/g, '&#39;');
 };
 
+// CSV -> DOCX using pure Node (docx library). Avoids LibreOffice filter issues entirely.
+const convertCsvToDocxWithDocxLib = async (
+  file: Express.Multer.File,
+  options: Record<string, string | undefined> = {},
+  persistToDisk = false
+): Promise<ConversionResult> => {
+  console.log('=== CSV TO DOCX (docx lib) START ===');
+  const originalBase = path.basename(file.originalname, path.extname(file.originalname));
+  const sanitizedBase = sanitizeFilename(originalBase);
+
+  try {
+    const csvText = file.buffer.toString('utf-8');
+    const parsed = Papa.parse<string[]>(csvText, {
+      delimiter: '',
+      newline: '',
+      quoteChar: '"',
+      escapeChar: '"',
+      skipEmptyLines: false
+    });
+
+    if (parsed.errors?.length) {
+      console.warn('CSV parse warnings:', parsed.errors.map(e => ({ message: e.message, row: e.row })));
+    }
+
+    const rows: string[][] = Array.isArray(parsed.data)
+      ? (parsed.data as unknown as string[][]).map(r => (Array.isArray(r) ? r : [String(r ?? '')]))
+      : [];
+
+    // Ensure at least one row
+    const safeRows = rows.length > 0 ? rows : [[csvText]];
+
+    const tableRows: TableRow[] = safeRows.map((row) =>
+      new TableRow({
+        children: row.map((cell) =>
+          new TableCell({
+            children: [new Paragraph(String(cell ?? ''))]
+          })
+        )
+      })
+    );
+
+    const table = new Table({
+      width: { size: 100, type: WidthType.PERCENTAGE },
+      rows: tableRows
+    });
+
+    const doc = new Document({
+      sections: [
+        {
+          children: [table]
+        }
+      ]
+    });
+
+    const outputBuffer = await Packer.toBuffer(doc);
+    const downloadName = `${sanitizedBase}.docx`;
+
+    // Validate basic DOCX signature (PK zip)
+    if (outputBuffer.length < 4 || outputBuffer[0] !== 0x50 || outputBuffer[1] !== 0x4B) {
+      console.warn('Generated DOCX does not start with PK header, but proceeding. Size:', outputBuffer.length);
+    }
+
+    if (persistToDisk) {
+      return await persistOutputBuffer(
+        outputBuffer,
+        downloadName,
+        'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+      );
+    }
+
+    return {
+      buffer: outputBuffer,
+      filename: downloadName,
+      mime: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+    };
+  } catch (error) {
+    console.error('CSV to DOCX (docx lib) failed:', error);
+    const message = error instanceof Error ? error.message : 'Unknown conversion error';
+    throw new Error(`Failed to convert CSV to DOCX: ${message}`);
+  }
+};
+
 const convertCsvWithLibreOffice = async (
   file: Express.Multer.File,
   targetFormat: string,
@@ -1705,10 +1788,8 @@ const convertCsvWithLibreOffice = async (
 
   // Special handling for DOCX conversion - use a more reliable approach
   if (targetFormat === 'docx') {
-    console.log('Using enhanced CSV to DOCX conversion');
-    // Always use the fallback method for now since the enhanced method is having issues
-    console.log('Using fallback method for CSV to DOCX conversion');
-    return await convertCsvToDocxFallback(file, options, persistToDisk);
+    console.log('Using docx library for CSV to DOCX conversion (avoiding LibreOffice)');
+    return await convertCsvToDocxWithDocxLib(file, options, persistToDisk);
   }
 
   const conversion = LIBREOFFICE_CONVERSIONS[targetFormat];
