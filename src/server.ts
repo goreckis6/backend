@@ -3622,7 +3622,9 @@ app.get('/health', (req, res) => {
 // Test Python script endpoint
 app.get('/test-python', async (req, res) => {
   try {
-    const { execFileAsync } = await import('util');
+    const { execFile } = await import('child_process');
+    const { promisify } = await import('util');
+    const execFileAsync = promisify(execFile);
     const { stdout, stderr } = await execFileAsync('/opt/venv/bin/python3', ['--version']);
     res.json({ 
       success: true, 
