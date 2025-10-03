@@ -2881,8 +2881,8 @@ const limiter = rateLimit({
 });
 app.use('/api/', limiter);
 
-app.use(express.json({ limit: '10mb' }));
-app.use(express.urlencoded({ extended: true, limit: '10mb' }));
+app.use(express.json({ limit: '100mb' }));
+app.use(express.urlencoded({ extended: true, limit: '100mb' }));
 
 const upload = multer({
   storage: multer.memoryStorage(),
@@ -2904,7 +2904,19 @@ app.get('/health', (_req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });
 });
 
-app.post('/api/convert', upload.single('file'), async (req, res) => {
+// Timeout middleware for large file processing
+const conversionTimeout = (timeoutMs: number) => {
+  return (req: any, res: any, next: any) => {
+    req.setTimeout(timeoutMs, () => {
+      if (!res.headersSent) {
+        res.status(408).json({ error: 'Request timeout - file too large or processing took too long' });
+      }
+    });
+    next();
+  };
+};
+
+app.post('/api/convert', conversionTimeout(5 * 60 * 1000), upload.single('file'), async (req, res) => {
   try {
     const file = req.file;
     const requestOptions = { ...(req.body as Record<string, string | undefined>) };
@@ -3111,7 +3123,7 @@ app.post('/api/convert', upload.single('file'), async (req, res) => {
   }
 });
 
-app.post('/api/convert/batch', uploadBatch.array('files'), async (req, res) => {
+app.post('/api/convert/batch', conversionTimeout(10 * 60 * 1000), uploadBatch.array('files'), async (req, res) => {
   const files = req.files as Express.Multer.File[] | undefined;
   const requestOptions = { ...(req.body as Record<string, string | undefined>) };
   const format = String(requestOptions.format ?? 'webp').toLowerCase();
@@ -3291,9 +3303,15 @@ app.use((err: any, _req: express.Request, res: express.Response, _next: express.
   res.status(500).json({ error: 'Internal server error' });
 });
 
-app.listen(PORT, '0.0.0.0', () => {
+// Set server timeout for large file processing
+const server = app.listen(PORT, '0.0.0.0', () => {
   console.log(`Morpy backend running on port ${PORT}`);
 });
+
+// Increase timeout for large file processing (5 minutes)
+server.timeout = 5 * 60 * 1000; // 5 minutes
+server.keepAliveTimeout = 65000; // 65 seconds
+server.headersTimeout = 66000; // 66 seconds
 
 export default app;
 
