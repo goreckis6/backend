@@ -174,36 +174,61 @@ def create_optimized_html_template():
 def create_mobi_from_csv_optimized(csv_file, output_file, title="CSV Data", author="Unknown", rows_per_chapter=1000):
     """Convert CSV to MOBI with pagination for large files"""
     try:
+        print(f"=== CSV TO MOBI CONVERSION START ===")
         print(f"Reading CSV file: {csv_file}")
+        print(f"Output file: {output_file}")
+        print(f"Title: {title}, Author: {author}")
+        print(f"Rows per chapter: {rows_per_chapter}")
         
         # Check if file exists and is readable
         if not os.path.exists(csv_file):
+            print(f"ERROR: Input file does not exist: {csv_file}")
+            print(f"Directory contents: {os.listdir(os.path.dirname(csv_file) or '.')}")
             return False, f"Input file does not exist: {csv_file}"
         
         if not os.access(csv_file, os.R_OK):
+            print(f"ERROR: Input file is not readable: {csv_file}")
             return False, f"Input file is not readable: {csv_file}"
+        
+        print(f"File exists and is readable. Size: {os.path.getsize(csv_file)} bytes")
         
         # Read CSV in chunks to handle large files
         chunk_size = 5000
         df_chunks = []
         total_rows = 0
         
+        print(f"Starting to read CSV in chunks of {chunk_size} rows...")
         try:
-            for chunk in pd.read_csv(csv_file, chunksize=chunk_size):
+            for i, chunk in enumerate(pd.read_csv(csv_file, chunksize=chunk_size)):
                 df_chunks.append(chunk)
                 total_rows += len(chunk)
-                print(f"Processed {total_rows} rows so far...")
+                print(f"Processed chunk {i+1}: {len(chunk)} rows (total: {total_rows})")
+                
+                # Limit to prevent memory issues
+                if total_rows > 100000:  # 100k rows max
+                    print(f"WARNING: Limiting to 100,000 rows for performance")
+                    break
+                    
         except Exception as e:
+            print(f"ERROR: Failed to read CSV file: {str(e)}")
+            import traceback
+            traceback.print_exc()
             return False, f"Failed to read CSV file: {str(e)}"
         
         if not df_chunks:
+            print("ERROR: No data found in CSV file")
             return False, "No data found in CSV file"
         
+        print(f"Successfully read {len(df_chunks)} chunks, combining...")
         # Combine chunks
         try:
             df = pd.concat(df_chunks, ignore_index=True)
-            print(f"Total rows: {len(df)}, Columns: {len(df.columns)}")
+            print(f"Successfully combined chunks. Total rows: {len(df)}, Columns: {len(df.columns)}")
+            print(f"Column names: {list(df.columns)}")
         except Exception as e:
+            print(f"ERROR: Failed to combine CSV chunks: {str(e)}")
+            import traceback
+            traceback.print_exc()
             return False, f"Failed to combine CSV chunks: {str(e)}"
         
         # Get columns
@@ -338,6 +363,11 @@ def create_mobi_from_csv_optimized(csv_file, output_file, title="CSV Data", auth
 
 def main():
     try:
+        print("=== CSV TO MOBI OPTIMIZED SCRIPT START ===")
+        print(f"Python version: {sys.version}")
+        print(f"Working directory: {os.getcwd()}")
+        print(f"Script arguments: {sys.argv}")
+        
         parser = argparse.ArgumentParser(description='Convert CSV to MOBI (optimized for large files)')
         parser.add_argument('csv_file', help='Input CSV file')
         parser.add_argument('output_file', help='Output MOBI file')
@@ -354,12 +384,30 @@ def main():
         # Check if input file exists
         if not os.path.exists(args.csv_file):
             print(f"ERROR: Input file does not exist: {args.csv_file}")
+            print(f"Current directory contents: {os.listdir(os.path.dirname(args.csv_file) or '.')}")
             sys.exit(1)
         
         # Check file size
         file_size = os.path.getsize(args.csv_file)
         print(f"Input file size: {file_size / 1024 / 1024:.2f} MB")
         
+        # Check if pandas is available
+        try:
+            import pandas as pd
+            print(f"Pandas version: {pd.__version__}")
+        except ImportError as e:
+            print(f"ERROR: Pandas not available: {e}")
+            sys.exit(1)
+        
+        # Check if jinja2 is available
+        try:
+            import jinja2
+            print(f"Jinja2 version: {jinja2.__version__}")
+        except ImportError as e:
+            print(f"ERROR: Jinja2 not available: {e}")
+            sys.exit(1)
+        
+        print("Starting conversion...")
         success, message = create_mobi_from_csv_optimized(
             args.csv_file,
             args.output_file,

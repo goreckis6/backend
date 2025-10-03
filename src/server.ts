@@ -1904,6 +1904,82 @@ const createSimpleHtmlFromCsv = async (
   }
 };
 
+// Simple CSV to MOBI converter using fallback approach
+const convertCsvToMobiSimple = async (
+  file: Express.Multer.File,
+  options: Record<string, string | undefined> = {},
+  persistToDisk = false
+): Promise<ConversionResult> => {
+  console.log(`=== CSV TO MOBI (Simple) START ===`);
+  const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'morphy-csv-mobi-simple-'));
+  const originalBase = path.basename(file.originalname, path.extname(file.originalname));
+  const sanitizedBase = sanitizeFilename(originalBase);
+  const safeBase = `${sanitizedBase}_${randomUUID()}`;
+
+  try {
+    // Create simple HTML from CSV
+    const htmlContent = await createSimpleHtmlFromCsv(file, options.title || sanitizedBase, options.author || 'Unknown');
+    
+    // Write HTML file
+    const htmlPath = path.join(tmpDir, `${safeBase}.html`);
+    await fs.writeFile(htmlPath, htmlContent, 'utf-8');
+    
+    console.log(`Generated HTML: ${htmlPath} (${htmlContent.length} characters)`);
+    
+    // Convert HTML to MOBI using Calibre with simple command
+    const outputPath = path.join(tmpDir, `${safeBase}.mobi`);
+    
+    const calibreArgs = [
+      'ebook-convert',
+      htmlPath,
+      outputPath,
+      '--title', options.title || sanitizedBase,
+      '--authors', options.author || 'Unknown'
+    ];
+    
+    console.log('Converting HTML to MOBI with Calibre:', calibreArgs.join(' '));
+    
+    const { stdout, stderr } = await execCalibre(calibreArgs);
+    
+    if (stdout.trim().length > 0) console.log('Calibre stdout:', stdout.trim());
+    if (stderr.trim().length > 0) console.warn('Calibre stderr:', stderr.trim());
+    
+    // Check if output file was created
+    const outputExists = await fs.access(outputPath).then(() => true).catch(() => false);
+    if (!outputExists) {
+      throw new Error(`Calibre did not produce output file: ${outputPath}`);
+    }
+    
+    // Read output file
+    const outputBuffer = await fs.readFile(outputPath);
+    if (!outputBuffer || outputBuffer.length === 0) {
+      throw new Error('Calibre produced empty output file');
+    }
+    
+    const downloadName = `${sanitizedBase}.mobi`;
+    console.log(`CSV->MOBI (simple) conversion successful:`, { 
+      filename: downloadName, 
+      size: outputBuffer.length 
+    });
+
+    if (persistToDisk) {
+      return await persistOutputBuffer(outputBuffer, downloadName, 'application/x-mobipocket-ebook');
+    }
+
+    return {
+      buffer: outputBuffer,
+      filename: downloadName,
+      mime: 'application/x-mobipocket-ebook'
+    };
+  } catch (error) {
+    console.error(`CSV->MOBI (simple) conversion error:`, error);
+    const message = error instanceof Error ? error.message : `Unknown CSV->MOBI error`;
+    throw new Error(`Failed to convert CSV to MOBI (simple): ${message}`);
+  } finally {
+    await fs.rm(tmpDir, { recursive: true, force: true }).catch(() => undefined);
+  }
+};
+
 // CSV -> E-book using Python script (pandas + jinja2 + ebooklib)
 // Optimized CSV to MOBI converter for large files
 const convertCsvToMobiOptimized = async (
@@ -3458,8 +3534,8 @@ app.post('/api/convert', conversionTimeout(5 * 60 * 1000), upload.single('file')
       console.log('Single: Routing to Calibre (EPUB conversion)');
       result = await convertWithCalibre(file, targetFormat, requestOptions, true);
     } else if (isCSV && targetFormat === 'mobi') {
-      console.log('Single: Routing to Optimized Python (CSV to MOBI conversion)');
-      result = await convertCsvToMobiOptimized(file, requestOptions, true);
+      console.log('Single: Routing to Simple CSV to MOBI conversion');
+      result = await convertCsvToMobiSimple(file, requestOptions, true);
     } else if (isCSV && targetFormat === 'odp') {
       console.log('Single: Routing to Python (CSV to ODP conversion)');
       result = await convertCsvToOdpPython(file, requestOptions, true);
@@ -3668,8 +3744,8 @@ app.post('/api/convert/batch', conversionTimeout(10 * 60 * 1000), uploadBatch.ar
         console.log('Routing to Calibre (EPUB conversion)');
         output = await convertWithCalibre(file, format, requestOptions, true);
       } else if (isCSV && format === 'mobi') {
-        console.log('Batch: Routing to Optimized Python (CSV to MOBI conversion)');
-        output = await convertCsvToMobiOptimized(file, requestOptions, true);
+        console.log('Batch: Routing to Simple CSV to MOBI conversion');
+        output = await convertCsvToMobiSimple(file, requestOptions, true);
       } else if (isCSV && format === 'odp') {
         console.log('Batch: Routing to Python (CSV to ODP conversion)');
         output = await convertCsvToOdpPython(file, requestOptions, true);
