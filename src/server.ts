@@ -1719,21 +1719,11 @@ const convertCsvToEpubViaCalibre = async (
 
     // Convert HTML -> EPUB using Calibre
     const outputPath = path.join(tmpDir, `${safeBase}.epub`);
-    const calibreArgs = [
-      htmlPath,
-      outputPath,
-      '--no-default-epub-cover',
-      '--disable-font-rescaling',
-      '--breadth-first'
-    ];
+    const calibreArgs = [htmlPath, outputPath];
 
-    // Optional metadata
-    if (options.title) {
-      calibreArgs.push('--title', String(options.title));
-    }
-    if (options.author) {
-      calibreArgs.push('--authors', String(options.author));
-    }
+    // Optional metadata (commonly supported flags)
+    if (options.title) calibreArgs.push('--title', String(options.title));
+    if (options.author) calibreArgs.push('--authors', String(options.author));
 
     console.log('Running Calibre ebook-convert for CSV->EPUB with args:', calibreArgs);
     try {
@@ -1799,20 +1789,10 @@ const convertCsvToMobiViaCalibre = async (
 
     // Convert HTML -> MOBI using Calibre
     const outputPath = path.join(tmpDir, `${safeBase}.mobi`);
-    const calibreArgs = [
-      htmlPath,
-      outputPath,
-      '--no-default-epub-cover',
-      '--disable-font-rescaling',
-      '--breadth-first'
-    ];
+    const calibreArgs = [htmlPath, outputPath];
 
-    if (options.title) {
-      calibreArgs.push('--title', String(options.title));
-    }
-    if (options.author) {
-      calibreArgs.push('--authors', String(options.author));
-    }
+    if (options.title) calibreArgs.push('--title', String(options.title));
+    if (options.author) calibreArgs.push('--authors', String(options.author));
 
     console.log('Running Calibre ebook-convert for CSV->MOBI with args:', calibreArgs);
     try {
