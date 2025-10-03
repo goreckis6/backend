@@ -2868,10 +2868,20 @@ const convertDocxWithLibreOffice = async (
   }
 };
 
-app.use(helmet());
+// Configure helmet with appropriate settings for large file uploads
+app.use(helmet({
+  contentSecurityPolicy: false, // Disable CSP for file uploads
+  crossOriginEmbedderPolicy: false
+}));
 app.use(cors({
-  origin: process.env.FRONTEND_URL || '*',
-  credentials: true
+  origin: [
+    'https://morphy-1-ulvv.onrender.com',
+    'http://localhost:3000',
+    'http://localhost:5173'
+  ],
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'Accept']
 }));
 
 const limiter = rateLimit({
@@ -2881,8 +2891,16 @@ const limiter = rateLimit({
 });
 app.use('/api/', limiter);
 
-app.use(express.json({ limit: '100mb' }));
-app.use(express.urlencoded({ extended: true, limit: '100mb' }));
+// Increase body parser limits for large file uploads
+app.use(express.json({ 
+  limit: '100mb',
+  parameterLimit: 50000
+}));
+app.use(express.urlencoded({ 
+  extended: true, 
+  limit: '100mb',
+  parameterLimit: 50000
+}));
 
 const upload = multer({
   storage: multer.memoryStorage(),
@@ -2904,6 +2922,47 @@ app.get('/health', (_req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });
 });
 
+// Test endpoint for debugging large file uploads
+app.post('/api/test-upload', upload.single('file'), (req, res) => {
+  try {
+    const file = req.file;
+    const contentLength = req.get('content-length');
+    
+    console.log('Test upload received:', {
+      hasFile: !!file,
+      fileSize: file?.size,
+      contentLength: contentLength,
+      headers: req.headers
+    });
+    
+    res.json({
+      success: true,
+      fileSize: file?.size || 0,
+      contentLength: contentLength,
+      message: 'Test upload successful'
+    });
+  } catch (error) {
+    console.error('Test upload error:', error);
+    res.status(500).json({ error: 'Test upload failed', details: error instanceof Error ? error.message : String(error) });
+  }
+});
+
+// Middleware to handle large requests
+app.use((req, res, next) => {
+  const contentLength = parseInt(req.get('content-length') || '0', 10);
+  console.log(`Request received: ${req.method} ${req.path}, Content-Length: ${contentLength} bytes`);
+  
+  if (contentLength > 100 * 1024 * 1024) { // 100MB
+    console.log('Request too large, rejecting before processing');
+    return res.status(413).json({ 
+      error: 'Request entity too large', 
+      details: 'File size exceeds the maximum allowed limit of 100MB' 
+    });
+  }
+  
+  next();
+});
+
 // Timeout middleware for large file processing
 const conversionTimeout = (timeoutMs: number) => {
   return (req: any, res: any, next: any) => {
@@ -2922,6 +2981,8 @@ app.post('/api/convert', conversionTimeout(5 * 60 * 1000), upload.single('file')
     const requestOptions = { ...(req.body as Record<string, string | undefined>) };
 
     console.log('=== CONVERSION REQUEST START ===');
+    console.log('Request headers:', req.headers);
+    console.log('Request body size:', req.get('content-length'));
     console.log('Request body options:', requestOptions);
 
     if (!file) {
@@ -3291,12 +3352,26 @@ app.get('/download/:filename', async (req, res) => {
 });
 
 app.use((err: any, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
+  console.error('=== ERROR HANDLER ===');
+  console.error('Error type:', err.constructor.name);
+  console.error('Error message:', err.message);
+  console.error('Error code:', err.code);
+  console.error('Error status:', err.status);
+  
   const multerModule: any = multer;
   if (multerModule.MulterError && err instanceof multerModule.MulterError) {
     if (err.code === 'LIMIT_FILE_SIZE') {
-      return res.status(400).json({ error: 'File too large. Maximum size is 200MB.' });
+      return res.status(400).json({ error: 'File too large. Maximum size is 100MB.' });
     }
     return res.status(400).json({ error: err.message });
+  }
+
+  // Handle request entity too large errors
+  if (err.status === 413 || err.code === 'LIMIT_FILE_SIZE' || err.message.includes('too large')) {
+    return res.status(413).json({ 
+      error: 'Request entity too large', 
+      details: 'File size exceeds the maximum allowed limit of 100MB' 
+    });
   }
 
   console.error('Unhandled error:', err);
