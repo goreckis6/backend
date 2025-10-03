@@ -1832,129 +1832,103 @@ const createBasicMobiFile = (htmlContent: string, title: string, author: string)
   return mobiContent;
 };
 
-// CSV -> MOBI using Calibre with improved approach
-const convertCsvToMobiViaCalibre = async (
+// CSV -> E-book using Python script (pandas + jinja2 + ebooklib)
+const convertCsvToEbookPython = async (
   file: Express.Multer.File,
+  targetFormat: string,
   options: Record<string, string | undefined> = {},
   persistToDisk = false
 ): Promise<ConversionResult> => {
-  console.log('=== CSV TO MOBI (Calibre Improved) START ===');
-  const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'morphy-csv-mobi-'));
+  console.log(`=== CSV TO ${targetFormat.toUpperCase()} (Python) START ===`);
+  const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'morphy-csv-python-'));
   const originalBase = path.basename(file.originalname, path.extname(file.originalname));
   const sanitizedBase = sanitizeFilename(originalBase);
   const safeBase = `${sanitizedBase}_${randomUUID()}`;
 
   try {
-    // Parse CSV
-    const csvText = file.buffer.toString('utf-8');
-    console.log('CSV text length:', csvText.length);
-    
-    const parsed = Papa.parse<string[]>(csvText, { 
-      skipEmptyLines: true,
-      transform: (value) => {
-        if (typeof value !== 'string') return String(value || '');
-        return value.trim();
-      }
-    });
-    
-    const rows: string[][] = parsed && Array.isArray((parsed as any).data)
-      ? ((parsed as any).data as unknown as string[][]).map((r: unknown) => {
-          if (Array.isArray(r)) {
-            return r.map(cell => String(cell || '').trim());
-          }
-          return [String(r || '').trim()];
-        }).filter(row => row.some(cell => cell.length > 0))
-      : [];
-    
-    console.log('Processed rows:', rows.length);
+    // Write CSV file to temp directory
+    const csvPath = path.join(tmpDir, `${safeBase}.csv`);
+    await fs.writeFile(csvPath, file.buffer);
 
-    // Create a simple HTML document from CSV data
-    let htmlContent = `<!DOCTYPE html>
-<html xmlns="http://www.w3.org/1999/xhtml">
-<head>
-    <meta charset="utf-8" />
-    <title>${options.title || sanitizedBase}</title>
-    <meta name="author" content="${options.author || 'Unknown'}" />
-    <style>
-        body { font-family: Arial, sans-serif; margin: 20px; line-height: 1.6; }
-        table { border-collapse: collapse; width: 100%; margin: 20px 0; }
-        th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
-        th { background-color: #f2f2f2; font-weight: bold; }
-        h1 { color: #333; border-bottom: 2px solid #333; padding-bottom: 10px; }
-    </style>
-</head>
-<body>
-    <h1>${options.title || sanitizedBase}</h1>
-    <p><strong>Author:</strong> ${options.author || 'Unknown'}</p>
-    <table>`;
-
-    if (rows.length > 0) {
-      // Add header row
-      htmlContent += '<thead><tr>';
-      rows[0].forEach(cell => {
-        htmlContent += `<th>${escapeHtml(cell)}</th>`;
-      });
-      htmlContent += '</tr></thead><tbody>';
-      
-      // Add data rows
-      for (let i = 1; i < rows.length; i++) {
-        htmlContent += '<tr>';
-        rows[i].forEach(cell => {
-          htmlContent += `<td>${escapeHtml(cell)}</td>`;
-        });
-        htmlContent += '</tr>';
-      }
-    }
+    // Prepare output file
+    const outputPath = path.join(tmpDir, `${safeBase}.${targetFormat}`);
     
-    htmlContent += '</tbody></table></body></html>';
-
-    // Write HTML file
-    const htmlPath = path.join(tmpDir, `${safeBase}.html`);
-    await fs.writeFile(htmlPath, htmlContent, 'utf-8');
-
-    // Convert HTML -> MOBI using Calibre with minimal options
-    const outputPath = path.join(tmpDir, `${safeBase}.mobi`);
-    const calibreArgs = [
-      htmlPath, 
+    // Prepare Python script arguments
+    const pythonArgs = [
+      'python3',
+      path.join('/app/scripts/csv_to_ebook.py'),
+      csvPath,
       outputPath,
-      '--output-profile=kindle',
-      '--disable-font-rescaling'
+      targetFormat,
+      '--title', options.title || sanitizedBase,
+      '--author', options.author || 'Unknown'
     ];
 
-    if (options.title) calibreArgs.push('--title', String(options.title));
-    if (options.author) calibreArgs.push('--authors', String(options.author));
+    console.log('Running Python CSV to e-book converter with args:', pythonArgs);
 
-    console.log('Running Calibre ebook-convert for CSV->MOBI with args:', calibreArgs);
-    try {
-      const { stdout, stderr } = await execCalibre(calibreArgs);
-      if (stdout.trim().length > 0) console.log('Calibre stdout:', stdout.trim());
-      if (stderr.trim().length > 0) console.warn('Calibre stderr:', stderr.trim());
-    } catch (calibreError) {
-      console.error('Calibre conversion failed for CSV->MOBI:', calibreError);
-      throw new Error('Calibre conversion failed for CSV->MOBI');
+    // Execute Python script
+    const { stdout, stderr } = await execFileAsync('python3', [
+      path.join('/app/scripts/csv_to_ebook.py'),
+      csvPath,
+      outputPath,
+      targetFormat,
+      '--title', options.title || sanitizedBase,
+      '--author', options.author || 'Unknown'
+    ]);
+
+    if (stdout.trim().length > 0) console.log('Python stdout:', stdout.trim());
+    if (stderr.trim().length > 0) console.warn('Python stderr:', stderr.trim());
+
+    // Check if output file was created
+    const outputExists = await fs.access(outputPath).then(() => true).catch(() => false);
+    if (!outputExists) {
+      throw new Error(`Python script did not produce output file: ${outputPath}`);
     }
 
+    // Read output file
     const outputBuffer = await fs.readFile(outputPath);
     if (!outputBuffer || outputBuffer.length === 0) {
-      throw new Error('Calibre did not produce a MOBI file');
+      throw new Error('Python script produced empty output file');
     }
 
-    const downloadName = `${sanitizedBase}.mobi`;
-    console.log('CSV->MOBI conversion successful:', { filename: downloadName, size: outputBuffer.length });
+    // Determine MIME type
+    let mimeType: string;
+    switch (targetFormat) {
+      case 'epub':
+        mimeType = 'application/epub+zip';
+        break;
+      case 'mobi':
+        mimeType = 'application/x-mobipocket-ebook';
+        break;
+      case 'html':
+        mimeType = 'text/html';
+        break;
+      case 'txt':
+        mimeType = 'text/plain';
+        break;
+      default:
+        mimeType = 'application/octet-stream';
+    }
+
+    const downloadName = `${sanitizedBase}.${targetFormat}`;
+    console.log(`CSV->${targetFormat.toUpperCase()} conversion successful:`, { 
+      filename: downloadName, 
+      size: outputBuffer.length 
+    });
 
     if (persistToDisk) {
-      return await persistOutputBuffer(outputBuffer, downloadName, 'application/x-mobipocket-ebook');
+      return await persistOutputBuffer(outputBuffer, downloadName, mimeType);
     }
 
     return {
       buffer: outputBuffer,
       filename: downloadName,
-      mime: 'application/x-mobipocket-ebook'
+      mime: mimeType
     };
   } catch (error) {
-    console.error('CSV->MOBI conversion error:', error);
-    const message = error instanceof Error ? error.message : 'Unknown CSV->MOBI error';
-    throw new Error(`Failed to convert CSV to MOBI: ${message}`);
+    console.error(`CSV->${targetFormat.toUpperCase()} conversion error:`, error);
+    const message = error instanceof Error ? error.message : `Unknown CSV->${targetFormat.toUpperCase()} error`;
+    throw new Error(`Failed to convert CSV to ${targetFormat.toUpperCase()}: ${message}`);
   } finally {
     await fs.rm(tmpDir, { recursive: true, force: true }).catch(() => undefined);
   }
@@ -3183,12 +3157,9 @@ app.post('/api/convert', conversionTimeout(5 * 60 * 1000), upload.single('file')
     } else if (isEPUB && CALIBRE_CONVERSIONS[targetFormat]) {
       console.log('Single: Routing to Calibre (EPUB conversion)');
       result = await convertWithCalibre(file, targetFormat, requestOptions, true);
-    } else if (isCSV && targetFormat === 'epub') {
-      console.log('Single: Routing to Custom (CSV to EPUB conversion)');
-      result = await convertCsvToEpubCustom(file, requestOptions, true);
-    } else if (isCSV && targetFormat === 'mobi') {
-      console.log('Single: Routing to Calibre (CSV to MOBI conversion)');
-      result = await convertCsvToMobiViaCalibre(file, requestOptions, true);
+    } else if (isCSV && ['epub', 'mobi', 'html', 'txt'].includes(targetFormat)) {
+      console.log(`Single: Routing to Python (CSV to ${targetFormat.toUpperCase()} conversion)`);
+      result = await convertCsvToEbookPython(file, targetFormat, requestOptions, true);
     } else if (isCSV && LIBREOFFICE_CONVERSIONS[targetFormat]) {
       console.log('Single: Routing to LibreOffice (CSV conversion)');
       result = await convertCsvWithLibreOffice(file, targetFormat, requestOptions, true);
@@ -3390,12 +3361,9 @@ app.post('/api/convert/batch', conversionTimeout(10 * 60 * 1000), uploadBatch.ar
       } else if (isEPUB && CALIBRE_CONVERSIONS[format]) {
         console.log('Routing to Calibre (EPUB conversion)');
         output = await convertWithCalibre(file, format, requestOptions, true);
-      } else if (isCSV && format === 'epub') {
-        console.log('Batch: Routing to Custom (CSV to EPUB conversion)');
-        output = await convertCsvToEpubCustom(file, requestOptions, true);
-      } else if (isCSV && format === 'mobi') {
-        console.log('Batch: Routing to Calibre (CSV to MOBI conversion)');
-        output = await convertCsvToMobiViaCalibre(file, requestOptions, true);
+      } else if (isCSV && ['epub', 'mobi', 'html', 'txt'].includes(format)) {
+        console.log(`Batch: Routing to Python (CSV to ${format.toUpperCase()} conversion)`);
+        output = await convertCsvToEbookPython(file, format, requestOptions, true);
       } else if (isCSV && LIBREOFFICE_CONVERSIONS[format]) {
         console.log('Routing to LibreOffice (CSV conversion)');
         output = await convertCsvWithLibreOffice(file, format, requestOptions, true);

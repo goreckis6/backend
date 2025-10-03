@@ -1,7 +1,7 @@
 # Use Node.js 18 with Debian base for better package support
 FROM node:20-bookworm
 
-# Install system dependencies for image processing
+# Install system dependencies for image processing and Python
 RUN apt-get update && apt-get install -y --no-install-recommends \
     libvips-dev \
     libraw-bin \
@@ -12,7 +12,14 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libreoffice \
     calibre \
     fonts-dejavu fonts-liberation locales \
+    python3 \
+    python3-pip \
+    python3-venv \
     && rm -rf /var/lib/apt/lists/*
+
+# Install Python dependencies
+COPY requirements.txt ./
+RUN python3 -m pip install --no-cache-dir -r requirements.txt
 
 # Set working directory
 WORKDIR /app
@@ -24,8 +31,9 @@ COPY tsconfig.json ./
 # Install all dependencies (including dev dependencies for build)
 RUN npm install
 
-# Copy source code
+# Copy source code and Python scripts
 COPY src/ ./src/
+COPY scripts/ ./scripts/
 
 # Build the application
 RUN npm run build
