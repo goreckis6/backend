@@ -1949,7 +1949,13 @@ const convertCsvToMobiOptimized = async (
     ]);
 
     if (stdout.trim().length > 0) console.log('Python stdout:', stdout.trim());
-    if (stderr.trim().length > 0) console.warn('Python stderr:', stderr.trim());
+    if (stderr.trim().length > 0) {
+      console.warn('Python stderr:', stderr.trim());
+      // If there's stderr, it might indicate an error
+      if (stderr.includes('ERROR') || stderr.includes('FATAL')) {
+        throw new Error(`Python script error: ${stderr.trim()}`);
+      }
+    }
 
     // Check if output file was created
     const outputExists = await fs.access(outputPath).then(() => true).catch(() => false);

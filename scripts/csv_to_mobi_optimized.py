@@ -12,6 +12,7 @@ from pathlib import Path
 from jinja2 import Template
 import tempfile
 import subprocess
+from datetime import datetime
 
 def escape_html(text):
     """Escape HTML special characters"""
@@ -175,19 +176,35 @@ def create_mobi_from_csv_optimized(csv_file, output_file, title="CSV Data", auth
     try:
         print(f"Reading CSV file: {csv_file}")
         
+        # Check if file exists and is readable
+        if not os.path.exists(csv_file):
+            return False, f"Input file does not exist: {csv_file}"
+        
+        if not os.access(csv_file, os.R_OK):
+            return False, f"Input file is not readable: {csv_file}"
+        
         # Read CSV in chunks to handle large files
         chunk_size = 5000
         df_chunks = []
         total_rows = 0
         
-        for chunk in pd.read_csv(csv_file, chunksize=chunk_size):
-            df_chunks.append(chunk)
-            total_rows += len(chunk)
-            print(f"Processed {total_rows} rows so far...")
+        try:
+            for chunk in pd.read_csv(csv_file, chunksize=chunk_size):
+                df_chunks.append(chunk)
+                total_rows += len(chunk)
+                print(f"Processed {total_rows} rows so far...")
+        except Exception as e:
+            return False, f"Failed to read CSV file: {str(e)}"
+        
+        if not df_chunks:
+            return False, "No data found in CSV file"
         
         # Combine chunks
-        df = pd.concat(df_chunks, ignore_index=True)
-        print(f"Total rows: {len(df)}, Columns: {len(df.columns)}")
+        try:
+            df = pd.concat(df_chunks, ignore_index=True)
+            print(f"Total rows: {len(df)}, Columns: {len(df.columns)}")
+        except Exception as e:
+            return False, f"Failed to combine CSV chunks: {str(e)}"
         
         # Get columns
         columns = df.columns.tolist()
@@ -218,7 +235,7 @@ def create_mobi_from_csv_optimized(csv_file, output_file, title="CSV Data", auth
         html_content = template.render(
             title=title,
             author=author,
-            date=pd.Timestamp.now().strftime('%Y-%m-%d %H:%M:%S'),
+            date=datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
             total_rows=len(df),
             col_count=len(columns),
             chapter_count=num_chapters,
@@ -252,13 +269,28 @@ def create_mobi_from_csv_optimized(csv_file, output_file, title="CSV Data", auth
         print(f"Converting to MOBI with Calibre...")
         print(f"Command: {' '.join(calibre_cmd)}")
         
-        result = subprocess.run(calibre_cmd, capture_output=True, text=True, timeout=300)
-        
-        if result.returncode != 0:
-            print(f"Calibre error: {result.stderr}")
-            return False, f"Calibre conversion failed: {result.stderr}"
-        
-        print(f"Successfully created MOBI: {output_file}")
+        try:
+            result = subprocess.run(calibre_cmd, capture_output=True, text=True, timeout=300)
+            
+            if result.returncode != 0:
+                print(f"Calibre error: {result.stderr}")
+                print(f"Calibre stdout: {result.stdout}")
+                return False, f"Calibre conversion failed: {result.stderr}"
+            
+            # Check if output file was created
+            if not os.path.exists(output_file):
+                return False, f"Calibre did not create output file: {output_file}"
+            
+            output_size = os.path.getsize(output_file)
+            if output_size == 0:
+                return False, "Calibre created empty output file"
+            
+            print(f"Successfully created MOBI: {output_file} ({output_size} bytes)")
+            
+        except subprocess.TimeoutExpired:
+            return False, "Calibre conversion timed out after 5 minutes"
+        except Exception as e:
+            return False, f"Calibre execution failed: {str(e)}"
         
         # Clean up HTML file
         try:
@@ -275,32 +307,48 @@ def create_mobi_from_csv_optimized(csv_file, output_file, title="CSV Data", auth
         return False, f"Error converting to MOBI: {str(e)}"
 
 def main():
-    parser = argparse.ArgumentParser(description='Convert CSV to MOBI (optimized for large files)')
-    parser.add_argument('csv_file', help='Input CSV file')
-    parser.add_argument('output_file', help='Output MOBI file')
-    parser.add_argument('--title', default='CSV Data', help='Document title')
-    parser.add_argument('--author', default='Unknown', help='Document author')
-    parser.add_argument('--rows-per-chapter', type=int, default=1000, help='Rows per chapter')
-    
-    args = parser.parse_args()
-    
-    print(f"Converting {args.csv_file} to {args.output_file}")
-    print(f"Title: {args.title}, Author: {args.author}")
-    print(f"Rows per chapter: {args.rows_per_chapter}")
-    
-    success, message = create_mobi_from_csv_optimized(
-        args.csv_file,
-        args.output_file,
-        args.title,
-        args.author,
-        args.rows_per_chapter
-    )
-    
-    if success:
-        print(f"SUCCESS: {message}")
-        sys.exit(0)
-    else:
-        print(f"ERROR: {message}")
+    try:
+        parser = argparse.ArgumentParser(description='Convert CSV to MOBI (optimized for large files)')
+        parser.add_argument('csv_file', help='Input CSV file')
+        parser.add_argument('output_file', help='Output MOBI file')
+        parser.add_argument('--title', default='CSV Data', help='Document title')
+        parser.add_argument('--author', default='Unknown', help='Document author')
+        parser.add_argument('--rows-per-chapter', type=int, default=1000, help='Rows per chapter')
+        
+        args = parser.parse_args()
+        
+        print(f"Converting {args.csv_file} to {args.output_file}")
+        print(f"Title: {args.title}, Author: {args.author}")
+        print(f"Rows per chapter: {args.rows_per_chapter}")
+        
+        # Check if input file exists
+        if not os.path.exists(args.csv_file):
+            print(f"ERROR: Input file does not exist: {args.csv_file}")
+            sys.exit(1)
+        
+        # Check file size
+        file_size = os.path.getsize(args.csv_file)
+        print(f"Input file size: {file_size / 1024 / 1024:.2f} MB")
+        
+        success, message = create_mobi_from_csv_optimized(
+            args.csv_file,
+            args.output_file,
+            args.title,
+            args.author,
+            args.rows_per_chapter
+        )
+        
+        if success:
+            print(f"SUCCESS: {message}")
+            sys.exit(0)
+        else:
+            print(f"ERROR: {message}")
+            sys.exit(1)
+            
+    except Exception as e:
+        print(f"FATAL ERROR: {str(e)}")
+        import traceback
+        traceback.print_exc()
         sys.exit(1)
 
 if __name__ == "__main__":
