@@ -1644,41 +1644,44 @@ const convertCsvToDocxEnhanced = async (
 
 const createHtmlTableFromCsv = (csvData: string[][]): string => {
   if (csvData.length === 0) {
-    return '<html><body><p>No data available</p></body></html>';
+    return '<!DOCTYPE html><html><head><meta charset="UTF-8"><title>CSV Data</title></head><body><p>No data available</p></body></html>';
   }
   
-  let html = '<!DOCTYPE html>\n<html>\n<head>\n<meta charset="UTF-8">\n<title>CSV Data</title>\n';
-  html += '<style>\n';
-  html += 'table { border-collapse: collapse; width: 100%; margin: 20px 0; }\n';
-  html += 'th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }\n';
-  html += 'th { background-color: #f2f2f2; font-weight: bold; }\n';
-  html += 'tr:nth-child(even) { background-color: #f9f9f9; }\n';
-  html += '</style>\n';
-  html += '</head>\n<body>\n';
-  html += '<h1>CSV Data</h1>\n';
-  html += '<table>\n';
+  // Clean and validate CSV data
+  const cleanData = csvData.map(row => 
+    row.map(cell => {
+      if (typeof cell !== 'string') return String(cell || '');
+      return cell.trim();
+    }).filter(cell => cell !== '') // Remove empty cells
+  ).filter(row => row.length > 0); // Remove empty rows
+  
+  if (cleanData.length === 0) {
+    return '<!DOCTYPE html><html><head><meta charset="UTF-8"><title>CSV Data</title></head><body><p>No valid data available</p></body></html>';
+  }
+  
+  let html = '<!DOCTYPE html><html><head><meta charset="UTF-8"><title>CSV Data</title>';
+  html += '<style>body{font-family:Arial,sans-serif;margin:20px;}table{border-collapse:collapse;width:100%;}th,td{border:1px solid #ddd;padding:8px;text-align:left;}th{background-color:#f2f2f2;font-weight:bold;}</style>';
+  html += '</head><body><h1>CSV Data</h1><table>';
   
   // Add header row
-  if (csvData.length > 0) {
-    html += '<thead>\n<tr>\n';
-    csvData[0].forEach(cell => {
-      html += `<th>${escapeHtml(cell)}</th>\n`;
+  if (cleanData.length > 0) {
+    html += '<thead><tr>';
+    cleanData[0].forEach(cell => {
+      html += `<th>${escapeHtml(cell)}</th>`;
     });
-    html += '</tr>\n</thead>\n';
+    html += '</tr></thead>';
   }
   
   // Add data rows
-  html += '<tbody>\n';
-  for (let i = 1; i < csvData.length; i++) {
-    html += '<tr>\n';
-    csvData[i].forEach(cell => {
-      html += `<td>${escapeHtml(cell)}</td>\n`;
+  html += '<tbody>';
+  for (let i = 1; i < cleanData.length; i++) {
+    html += '<tr>';
+    cleanData[i].forEach(cell => {
+      html += `<td>${escapeHtml(cell)}</td>`;
     });
-    html += '</tr>\n';
+    html += '</tr>';
   }
-  html += '</tbody>\n';
-  
-  html += '</table>\n</body>\n</html>';
+  html += '</tbody></table></body></html>';
   
   return html;
 };
@@ -1775,12 +1778,39 @@ const convertCsvToMobiViaCalibre = async (
   const safeBase = `${sanitizedBase}_${randomUUID()}`;
 
   try {
-    // Parse CSV
+    // Parse CSV with better error handling
     const csvText = file.buffer.toString('utf-8');
-    const parsed = Papa.parse<string[]>(csvText, { skipEmptyLines: false });
+    console.log('CSV text length:', csvText.length);
+    console.log('CSV text preview:', csvText.substring(0, 200));
+    
+    const parsed = Papa.parse<string[]>(csvText, { 
+      skipEmptyLines: true,
+      transform: (value) => {
+        if (typeof value !== 'string') return String(value || '');
+        return value.trim();
+      }
+    });
+    
+    console.log('CSV parsing result:', {
+      dataLength: parsed.data.length,
+      errors: parsed.errors.length,
+      errors: parsed.errors
+    });
+    
     const rows: string[][] = parsed && Array.isArray((parsed as any).data)
-      ? ((parsed as any).data as unknown as string[][]).map((r: unknown) => (Array.isArray(r) ? (r as string[]) : [String(r ?? '')]))
+      ? ((parsed as any).data as unknown as string[][]).map((r: unknown) => {
+          if (Array.isArray(r)) {
+            return r.map(cell => String(cell || '').trim());
+          }
+          return [String(r || '').trim()];
+        }).filter(row => row.some(cell => cell.length > 0)) // Remove completely empty rows
       : [];
+    
+    console.log('Processed rows:', rows.length);
+    if (rows.length > 0) {
+      console.log('First row:', rows[0]);
+      console.log('Row lengths:', rows.map(r => r.length));
+    }
 
     // Create HTML from CSV
     const htmlContent = createHtmlTableFromCsv(rows);
@@ -1789,7 +1819,13 @@ const convertCsvToMobiViaCalibre = async (
 
     // Convert HTML -> MOBI using Calibre
     const outputPath = path.join(tmpDir, `${safeBase}.mobi`);
-    const calibreArgs = [htmlPath, outputPath];
+    const calibreArgs = [
+      htmlPath, 
+      outputPath,
+      '--disable-font-rescaling',
+      '--pretty-print',
+      '--enable-heuristics'
+    ];
 
     if (options.title) calibreArgs.push('--title', String(options.title));
     if (options.author) calibreArgs.push('--authors', String(options.author));
