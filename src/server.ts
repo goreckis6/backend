@@ -1832,6 +1832,78 @@ const createBasicMobiFile = (htmlContent: string, title: string, author: string)
   return mobiContent;
 };
 
+// Fallback function to create simple HTML from CSV
+const createSimpleHtmlFromCsv = async (
+  file: Express.Multer.File,
+  title: string,
+  author: string
+): Promise<string> => {
+  try {
+    // Parse CSV using Papa Parse
+    const csvText = file.buffer.toString('utf-8');
+    const parsed = Papa.parse<string[]>(csvText, { 
+      skipEmptyLines: true,
+      transform: (value) => {
+        if (typeof value !== 'string') return String(value || '');
+        return value.trim();
+      }
+    });
+    
+    const rows: string[][] = parsed && Array.isArray((parsed as any).data)
+      ? ((parsed as any).data as unknown as string[][]).map((r: unknown) => {
+          if (Array.isArray(r)) {
+            return r.map(cell => String(cell || '').trim());
+          }
+          return [String(r || '').trim()];
+        }).filter(row => row.some(cell => cell.length > 0))
+      : [];
+
+    // Create simple HTML
+    let htmlContent = `<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml">
+<head>
+    <meta charset="utf-8" />
+    <title>${title}</title>
+    <meta name="author" content="${author}" />
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; line-height: 1.6; }
+        table { border-collapse: collapse; width: 100%; margin: 20px 0; }
+        th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
+        th { background-color: #f2f2f2; font-weight: bold; }
+        h1 { color: #333; border-bottom: 2px solid #333; padding-bottom: 10px; }
+    </style>
+</head>
+<body>
+    <h1>${title}</h1>
+    <p><strong>Author:</strong> ${author}</p>
+    <table>`;
+
+    if (rows.length > 0) {
+      // Add header row
+      htmlContent += '<thead><tr>';
+      rows[0].forEach(cell => {
+        htmlContent += `<th>${escapeHtml(cell)}</th>`;
+      });
+      htmlContent += '</tr></thead><tbody>';
+      
+      // Add data rows
+      for (let i = 1; i < rows.length; i++) {
+        htmlContent += '<tr>';
+        rows[i].forEach(cell => {
+          htmlContent += `<td>${escapeHtml(cell)}</td>`;
+        });
+        htmlContent += '</tr>';
+      }
+    }
+    
+    htmlContent += '</tbody></table></body></html>';
+    return htmlContent;
+  } catch (error) {
+    console.error('Fallback HTML generation failed:', error);
+    return `<!DOCTYPE html><html><head><title>Error</title></head><body><h1>Conversion Error</h1><p>Failed to convert CSV file.</p></body></html>`;
+  }
+};
+
 // CSV -> E-book using Python script (pandas + jinja2 + ebooklib)
 const convertCsvToEbookPython = async (
   file: Express.Multer.File,
@@ -1866,18 +1938,40 @@ const convertCsvToEbookPython = async (
 
     console.log('Running Python CSV to e-book converter with args:', pythonArgs);
 
-    // Execute Python script
-    const { stdout, stderr } = await execFileAsync('python3', [
-      path.join('/app/scripts/csv_to_ebook.py'),
+    // Execute Python script using virtual environment
+    const pythonPath = '/opt/venv/bin/python3';
+    const scriptPath = path.join('/app/scripts/csv_to_ebook.py');
+    
+    console.log('Python execution details:', {
+      pythonPath,
+      scriptPath,
       csvPath,
       outputPath,
       targetFormat,
-      '--title', options.title || sanitizedBase,
-      '--author', options.author || 'Unknown'
-    ]);
+      title: options.title || sanitizedBase,
+      author: options.author || 'Unknown'
+    });
 
-    if (stdout.trim().length > 0) console.log('Python stdout:', stdout.trim());
-    if (stderr.trim().length > 0) console.warn('Python stderr:', stderr.trim());
+    try {
+      const { stdout, stderr } = await execFileAsync(pythonPath, [
+        scriptPath,
+        csvPath,
+        outputPath,
+        targetFormat,
+        '--title', options.title || sanitizedBase,
+        '--author', options.author || 'Unknown'
+      ]);
+
+      if (stdout.trim().length > 0) console.log('Python stdout:', stdout.trim());
+      if (stderr.trim().length > 0) console.warn('Python stderr:', stderr.trim());
+    } catch (pythonError) {
+      console.error('Python execution failed:', pythonError);
+      console.log('Falling back to simple HTML generation...');
+      
+      // Fallback: Create simple HTML file
+      const fallbackHtml = await createSimpleHtmlFromCsv(file, options.title || sanitizedBase, options.author || 'Unknown');
+      await fs.writeFile(outputPath, fallbackHtml, 'utf-8');
+    }
 
     // Check if output file was created
     const outputExists = await fs.access(outputPath).then(() => true).catch(() => false);
@@ -1927,6 +2021,15 @@ const convertCsvToEbookPython = async (
     };
   } catch (error) {
     console.error(`CSV->${targetFormat.toUpperCase()} conversion error:`, error);
+    console.error('Error details:', {
+      errorType: error instanceof Error ? error.constructor.name : typeof error,
+      errorMessage: error instanceof Error ? error.message : String(error),
+      errorStack: error instanceof Error ? error.stack : undefined,
+      targetFormat,
+      fileSize: file.buffer.length,
+      fileName: file.originalname
+    });
+    
     const message = error instanceof Error ? error.message : `Unknown CSV->${targetFormat.toUpperCase()} error`;
     throw new Error(`Failed to convert CSV to ${targetFormat.toUpperCase()}: ${message}`);
   } finally {
@@ -3498,6 +3601,40 @@ app.use((err: any, _req: express.Request, res: express.Response, _next: express.
 
   console.error('Unhandled error:', err);
   res.status(500).json({ error: 'Internal server error' });
+});
+
+// Health check endpoint
+app.get('/health', (req, res) => {
+  res.json({ 
+    status: 'OK', 
+    timestamp: new Date().toISOString(),
+    python: {
+      available: true,
+      path: '/opt/venv/bin/python3'
+    },
+    calibre: {
+      available: true,
+      path: 'ebook-convert'
+    }
+  });
+});
+
+// Test Python script endpoint
+app.get('/test-python', async (req, res) => {
+  try {
+    const { execFileAsync } = await import('util');
+    const { stdout, stderr } = await execFileAsync('/opt/venv/bin/python3', ['--version']);
+    res.json({ 
+      success: true, 
+      pythonVersion: stdout.trim(),
+      stderr: stderr.trim()
+    });
+  } catch (error) {
+    res.status(500).json({ 
+      success: false, 
+      error: error instanceof Error ? error.message : String(error)
+    });
+  }
 });
 
 // Set server timeout for large file processing
