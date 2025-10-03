@@ -1905,6 +1905,170 @@ const createSimpleHtmlFromCsv = async (
 };
 
 // CSV -> E-book using Python script (pandas + jinja2 + ebooklib)
+// Optimized CSV to MOBI converter for large files
+const convertCsvToMobiOptimized = async (
+  file: Express.Multer.File,
+  options: Record<string, string | undefined> = {},
+  persistToDisk = false
+): Promise<ConversionResult> => {
+  console.log(`=== CSV TO MOBI (Optimized Python) START ===`);
+  const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'morphy-csv-mobi-opt-'));
+  const originalBase = path.basename(file.originalname, path.extname(file.originalname));
+  const sanitizedBase = sanitizeFilename(originalBase);
+  const safeBase = `${sanitizedBase}_${randomUUID()}`;
+
+  try {
+    // Write CSV file to temp directory
+    const csvPath = path.join(tmpDir, `${safeBase}.csv`);
+    await fs.writeFile(csvPath, file.buffer);
+
+    // Prepare output file
+    const outputPath = path.join(tmpDir, `${safeBase}.mobi`);
+    
+    // Use optimized Python script for MOBI
+    const pythonPath = '/opt/venv/bin/python3';
+    const scriptPath = path.join('/app/scripts/csv_to_mobi_optimized.py');
+    
+    console.log('Python execution details:', {
+      pythonPath,
+      scriptPath,
+      csvPath,
+      outputPath,
+      title: options.title || sanitizedBase,
+      author: options.author || 'Unknown',
+      fileSize: file.buffer.length
+    });
+
+    const { stdout, stderr } = await execFileAsync(pythonPath, [
+      scriptPath,
+      csvPath,
+      outputPath,
+      '--title', options.title || sanitizedBase,
+      '--author', options.author || 'Unknown',
+      '--rows-per-chapter', '1000' // Optimize for large files
+    ]);
+
+    if (stdout.trim().length > 0) console.log('Python stdout:', stdout.trim());
+    if (stderr.trim().length > 0) console.warn('Python stderr:', stderr.trim());
+
+    // Check if output file was created
+    const outputExists = await fs.access(outputPath).then(() => true).catch(() => false);
+    if (!outputExists) {
+      throw new Error(`Optimized Python script did not produce output file: ${outputPath}`);
+    }
+
+    // Read output file
+    const outputBuffer = await fs.readFile(outputPath);
+    if (!outputBuffer || outputBuffer.length === 0) {
+      throw new Error('Optimized Python script produced empty output file');
+    }
+
+    const downloadName = `${sanitizedBase}.mobi`;
+    console.log(`CSV->MOBI (optimized) conversion successful:`, { 
+      filename: downloadName, 
+      size: outputBuffer.length 
+    });
+
+    if (persistToDisk) {
+      return await persistOutputBuffer(outputBuffer, downloadName, 'application/x-mobipocket-ebook');
+    }
+
+    return {
+      buffer: outputBuffer,
+      filename: downloadName,
+      mime: 'application/x-mobipocket-ebook'
+    };
+  } catch (error) {
+    console.error(`CSV->MOBI (optimized) conversion error:`, error);
+    const message = error instanceof Error ? error.message : `Unknown CSV->MOBI error`;
+    throw new Error(`Failed to convert CSV to MOBI (optimized): ${message}`);
+  } finally {
+    await fs.rm(tmpDir, { recursive: true, force: true }).catch(() => undefined);
+  }
+};
+
+// CSV to ODP converter using Python
+const convertCsvToOdpPython = async (
+  file: Express.Multer.File,
+  options: Record<string, string | undefined> = {},
+  persistToDisk = false
+): Promise<ConversionResult> => {
+  console.log(`=== CSV TO ODP (Python) START ===`);
+  const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'morphy-csv-odp-'));
+  const originalBase = path.basename(file.originalname, path.extname(file.originalname));
+  const sanitizedBase = sanitizeFilename(originalBase);
+  const safeBase = `${sanitizedBase}_${randomUUID()}`;
+
+  try {
+    // Write CSV file to temp directory
+    const csvPath = path.join(tmpDir, `${safeBase}.csv`);
+    await fs.writeFile(csvPath, file.buffer);
+
+    // Prepare output file
+    const outputPath = path.join(tmpDir, `${safeBase}.odp`);
+    
+    // Use Python script for ODP
+    const pythonPath = '/opt/venv/bin/python3';
+    const scriptPath = path.join('/app/scripts/csv_to_odp.py');
+    
+    console.log('Python execution details:', {
+      pythonPath,
+      scriptPath,
+      csvPath,
+      outputPath,
+      title: options.title || sanitizedBase,
+      author: options.author || 'Unknown',
+      fileSize: file.buffer.length
+    });
+
+    const { stdout, stderr } = await execFileAsync(pythonPath, [
+      scriptPath,
+      csvPath,
+      outputPath,
+      '--title', options.title || sanitizedBase,
+      '--author', options.author || 'Unknown',
+      '--max-rows-per-slide', '50' // Optimize for presentations
+    ]);
+
+    if (stdout.trim().length > 0) console.log('Python stdout:', stdout.trim());
+    if (stderr.trim().length > 0) console.warn('Python stderr:', stderr.trim());
+
+    // Check if output file was created
+    const outputExists = await fs.access(outputPath).then(() => true).catch(() => false);
+    if (!outputExists) {
+      throw new Error(`Python ODP script did not produce output file: ${outputPath}`);
+    }
+
+    // Read output file
+    const outputBuffer = await fs.readFile(outputPath);
+    if (!outputBuffer || outputBuffer.length === 0) {
+      throw new Error('Python ODP script produced empty output file');
+    }
+
+    const downloadName = `${sanitizedBase}.odp`;
+    console.log(`CSV->ODP conversion successful:`, { 
+      filename: downloadName, 
+      size: outputBuffer.length 
+    });
+
+    if (persistToDisk) {
+      return await persistOutputBuffer(outputBuffer, downloadName, 'application/vnd.oasis.opendocument.presentation');
+    }
+
+    return {
+      buffer: outputBuffer,
+      filename: downloadName,
+      mime: 'application/vnd.oasis.opendocument.presentation'
+    };
+  } catch (error) {
+    console.error(`CSV->ODP conversion error:`, error);
+    const message = error instanceof Error ? error.message : `Unknown CSV->ODP error`;
+    throw new Error(`Failed to convert CSV to ODP: ${message}`);
+  } finally {
+    await fs.rm(tmpDir, { recursive: true, force: true }).catch(() => undefined);
+  }
+};
+
 const convertCsvToEbookPython = async (
   file: Express.Multer.File,
   targetFormat: string,
@@ -3287,7 +3451,13 @@ app.post('/api/convert', conversionTimeout(5 * 60 * 1000), upload.single('file')
     } else if (isEPUB && CALIBRE_CONVERSIONS[targetFormat]) {
       console.log('Single: Routing to Calibre (EPUB conversion)');
       result = await convertWithCalibre(file, targetFormat, requestOptions, true);
-    } else if (isCSV && ['epub', 'mobi', 'html', 'txt'].includes(targetFormat)) {
+    } else if (isCSV && targetFormat === 'mobi') {
+      console.log('Single: Routing to Optimized Python (CSV to MOBI conversion)');
+      result = await convertCsvToMobiOptimized(file, requestOptions, true);
+    } else if (isCSV && targetFormat === 'odp') {
+      console.log('Single: Routing to Python (CSV to ODP conversion)');
+      result = await convertCsvToOdpPython(file, requestOptions, true);
+    } else if (isCSV && ['epub', 'html', 'txt'].includes(targetFormat)) {
       console.log(`Single: Routing to Python (CSV to ${targetFormat.toUpperCase()} conversion)`);
       result = await convertCsvToEbookPython(file, targetFormat, requestOptions, true);
     } else if (isCSV && LIBREOFFICE_CONVERSIONS[targetFormat]) {
@@ -3491,7 +3661,13 @@ app.post('/api/convert/batch', conversionTimeout(10 * 60 * 1000), uploadBatch.ar
       } else if (isEPUB && CALIBRE_CONVERSIONS[format]) {
         console.log('Routing to Calibre (EPUB conversion)');
         output = await convertWithCalibre(file, format, requestOptions, true);
-      } else if (isCSV && ['epub', 'mobi', 'html', 'txt'].includes(format)) {
+      } else if (isCSV && format === 'mobi') {
+        console.log('Batch: Routing to Optimized Python (CSV to MOBI conversion)');
+        output = await convertCsvToMobiOptimized(file, requestOptions, true);
+      } else if (isCSV && format === 'odp') {
+        console.log('Batch: Routing to Python (CSV to ODP conversion)');
+        output = await convertCsvToOdpPython(file, requestOptions, true);
+      } else if (isCSV && ['epub', 'html', 'txt'].includes(format)) {
         console.log(`Batch: Routing to Python (CSV to ${format.toUpperCase()} conversion)`);
         output = await convertCsvToEbookPython(file, format, requestOptions, true);
       } else if (isCSV && LIBREOFFICE_CONVERSIONS[format]) {
