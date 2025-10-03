@@ -883,7 +883,7 @@ const execCalibre = async (args: string[]): Promise<CommandResult> => {
           HOME: process.env.HOME || os.homedir(),
           USERPROFILE: process.env.USERPROFILE || os.homedir()
         },
-        timeout: 60000 // 60 second timeout
+        timeout: 300000 // 5 minute timeout for large files
       });
       
       console.log(`Calibre execution successful with binary: ${binary}`);
@@ -897,6 +897,13 @@ const execCalibre = async (args: string[]): Promise<CommandResult> => {
         signal: error?.signal,
         message: error instanceof Error ? error.message : String(error)
       });
+      
+      // Check if it's a timeout error
+      if (error?.code === 'TIMEOUT' || error?.signal === 'SIGTERM') {
+        console.log(`Calibre conversion timed out after 5 minutes for binary: ${binary}`);
+        lastError = new Error(`Calibre conversion timed out after 5 minutes. Large files may need more time to process.`);
+        continue;
+      }
       
       lastError = error;
       if (error?.code === 'ENOENT') {
@@ -1937,6 +1944,8 @@ const convertCsvToMobiSimple = async (
     ];
     
     console.log('Converting HTML to MOBI with Calibre:', calibreArgs.join(' '));
+    console.log(`HTML file size: ${htmlContent.length} characters`);
+    console.log(`Starting Calibre conversion for file: ${file.originalname} (${file.buffer.length} bytes)`);
     
     const { stdout, stderr } = await execCalibre(calibreArgs);
     
