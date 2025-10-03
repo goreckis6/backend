@@ -1966,11 +1966,38 @@ const convertCsvToEbookPython = async (
       if (stderr.trim().length > 0) console.warn('Python stderr:', stderr.trim());
     } catch (pythonError) {
       console.error('Python execution failed:', pythonError);
-      console.log('Falling back to simple HTML generation...');
+      console.log('Falling back to simple conversion...');
       
-      // Fallback: Create simple HTML file
-      const fallbackHtml = await createSimpleHtmlFromCsv(file, options.title || sanitizedBase, options.author || 'Unknown');
-      await fs.writeFile(outputPath, fallbackHtml, 'utf-8');
+      // For MOBI format, create HTML and convert with Calibre
+      if (targetFormat === 'mobi') {
+        const htmlPath = path.join(tmpDir, `${safeBase}.html`);
+        const fallbackHtml = await createSimpleHtmlFromCsv(file, options.title || sanitizedBase, options.author || 'Unknown');
+        await fs.writeFile(htmlPath, fallbackHtml, 'utf-8');
+        
+        // Convert HTML to MOBI using Calibre
+        try {
+          const calibreArgs = [
+            htmlPath, 
+            outputPath,
+            '--output-profile=kindle',
+            '--disable-font-rescaling'
+          ];
+          
+          if (options.title) calibreArgs.push('--title', String(options.title));
+          if (options.author) calibreArgs.push('--authors', String(options.author));
+          
+          const { stdout, stderr } = await execCalibre(calibreArgs);
+          if (stdout.trim().length > 0) console.log('Calibre stdout:', stdout.trim());
+          if (stderr.trim().length > 0) console.warn('Calibre stderr:', stderr.trim());
+        } catch (calibreError) {
+          console.error('Calibre fallback failed:', calibreError);
+          throw new Error('Both Python and Calibre conversion failed');
+        }
+      } else {
+        // For other formats, create appropriate file
+        const fallbackContent = await createSimpleHtmlFromCsv(file, options.title || sanitizedBase, options.author || 'Unknown');
+        await fs.writeFile(outputPath, fallbackContent, 'utf-8');
+      }
     }
 
     // Check if output file was created
