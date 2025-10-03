@@ -1727,7 +1727,7 @@ const convertCsvToEpubViaCalibre = async (
 
     console.log('Running Calibre ebook-convert for CSV->EPUB with args:', calibreArgs);
     try {
-      const { stdout, stderr } = await execFileAsync('ebook-convert', calibreArgs);
+      const { stdout, stderr } = await execCalibre(calibreArgs);
       if (stdout.trim().length > 0) console.log('Calibre stdout:', stdout.trim());
       if (stderr.trim().length > 0) console.warn('Calibre stderr:', stderr.trim());
     } catch (calibreError) {
@@ -1796,7 +1796,7 @@ const convertCsvToMobiViaCalibre = async (
 
     console.log('Running Calibre ebook-convert for CSV->MOBI with args:', calibreArgs);
     try {
-      const { stdout, stderr } = await execFileAsync('ebook-convert', calibreArgs);
+      const { stdout, stderr } = await execCalibre(calibreArgs);
       if (stdout.trim().length > 0) console.log('Calibre stdout:', stdout.trim());
       if (stderr.trim().length > 0) console.warn('Calibre stderr:', stderr.trim());
     } catch (calibreError) {
