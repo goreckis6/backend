@@ -1930,7 +1930,6 @@ const convertCsvToMobiSimple = async (
     const outputPath = path.join(tmpDir, `${safeBase}.mobi`);
     
     const calibreArgs = [
-      'ebook-convert',
       htmlPath,
       outputPath,
       '--title', options.title || sanitizedBase,
