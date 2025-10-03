@@ -251,46 +251,76 @@ def create_mobi_from_csv_optimized(csv_file, output_file, title="CSV Data", auth
         
         print(f"Generated HTML: {html_file} ({len(html_content)} characters)")
         
-        # Convert HTML to MOBI using Calibre with optimized settings
-        calibre_cmd = [
-            'ebook-convert',
-            html_file,
-            output_file,
-            '--output-profile=kindle',
-            '--disable-font-rescaling',
-            '--title', title,
-            '--authors', author,
-            '--no-default-epub-cover',
-            '--disable-dehyphenate',
-            '--enable-heuristics',
-            '--pretty-print'
+        # Convert HTML to MOBI using Calibre with multiple fallback options
+        calibre_commands = [
+            # Try with minimal options first
+            [
+                'ebook-convert',
+                html_file,
+                output_file,
+                '--title', title,
+                '--authors', author
+            ],
+            # Try with kindle profile
+            [
+                'ebook-convert',
+                html_file,
+                output_file,
+                '--output-profile=kindle',
+                '--title', title,
+                '--authors', author
+            ],
+            # Try with additional options
+            [
+                'ebook-convert',
+                html_file,
+                output_file,
+                '--output-profile=kindle',
+                '--disable-font-rescaling',
+                '--title', title,
+                '--authors', author
+            ]
         ]
         
         print(f"Converting to MOBI with Calibre...")
-        print(f"Command: {' '.join(calibre_cmd)}")
         
-        try:
-            result = subprocess.run(calibre_cmd, capture_output=True, text=True, timeout=300)
+        for i, calibre_cmd in enumerate(calibre_commands):
+            print(f"Trying Calibre command {i+1}/{len(calibre_commands)}: {' '.join(calibre_cmd)}")
             
-            if result.returncode != 0:
-                print(f"Calibre error: {result.stderr}")
-                print(f"Calibre stdout: {result.stdout}")
-                return False, f"Calibre conversion failed: {result.stderr}"
-            
-            # Check if output file was created
-            if not os.path.exists(output_file):
-                return False, f"Calibre did not create output file: {output_file}"
-            
-            output_size = os.path.getsize(output_file)
-            if output_size == 0:
-                return False, "Calibre created empty output file"
-            
-            print(f"Successfully created MOBI: {output_file} ({output_size} bytes)")
-            
-        except subprocess.TimeoutExpired:
-            return False, "Calibre conversion timed out after 5 minutes"
-        except Exception as e:
-            return False, f"Calibre execution failed: {str(e)}"
+            try:
+                result = subprocess.run(calibre_cmd, capture_output=True, text=True, timeout=300)
+                
+                if result.returncode == 0:
+                    # Check if output file was created
+                    if os.path.exists(output_file):
+                        output_size = os.path.getsize(output_file)
+                        if output_size > 0:
+                            print(f"Successfully created MOBI: {output_file} ({output_size} bytes)")
+                            break
+                        else:
+                            print(f"Calibre created empty output file, trying next command...")
+                            continue
+                    else:
+                        print(f"Calibre did not create output file, trying next command...")
+                        continue
+                else:
+                    print(f"Calibre command {i+1} failed: {result.stderr}")
+                    if i == len(calibre_commands) - 1:
+                        return False, f"All Calibre commands failed. Last error: {result.stderr}"
+                    continue
+                    
+            except subprocess.TimeoutExpired:
+                print(f"Calibre command {i+1} timed out, trying next command...")
+                if i == len(calibre_commands) - 1:
+                    return False, "All Calibre commands timed out after 5 minutes"
+                continue
+            except Exception as e:
+                print(f"Calibre command {i+1} execution failed: {str(e)}")
+                if i == len(calibre_commands) - 1:
+                    return False, f"All Calibre commands failed. Last error: {str(e)}"
+                continue
+        else:
+            return False, "All Calibre conversion attempts failed"
         
         # Clean up HTML file
         try:
