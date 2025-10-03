@@ -1860,11 +1860,11 @@ const createSimpleHtmlFromCsv = async (
 
     // Create simple HTML
     let htmlContent = `<!DOCTYPE html>
-<html xmlns="http://www.w3.org/1999/xhtml">
+<html>
 <head>
-    <meta charset="utf-8" />
+    <meta charset="utf-8">
     <title>${title}</title>
-    <meta name="author" content="${author}" />
+    <meta name="author" content="${author}">
     <style>
         body { font-family: Arial, sans-serif; margin: 20px; line-height: 1.6; }
         table { border-collapse: collapse; width: 100%; margin: 20px 0; }
