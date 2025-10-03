@@ -1715,14 +1715,25 @@ const convertCsvToEpubViaCalibre = async (
       ? ((parsed as any).data as unknown as string[][]).map((r: unknown) => (Array.isArray(r) ? (r as string[]) : [String(r ?? '')]))
       : [];
 
-    // Create HTML from CSV
-    const htmlContent = createHtmlTableFromCsv(rows);
-    const htmlPath = path.join(tmpDir, `${safeBase}.html`);
-    await fs.writeFile(htmlPath, htmlContent, 'utf-8');
+    // Create a simple text file from CSV instead of HTML
+    let textContent = '';
+    if (rows.length > 0) {
+      // Add header
+      textContent += rows[0].join('\t') + '\n';
+      // Add separator line
+      textContent += rows[0].map(() => '---').join('\t') + '\n';
+      // Add data rows
+      for (let i = 1; i < rows.length; i++) {
+        textContent += rows[i].join('\t') + '\n';
+      }
+    }
+    
+    const textPath = path.join(tmpDir, `${safeBase}.txt`);
+    await fs.writeFile(textPath, textContent, 'utf-8');
 
-    // Convert HTML -> EPUB using Calibre
+    // Convert TXT -> EPUB using Calibre
     const outputPath = path.join(tmpDir, `${safeBase}.epub`);
-    const calibreArgs = [htmlPath, outputPath];
+    const calibreArgs = [textPath, outputPath];
 
     // Optional metadata (commonly supported flags)
     if (options.title) calibreArgs.push('--title', String(options.title));
@@ -1812,19 +1823,29 @@ const convertCsvToMobiViaCalibre = async (
       console.log('Row lengths:', rows.map(r => r.length));
     }
 
-    // Create HTML from CSV
-    const htmlContent = createHtmlTableFromCsv(rows);
-    const htmlPath = path.join(tmpDir, `${safeBase}.html`);
-    await fs.writeFile(htmlPath, htmlContent, 'utf-8');
+    // Create a simple text file from CSV instead of HTML
+    let textContent = '';
+    if (rows.length > 0) {
+      // Add header
+      textContent += rows[0].join('\t') + '\n';
+      // Add separator line
+      textContent += rows[0].map(() => '---').join('\t') + '\n';
+      // Add data rows
+      for (let i = 1; i < rows.length; i++) {
+        textContent += rows[i].join('\t') + '\n';
+      }
+    }
+    
+    const textPath = path.join(tmpDir, `${safeBase}.txt`);
+    await fs.writeFile(textPath, textContent, 'utf-8');
 
-    // Convert HTML -> MOBI using Calibre
+    // Convert TXT -> MOBI using Calibre
     const outputPath = path.join(tmpDir, `${safeBase}.mobi`);
     const calibreArgs = [
-      htmlPath, 
+      textPath, 
       outputPath,
-      '--disable-font-rescaling',
-      '--pretty-print',
-      '--enable-heuristics'
+      '--output-profile=kindle',
+      '--pretty-print'
     ];
 
     if (options.title) calibreArgs.push('--title', String(options.title));
