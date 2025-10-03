@@ -2873,6 +2873,13 @@ app.use(helmet({
   contentSecurityPolicy: false, // Disable CSP for file uploads
   crossOriginEmbedderPolicy: false
 }));
+// CORS configuration with debugging
+app.use((req, res, next) => {
+  console.log('CORS middleware - Request origin:', req.get('origin'));
+  console.log('CORS middleware - Request method:', req.method);
+  next();
+});
+
 app.use(cors({
   origin: [
     'https://morphy-1-ulvv.onrender.com',
@@ -2883,6 +2890,15 @@ app.use(cors({
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization', 'Accept']
 }));
+
+// Additional CORS headers for all responses
+app.use((req, res, next) => {
+  res.header('Access-Control-Allow-Origin', 'https://morphy-1-ulvv.onrender.com');
+  res.header('Access-Control-Allow-Credentials', 'true');
+  res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
+  res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization, Accept');
+  next();
+});
 
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000,
@@ -2914,6 +2930,16 @@ const uploadBatch = multer({
     fileSize: 100 * 1024 * 1024,
     files: 20
   }
+});
+
+// Handle preflight OPTIONS requests
+app.options('*', (req, res) => {
+  console.log('OPTIONS preflight request received');
+  res.header('Access-Control-Allow-Origin', 'https://morphy-1-ulvv.onrender.com');
+  res.header('Access-Control-Allow-Credentials', 'true');
+  res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
+  res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization, Accept');
+  res.status(200).end();
 });
 
 app.get('/health', (_req, res) => {
