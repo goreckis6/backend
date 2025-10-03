@@ -1793,7 +1793,7 @@ const convertCsvToMobiViaCalibre = async (
     
     console.log('CSV parsing result:', {
       dataLength: parsed.data.length,
-      errors: parsed.errors.length,
+      errorCount: parsed.errors.length,
       errors: parsed.errors
     });
     
