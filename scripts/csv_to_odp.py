@@ -11,12 +11,10 @@ import argparse
 from pathlib import Path
 from odf.opendocument import OpenDocumentPresentation
 from odf import draw, text, style
-from odf.presentation import PresentationSettings, Show, ShowShape, ShowText, ShowPresentationPage
 from odf.draw import Page, Frame, TextBox
-from odf.text import P, H, List, ListItem, ListStyle, ListLevelStyleNumber, ListLevelStyleBullet
-from odf.style import Style, PageLayout, PageLayoutProperties, MasterPage, GraphicProperties, TextProperties, ParagraphProperties
+from odf.text import P, H
+from odf.style import Style, PageLayout, PageLayoutProperties, MasterPage, TextProperties, ParagraphProperties
 import tempfile
-import subprocess
 
 def escape_html(text):
     """Escape HTML special characters"""
@@ -141,7 +139,6 @@ def create_odp_slide(doc, slide_num, slide_data, columns, title, slide_number, t
     
     # Add title
     title_frame = Frame(
-        stylename="TitleFrame",
         width="26cm",
         height="2cm",
         x="1cm",
@@ -154,7 +151,6 @@ def create_odp_slide(doc, slide_num, slide_data, columns, title, slide_number, t
     
     # Add table
     table_frame = Frame(
-        stylename="TableFrame",
         width="26cm",
         height="16cm",
         x="1cm",
