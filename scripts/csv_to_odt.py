@@ -14,7 +14,7 @@ import traceback
 try:
     from odf.opendocument import OpenDocumentText
     from odf.style import Style, TextProperties, ParagraphProperties, TableColumnProperties
-    from odf.text import P, H
+    from odf.text import P, H, S
     from odf.table import Table, TableColumn, TableRow, TableCell
     from odf import style
 except ImportError as e:
@@ -55,10 +55,8 @@ def create_odt_from_csv(csv_file, output_file, title="CSV Data", author="Unknown
         print("Creating ODT document...")
         doc = OpenDocumentText()
         
-        # Set document metadata
-        doc.meta.addElement(doc.meta.createTextNode(title), "title")
-        doc.meta.addElement(doc.meta.createTextNode(author), "creator")
-        doc.meta.addElement(doc.meta.createTextNode(datetime.now().strftime("%Y-%m-%d %H:%M:%S")), "creation-date")
+        # Skip metadata for now - focus on document content
+        print("Skipping metadata setup, focusing on document content...")
         
         # Create styles
         print("Creating document styles...")
@@ -90,17 +88,17 @@ def create_odt_from_csv(csv_file, output_file, title="CSV Data", author="Unknown
         # Add title
         print("Adding document title...")
         title_para = P(stylename="Title")
-        title_para.addText(title)
+        title_para.addElement(S(title))
         doc.text.addElement(title_para)
         
         # Add author info
         author_para = P(stylename="Header")
-        author_para.addText(f"Author: {author}")
+        author_para.addElement(S(f"Author: {author}"))
         doc.text.addElement(author_para)
         
         # Add creation date
         date_para = P(stylename="Header")
-        date_para.addText(f"Created: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+        date_para.addElement(S(f"Created: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"))
         doc.text.addElement(date_para)
         
         # Add empty line
@@ -120,7 +118,9 @@ def create_odt_from_csv(csv_file, output_file, title="CSV Data", author="Unknown
         header_row = TableRow()
         for col in df.columns:
             cell = TableCell(stylename="TableHeader")
-            cell.addElement(P().addText(str(col)))
+            p = P()
+            p.addElement(S(str(col)))
+            cell.addElement(p)
             header_row.addElement(cell)
         table.addElement(header_row)
         
@@ -135,7 +135,9 @@ def create_odt_from_csv(csv_file, output_file, title="CSV Data", author="Unknown
                 cell = TableCell(stylename="TableCell")
                 # Handle NaN values and convert to string
                 cell_value = str(value) if pd.notna(value) else ""
-                cell.addElement(P().addText(cell_value))
+                p = P()
+                p.addElement(S(cell_value))
+                cell.addElement(p)
                 data_row.addElement(cell)
             table.addElement(data_row)
         
@@ -146,7 +148,7 @@ def create_odt_from_csv(csv_file, output_file, title="CSV Data", author="Unknown
         print("Adding document summary...")
         doc.text.addElement(P())
         summary_para = P(stylename="Header")
-        summary_para.addText(f"Summary: {len(df)} rows, {len(df.columns)} columns")
+        summary_para.addElement(S(f"Summary: {len(df)} rows, {len(df.columns)} columns"))
         doc.text.addElement(summary_para)
         
         # Save document
