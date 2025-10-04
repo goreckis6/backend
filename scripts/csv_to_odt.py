@@ -22,7 +22,7 @@ except ImportError as e:
     print("Please install odfpy: pip install odfpy")
     sys.exit(1)
 
-def create_odt_from_csv(csv_file, output_file, title="CSV Data", author="Unknown", max_rows_per_page=100):
+def create_odt_from_csv(csv_file, output_file, title="CSV Data", author="Unknown"):
     """
     Convert CSV file to ODT format.
     
@@ -31,14 +31,13 @@ def create_odt_from_csv(csv_file, output_file, title="CSV Data", author="Unknown
         output_file (str): Path to output ODT file
         title (str): Document title
         author (str): Document author
-        max_rows_per_page (int): Maximum rows per page to prevent huge documents
     """
     print(f"Starting CSV to ODT conversion...")
     print(f"Input: {csv_file}")
     print(f"Output: {output_file}")
     print(f"Title: {title}")
     print(f"Author: {author}")
-    print(f"Max rows per page: {max_rows_per_page}")
+    print("Processing all data (no row limits)")
     
     try:
         # Read CSV file
@@ -46,10 +45,8 @@ def create_odt_from_csv(csv_file, output_file, title="CSV Data", author="Unknown
         df = pd.read_csv(csv_file)
         print(f"CSV loaded successfully: {len(df)} rows, {len(df.columns)} columns")
         
-        # Limit rows if too many
-        if len(df) > max_rows_per_page:
-            print(f"Limiting to {max_rows_per_page} rows for performance")
-            df = df.head(max_rows_per_page)
+        # Process all rows - no limits
+        print(f"Processing all {len(df)} rows (including any repeated data)")
         
         # Create ODT document
         print("Creating ODT document...")
@@ -174,7 +171,6 @@ def main():
     parser.add_argument('output_file', help='Output ODT file path')
     parser.add_argument('--title', default='CSV Data', help='Document title')
     parser.add_argument('--author', default='Unknown', help='Document author')
-    parser.add_argument('--max-rows-per-page', type=int, default=100, help='Maximum rows per page')
     
     args = parser.parse_args()
     
@@ -205,8 +201,7 @@ def main():
         args.csv_file,
         args.output_file,
         args.title,
-        args.author,
-        args.max_rows_per_page
+        args.author
     )
     
     if success:

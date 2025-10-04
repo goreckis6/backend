@@ -2198,8 +2198,7 @@ const convertCsvToOdtPython = async (
       csvPath,
       outputPath,
       '--title', options.title || sanitizedBase,
-      '--author', options.author || 'Unknown',
-      '--max-rows-per-page', '100' // Optimize for documents
+      '--author', options.author || 'Unknown'
     ]);
 
     if (stdout.trim().length > 0) console.log('Python stdout:', stdout.trim());
