@@ -108,10 +108,9 @@ def create_odt_from_csv(csv_file, output_file, title="CSV Data", author="Unknown
         print("Creating data table...")
         table = Table()
         
-        # Set table width
-        table.addElement(TableColumn(style=TableColumnProperties(columnwidth="1.5in")))
-        for _ in range(len(df.columns) - 1):
-            table.addElement(TableColumn(style=TableColumnProperties(columnwidth="1.2in")))
+        # Add table columns (without style attributes for now)
+        for _ in range(len(df.columns)):
+            table.addElement(TableColumn())
         
         # Add header row
         print("Adding table headers...")
