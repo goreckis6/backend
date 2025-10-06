@@ -697,6 +697,21 @@ const isOdtFile = (file: Express.Multer.File) => {
   return result;
 };
 
+const isBmpFile = (file: Express.Multer.File) => {
+  const ext = path.extname(file.originalname).replace('.', '').toLowerCase();
+  const mimetype = file.mimetype?.toLowerCase() ?? '';
+  const result = ext === 'bmp' || mimetype.includes('bmp') || mimetype.includes('image/bmp');
+  
+  console.log('BMP file detection:', {
+    filename: file.originalname,
+    extension: ext,
+    mimetype,
+    isBMP: result
+  });
+  
+  return result;
+};
+
 const sanitizeFilename = (name: string) =>
   name.replace(/[^a-zA-Z0-9-_]+/g, '_').replace(/^_+|_+$/g, '') || 'file';
 
@@ -2728,6 +2743,83 @@ const convertCsvToXlsPython = async (
   }
 };
 
+// BMP to ICO converter using Python
+const convertBmpToIcoPython = async (
+  file: Express.Multer.File,
+  options: Record<string, string | undefined> = {},
+  persistToDisk = false
+): Promise<ConversionResult> => {
+  console.log(`=== BMP TO ICO (Python) START ===`);
+  const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'morphy-bmp-ico-'));
+  const originalBase = path.basename(file.originalname, path.extname(file.originalname));
+  const sanitizedBase = sanitizeFilename(originalBase);
+  const safeBase = `${sanitizedBase}_${randomUUID()}`;
+
+  try {
+    // Write BMP file to temp directory
+    const bmpPath = path.join(tmpDir, `${safeBase}.bmp`);
+    await fs.writeFile(bmpPath, file.buffer);
+
+    // Prepare output file
+    const outputPath = path.join(tmpDir, `${safeBase}.ico`);
+
+    // Use Python script for ICO
+    const pythonPath = '/opt/venv/bin/python3';
+    const scriptPath = path.join('/app/scripts/bmp_to_ico.py');
+
+    console.log('Python execution details:', {
+      pythonPath,
+      scriptPath,
+      bmpPath,
+      outputPath,
+      fileSize: file.buffer.length
+    });
+
+    const { stdout, stderr } = await execFileAsync(pythonPath, [
+      scriptPath,
+      bmpPath,
+      outputPath
+    ]);
+
+    if (stdout.trim().length > 0) console.log('Python stdout:', stdout.trim());
+    if (stderr.trim().length > 0) console.warn('Python stderr:', stderr.trim());
+
+    // Check if output file was created
+    const outputExists = await fs.access(outputPath).then(() => true).catch(() => false);
+    if (!outputExists) {
+      throw new Error(`Python ICO script did not produce output file: ${outputPath}`);
+    }
+
+    // Read output file
+    const outputBuffer = await fs.readFile(outputPath);
+    if (!outputBuffer || outputBuffer.length === 0) {
+      throw new Error('Python ICO script produced empty output file');
+    }
+
+    const downloadName = `${sanitizedBase}.ico`;
+    console.log(`BMP->ICO conversion successful:`, {
+      filename: downloadName,
+      size: outputBuffer.length
+    });
+
+    if (persistToDisk) {
+      return await persistOutputBuffer(outputBuffer, downloadName, 'image/x-icon');
+    }
+
+    return {
+      buffer: outputBuffer,
+      filename: downloadName,
+      mime: 'image/x-icon'
+    };
+  } catch (error) {
+    console.error(`BMP->ICO conversion error:`, error);
+    const message = error instanceof Error ? error.message : `Unknown BMP->ICO error`;
+    throw new Error(`Failed to convert BMP to ICO: ${message}`);
+  } finally {
+    await fs.rm(tmpDir, { recursive: true, force: true }).catch(() => undefined);
+  }
+};
+
 const convertCsvToEbookPython = async (
   file: Express.Multer.File,
   targetFormat: string,
@@ -4085,6 +4177,7 @@ app.post('/api/convert', conversionTimeout(5 * 60 * 1000), upload.single('file')
     const isEPS = isEpsFile(file);
     const isDNG = isDngFile(file);
     const isDOC = isDocFile(file);
+    const isBMP = isBmpFile(file);
     
     console.log('File type detection:', {
       targetFormat,
@@ -4158,6 +4251,9 @@ app.post('/api/convert', conversionTimeout(5 * 60 * 1000), upload.single('file')
         requestOptions
       });
       result = await convertDngFile(file, targetFormat, requestOptions, true);
+    } else if (isBMP && targetFormat === 'ico') {
+      console.log('Single: Routing to Python (BMP to ICO conversion)');
+      result = await convertBmpToIcoPython(file, requestOptions, true);
     } else {
       // Check if this is a DOC file that wasn't detected properly
       if (file.originalname.toLowerCase().endsWith('.doc') && targetFormat === 'csv') {
@@ -4332,7 +4428,8 @@ app.post('/api/convert/batch', conversionTimeout(10 * 60 * 1000), uploadBatch.ar
       const isEPS = isEpsFile(file);
       const isDNG = isDngFile(file);
       const isDOC = isDocFile(file);
-      console.log(`Processing ${file.originalname}: isCSV=${isCSV}, isEPUB=${isEPUB}, isEPS=${isEPS}, isDNG=${isDNG}, isDOC=${isDOC}, format=${format}, mimetype=${file.mimetype}`);
+      const isBMP = isBmpFile(file);
+      console.log(`Processing ${file.originalname}: isCSV=${isCSV}, isEPUB=${isEPUB}, isEPS=${isEPS}, isDNG=${isDNG}, isDOC=${isDOC}, isBMP=${isBMP}, format=${format}, mimetype=${file.mimetype}`);
 
       if ((isDocFile(file) || isDocxFile(file) || isOdtFile(file)) && format === 'epub') {
         console.log('Batch: Routing to LibreOffice (DOC/DOCX/ODT to EPUB conversion)');
@@ -4389,8 +4486,11 @@ app.post('/api/convert/batch', conversionTimeout(10 * 60 * 1000), uploadBatch.ar
           requestOptions
         });
         output = await convertDngFile(file, format, requestOptions, true);
+      } else if (isBMP && format === 'ico') {
+        console.log('Batch: Routing to Python (BMP to ICO conversion)');
+        output = await convertBmpToIcoPython(file, requestOptions, true);
       } else {
-        throw new Error(`Unsupported input file type or target format for batch conversion. File: ${file.originalname}, isCSV: ${isCSV}, isEPUB: ${isEPUB}, isEPS: ${isEPS}, isDNG: ${isDNG}, isDOC: ${isDOC}, format: ${format}`);
+        throw new Error(`Unsupported input file type or target format for batch conversion. File: ${file.originalname}, isCSV: ${isCSV}, isEPUB: ${isEPUB}, isEPS: ${isEPS}, isDNG: ${isDNG}, isDOC: ${isDOC}, isBMP: ${isBMP}, format: ${format}`);
       }
 
       console.log(`Batch result for ${file.originalname}: filename=${output.filename}, hasStoredFilename=${!!output.storedFilename}, bufferSize=${output.buffer.length}`);
