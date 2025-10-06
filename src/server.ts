@@ -2485,6 +2485,87 @@ const convertCsvToPptxPython = async (
   }
 };
 
+// CSV to RTF converter using Python
+const convertCsvToRtfPython = async (
+  file: Express.Multer.File,
+  options: Record<string, string | undefined> = {},
+  persistToDisk = false
+): Promise<ConversionResult> => {
+  console.log(`=== CSV TO RTF (Python) START ===`);
+  const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'morphy-csv-rtf-'));
+  const originalBase = path.basename(file.originalname, path.extname(file.originalname));
+  const sanitizedBase = sanitizeFilename(originalBase);
+  const safeBase = `${sanitizedBase}_${randomUUID()}`;
+
+  try {
+    // Write CSV file to temp directory
+    const csvPath = path.join(tmpDir, `${safeBase}.csv`);
+    await fs.writeFile(csvPath, file.buffer);
+
+    // Prepare output file
+    const outputPath = path.join(tmpDir, `${safeBase}.rtf`);
+    
+    // Use Python script for RTF
+    const pythonPath = '/opt/venv/bin/python3';
+    const scriptPath = path.join('/app/scripts/csv_to_rtf.py');
+    
+    console.log('Python execution details:', {
+      pythonPath,
+      scriptPath,
+      csvPath,
+      outputPath,
+      title: options.title || sanitizedBase,
+      author: options.author || 'Unknown',
+      fileSize: file.buffer.length
+    });
+
+    const { stdout, stderr } = await execFileAsync(pythonPath, [
+      scriptPath,
+      csvPath,
+      outputPath,
+      '--title', options.title || sanitizedBase,
+      '--author', options.author || 'Unknown'
+    ]);
+
+    if (stdout.trim().length > 0) console.log('Python stdout:', stdout.trim());
+    if (stderr.trim().length > 0) console.warn('Python stderr:', stderr.trim());
+
+    // Check if output file was created
+    const outputExists = await fs.access(outputPath).then(() => true).catch(() => false);
+    if (!outputExists) {
+      throw new Error(`Python RTF script did not produce output file: ${outputPath}`);
+    }
+
+    // Read output file
+    const outputBuffer = await fs.readFile(outputPath);
+    if (!outputBuffer || outputBuffer.length === 0) {
+      throw new Error('Python RTF script produced empty output file');
+    }
+
+    const downloadName = `${sanitizedBase}.rtf`;
+    console.log(`CSV->RTF conversion successful:`, { 
+      filename: downloadName, 
+      size: outputBuffer.length 
+    });
+
+    if (persistToDisk) {
+      return await persistOutputBuffer(outputBuffer, downloadName, 'application/rtf');
+    }
+
+    return {
+      buffer: outputBuffer,
+      filename: downloadName,
+      mime: 'application/rtf'
+    };
+  } catch (error) {
+    console.error(`CSV->RTF conversion error:`, error);
+    const message = error instanceof Error ? error.message : `Unknown CSV->RTF error`;
+    throw new Error(`Failed to convert CSV to RTF: ${message}`);
+  } finally {
+    await fs.rm(tmpDir, { recursive: true, force: true }).catch(() => undefined);
+  }
+};
+
 const convertCsvToEbookPython = async (
   file: Express.Multer.File,
   targetFormat: string,
@@ -3885,6 +3966,9 @@ app.post('/api/convert', conversionTimeout(5 * 60 * 1000), upload.single('file')
       } else if (isCSV && targetFormat === 'pptx') {
         console.log('Single: Routing to Python (CSV to PPTX conversion)');
         result = await convertCsvToPptxPython(file, requestOptions, true);
+      } else if (isCSV && targetFormat === 'rtf') {
+        console.log('Single: Routing to Python (CSV to RTF conversion)');
+        result = await convertCsvToRtfPython(file, requestOptions, true);
       } else if (isCSV && ['epub', 'html', 'txt'].includes(targetFormat)) {
       console.log(`Single: Routing to Python (CSV to ${targetFormat.toUpperCase()} conversion)`);
       result = await convertCsvToEbookPython(file, targetFormat, requestOptions, true);
@@ -4107,6 +4191,9 @@ app.post('/api/convert/batch', conversionTimeout(10 * 60 * 1000), uploadBatch.ar
       } else if (isCSV && format === 'pptx') {
         console.log('Batch: Routing to Python (CSV to PPTX conversion)');
         output = await convertCsvToPptxPython(file, requestOptions, true);
+      } else if (isCSV && format === 'rtf') {
+        console.log('Batch: Routing to Python (CSV to RTF conversion)');
+        output = await convertCsvToRtfPython(file, requestOptions, true);
       } else if (isCSV && ['epub', 'html', 'txt'].includes(format)) {
         console.log(`Batch: Routing to Python (CSV to ${format.toUpperCase()} conversion)`);
         output = await convertCsvToEbookPython(file, format, requestOptions, true);
