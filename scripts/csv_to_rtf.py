@@ -70,7 +70,11 @@ def create_rtf_from_csv(csv_file, output_file, title="CSV Data", author="Unknown
         rtf_content.append(r"{\info")
         rtf_content.append(f"{{\\title {escape_rtf(title)}}}")
         rtf_content.append(f"{{\\author {escape_rtf(author)}}}")
-        rtf_content.append(f"{{\\creatim\\yr{datetime.now().year}\\mo{datetime.now().month}\\dy{datetime.now().day}\\hr{datetime.now().hour}\\min{datetime.now().minute}}}}")
+        
+        # Create creation time string separately to avoid f-string issues
+        now = datetime.now()
+        creation_time = f"{{\\creatim\\yr{now.year}\\mo{now.month}\\dy{now.day}\\hr{now.hour}\\min{now.minute}}}"
+        rtf_content.append(creation_time)
         rtf_content.append(r"}")
         
         # Document content
@@ -78,7 +82,10 @@ def create_rtf_from_csv(csv_file, output_file, title="CSV Data", author="Unknown
         
         # Title
         rtf_content.append(r"{\qc\b\fs32 " + escape_rtf(title) + r"\par}")
-        rtf_content.append(r"{\qc\fs18 " + escape_rtf(f"Generated on {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}") + r"\par}")
+        
+        # Create title info strings separately
+        title_time = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        rtf_content.append(r"{\qc\fs18 " + escape_rtf(f"Generated on {title_time}") + r"\par}")
         rtf_content.append(r"{\qc\fs18 " + escape_rtf(f"Author: {author}") + r"\par}")
         rtf_content.append(r"\par")
         
@@ -88,7 +95,10 @@ def create_rtf_from_csv(csv_file, output_file, title="CSV Data", author="Unknown
         rtf_content.append(f"\\bullet Total Rows: {len(df):,}\\par")
         rtf_content.append(f"\\bullet Total Columns: {len(df.columns)}\\par")
         rtf_content.append(f"\\bullet File Size: {os.path.getsize(csv_file):,} bytes\\par")
-        rtf_content.append(f"\\bullet Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\\par")
+        
+        # Create generation time string separately
+        gen_time = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        rtf_content.append(f"\\bullet Generated: {gen_time}\\par")
         rtf_content.append(r"}\par")
         
         # Column headers
@@ -139,7 +149,10 @@ def create_rtf_from_csv(csv_file, output_file, title="CSV Data", author="Unknown
         rtf_content.append(r"{\b\fs20 Conclusion\par}")
         rtf_content.append(r"{\fs18")
         rtf_content.append(f"Data processing complete. Total rows processed: {len(df):,}, Columns analyzed: {len(df.columns)}.\\par")
-        rtf_content.append(f"File generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\\par")
+        
+        # Create conclusion time string separately
+        conclusion_time = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        rtf_content.append(f"File generated: {conclusion_time}\\par")
         rtf_content.append(r"}\par")
         
         # End document
