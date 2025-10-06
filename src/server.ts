@@ -2117,7 +2117,7 @@ const convertCsvToOdpPython = async (
       outputPath,
       '--title', options.title || sanitizedBase,
       '--author', options.author || 'Unknown',
-      '--max-rows-per-slide', '50' // Optimize for presentations
+      '--max-rows', '100' // Optimize for presentations
     ]);
 
     if (stdout.trim().length > 0) console.log('Python stdout:', stdout.trim());
@@ -2361,7 +2361,7 @@ const convertCsvToPptPython = async (
       outputPath,
       '--title', options.title || sanitizedBase,
       '--author', options.author || 'Unknown',
-      '--max-rows-per-slide', '50' // Optimize for presentations
+      '--max-rows', '100' // Optimize for presentations
     ]);
 
     if (stdout.trim().length > 0) console.log('Python stdout:', stdout.trim());
@@ -2443,7 +2443,7 @@ const convertCsvToPptxPython = async (
       outputPath,
       '--title', options.title || sanitizedBase,
       '--author', options.author || 'Unknown',
-      '--max-rows-per-slide', '50' // Optimize for presentations
+      '--max-rows', '100' // Optimize for presentations
     ]);
 
     if (stdout.trim().length > 0) console.log('Python stdout:', stdout.trim());
