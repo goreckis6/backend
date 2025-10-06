@@ -440,6 +440,116 @@ const convertDngFile = async (
   }
 };
 
+// DNG to WebP converter using Python
+const convertDngToWebpPython = async (
+  file: Express.Multer.File,
+  options: Record<string, string | undefined> = {},
+  persistToDisk = false
+): Promise<ConversionResult> => {
+  console.log(`=== DNG TO WEBP (Python) START ===`);
+  const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'morphy-dng-webp-'));
+  const originalBase = path.basename(file.originalname, path.extname(file.originalname));
+  const sanitizedBase = sanitizeFilename(originalBase);
+  const safeBase = `${sanitizedBase}_${randomUUID()}`;
+
+  try {
+    // Write DNG file to temp directory
+    const dngPath = path.join(tmpDir, `${safeBase}.dng`);
+    await fs.writeFile(dngPath, file.buffer);
+
+    // Prepare output file
+    const outputPath = path.join(tmpDir, `${safeBase}.webp`);
+
+    // Use Python script for WebP
+    const pythonPath = '/opt/venv/bin/python3';
+    const scriptPath = path.join('/app/scripts/dng_to_webp.py');
+
+    // Parse options
+    const quality = parseInt(options.quality || '95');
+    const lossless = options.lossless === 'true';
+    const width = options.width ? parseInt(options.width) : undefined;
+    const height = options.height ? parseInt(options.height) : undefined;
+
+    console.log('Python execution details:', {
+      pythonPath,
+      scriptPath,
+      dngPath,
+      outputPath,
+      quality,
+      lossless,
+      width,
+      height,
+      fileSize: file.buffer.length
+    });
+
+    const args = [
+      scriptPath,
+      dngPath,
+      outputPath,
+      '--quality', quality.toString(),
+    ];
+
+    if (lossless) {
+      args.push('--lossless');
+    }
+
+    if (width) {
+      args.push('--width', width.toString());
+    }
+
+    if (height) {
+      args.push('--height', height.toString());
+    }
+
+    const { stdout, stderr } = await execFileAsync(pythonPath, args);
+
+    if (stdout.trim().length > 0) console.log('Python stdout:', stdout.trim());
+    if (stderr.trim().length > 0) console.warn('Python stderr:', stderr.trim());
+    
+    // Check for specific error patterns
+    if (stderr.includes('Unsupported DNG file format')) {
+      throw new Error('Unsupported DNG file format. Please ensure the file is a valid DNG image.');
+    }
+    if (stderr.includes('DNG file I/O error')) {
+      throw new Error('DNG file I/O error. Please check that the file is not corrupted.');
+    }
+
+    // Check if output file was created
+    const outputExists = await fs.access(outputPath).then(() => true).catch(() => false);
+    if (!outputExists) {
+      throw new Error(`Python WebP script did not produce output file: ${outputPath}`);
+    }
+
+    // Read output file
+    const outputBuffer = await fs.readFile(outputPath);
+    if (!outputBuffer || outputBuffer.length === 0) {
+      throw new Error('Python WebP script produced empty output file');
+    }
+
+    const downloadName = `${sanitizedBase}.webp`;
+    console.log(`DNG->WebP conversion successful:`, {
+      filename: downloadName,
+      size: outputBuffer.length
+    });
+
+    if (persistToDisk) {
+      return await persistOutputBuffer(outputBuffer, downloadName, 'image/webp');
+    }
+
+    return {
+      buffer: outputBuffer,
+      filename: downloadName,
+      mime: 'image/webp'
+    };
+  } catch (error) {
+    console.error(`DNG->WebP conversion error:`, error);
+    const message = error instanceof Error ? error.message : `Unknown DNG->WebP error`;
+    throw new Error(`Failed to convert DNG to WebP: ${message}`);
+  } finally {
+    await fs.rm(tmpDir, { recursive: true, force: true }).catch(() => undefined);
+  }
+};
+
 const app = express();
 const PORT = Number(process.env.PORT || 3000);
 
@@ -4262,12 +4372,15 @@ app.post('/api/convert', conversionTimeout(5 * 60 * 1000), upload.single('file')
     } else if (isEPS && ['webp', 'png', 'jpeg', 'jpg', 'ico'].includes(targetFormat)) {
       console.log('Single: Routing to EPS conversion');
       result = await convertEpsFile(file, targetFormat, requestOptions, true);
-    } else if (isDNG && ['webp', 'png', 'jpeg', 'jpg', 'ico'].includes(targetFormat)) {
-      console.log('Single: Routing to DNG conversion');
+    } else if (isDNG && targetFormat === 'webp') {
+      console.log('Single: Routing to Python (DNG to WebP conversion)');
+      result = await convertDngToWebpPython(file, requestOptions, true);
+    } else if (isDNG && ['png', 'jpeg', 'jpg', 'ico'].includes(targetFormat)) {
+      console.log('Single: Routing to DNG conversion (legacy)');
       console.log('DNG conversion details:', {
         filename: file.originalname,
         targetFormat,
-        supportedFormats: ['webp', 'png', 'jpeg', 'jpg', 'ico'],
+        supportedFormats: ['png', 'jpeg', 'jpg', 'ico'],
         requestOptions
       });
       result = await convertDngFile(file, targetFormat, requestOptions, true);
@@ -4497,12 +4610,15 @@ app.post('/api/convert/batch', conversionTimeout(10 * 60 * 1000), uploadBatch.ar
       } else if (isEPS && ['webp', 'png', 'jpeg', 'jpg', 'ico'].includes(format)) {
         console.log('Routing to EPS conversion');
         output = await convertEpsFile(file, format, requestOptions, true);
-      } else if (isDNG && ['webp', 'png', 'jpeg', 'jpg', 'ico'].includes(format)) {
-        console.log('Batch: Routing to DNG conversion');
+      } else if (isDNG && format === 'webp') {
+        console.log('Batch: Routing to Python (DNG to WebP conversion)');
+        output = await convertDngToWebpPython(file, requestOptions, true);
+      } else if (isDNG && ['png', 'jpeg', 'jpg', 'ico'].includes(format)) {
+        console.log('Batch: Routing to DNG conversion (legacy)');
         console.log('Batch DNG conversion details:', {
           filename: file.originalname,
           targetFormat: format,
-          supportedFormats: ['webp', 'png', 'jpeg', 'jpg', 'ico'],
+          supportedFormats: ['png', 'jpeg', 'jpg', 'ico'],
           requestOptions
         });
         output = await convertDngFile(file, format, requestOptions, true);
