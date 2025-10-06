@@ -4567,7 +4567,7 @@ app.use('/api/convert', (req, res, next) => {
 
 app.post('/api/convert', conversionTimeout(5 * 60 * 1000), upload.single('file'), async (req, res) => {
   try {
-    const file = req.file;
+    let file = req.file;
     const requestOptions = { ...(req.body as Record<string, string | undefined>) };
 
     console.log('=== CONVERSION REQUEST START ===');
@@ -4590,10 +4590,10 @@ app.post('/api/convert', conversionTimeout(5 * 60 * 1000), upload.single('file')
         console.log('Found files in object format, checking for common field names');
         const commonFieldNames = ['file', 'upload', 'image', 'document', 'attachment'];
         for (const fieldName of commonFieldNames) {
-          if (req.files[fieldName]) {
+          if ((req.files as any)[fieldName]) {
             console.log(`Found file with field name: ${fieldName}`);
-            req.file = req.files[fieldName];
-            file = req.files[fieldName];
+            req.file = (req.files as any)[fieldName];
+            file = (req.files as any)[fieldName];
             break;
           }
         }
