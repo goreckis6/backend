@@ -2913,6 +2913,12 @@ const convertBmpToIcoPython = async (
     if (stderr.includes('cannot identify image file')) {
       throw new Error('Invalid image file. Please check that the file is a valid BMP image.');
     }
+    if (stderr.includes('Cannot open image file')) {
+      throw new Error('Cannot open BMP file. Please ensure the file is not corrupted.');
+    }
+    if (stderr.includes('Could not load image with any method')) {
+      throw new Error('Unable to process BMP file. Please try a different BMP file.');
+    }
 
     // Check if output file was created
     const outputExists = await fs.access(outputPath).then(() => true).catch(() => false);
