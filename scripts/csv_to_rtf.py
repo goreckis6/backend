@@ -68,21 +68,9 @@ def create_rtf_from_csv(csv_file, output_file, title="CSV Data", author="Unknown
         # Start building RTF content
         rtf_content = []
         
-        # RTF header
+        # RTF header - simplified for better compatibility
         rtf_content.append(r"{\rtf1\ansi\deff0")
-        rtf_content.append(r"{\fonttbl{\f0\fswiss\fcharset0 Arial;}{\f1\fswiss\fcharset0 Arial Bold;}}")
-        rtf_content.append(r"{\colortbl;\red0\green0\blue0;\red68\green114\blue196;\red242\green242\blue242;}")
-        
-        # Document properties
-        rtf_content.append(r"{\info")
-        rtf_content.append(f"{{\\title {escape_rtf(title)}}}")
-        rtf_content.append(f"{{\\author {escape_rtf(author)}}}")
-        
-        # Create creation time string separately to avoid f-string issues
-        now = datetime.now()
-        creation_time = f"{{\\creatim\\yr{now.year}\\mo{now.month}\\dy{now.day}\\hr{now.hour}\\min{now.minute}}}"
-        rtf_content.append(creation_time)
-        rtf_content.append(r"}")
+        rtf_content.append(r"{\fonttbl{\f0\fswiss Arial;}}")
         
         # Document content
         rtf_content.append(r"{\f0\fs24")  # Start with Arial, 12pt
@@ -98,22 +86,20 @@ def create_rtf_from_csv(csv_file, output_file, title="CSV Data", author="Unknown
         
         # Summary
         rtf_content.append(r"{\b\fs20 Data Summary\par}")
-        rtf_content.append(r"{\fs18")
-        rtf_content.append(f"\\bullet Total Rows: {len(df):,}\\par")
-        rtf_content.append(f"\\bullet Total Columns: {len(df.columns)}\\par")
-        rtf_content.append(f"\\bullet File Size: {os.path.getsize(csv_file):,} bytes\\par")
+        rtf_content.append(f"Total Rows: {len(df):,}\par")
+        rtf_content.append(f"Total Columns: {len(df.columns)}\par")
+        rtf_content.append(f"File Size: {os.path.getsize(csv_file):,} bytes\par")
         
         # Create generation time string separately
         gen_time = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-        rtf_content.append(f"\\bullet Generated: {gen_time}\\par")
-        rtf_content.append(r"}\par")
+        rtf_content.append(f"Generated: {gen_time}\par")
+        rtf_content.append(r"\par")
         
         # Column headers
         rtf_content.append(r"{\b\fs20 Column Headers\par}")
-        rtf_content.append(r"{\fs18")
         for i, col in enumerate(df.columns, 1):
-            rtf_content.append(f"\\bullet {i}. {escape_rtf(str(col))}\\par")
-        rtf_content.append(r"}\par")
+            rtf_content.append(f"{i}. {escape_rtf(str(col))}\par")
+        rtf_content.append(r"\par")
         
         # Data table - use simple formatted text approach
         rtf_content.append(r"{\b\fs20 Data Table\par}")
@@ -138,12 +124,12 @@ def create_rtf_from_csv(csv_file, output_file, title="CSV Data", author="Unknown
                 
                 # Join with pipe separator for clarity
                 row_text += " | ".join(row_data)
-                rtf_content.append(f"{escape_rtf(row_text)}\\par")
+                rtf_content.append(f"{escape_rtf(row_text)}\par")
                 processed_rows += 1
                 
-                # Add spacing every 5 rows for readability
-                if (idx + 1) % 5 == 0:
-                    rtf_content.append(r"\\par")
+                # Add spacing every 10 rows for readability
+                if (idx + 1) % 10 == 0:
+                    rtf_content.append(r"\par")
                 
         except Exception as e:
             print(f"Error processing rows: {e}")
@@ -156,13 +142,12 @@ def create_rtf_from_csv(csv_file, output_file, title="CSV Data", author="Unknown
         
         # Conclusion
         rtf_content.append(r"{\b\fs20 Conclusion\par}")
-        rtf_content.append(r"{\fs18")
-        rtf_content.append(f"Data processing complete. Total rows processed: {len(df):,}, Columns analyzed: {len(df.columns)}.\\par")
+        rtf_content.append(f"Data processing complete. Total rows processed: {len(df):,}, Columns analyzed: {len(df.columns)}.\par")
         
         # Create conclusion time string separately
         conclusion_time = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-        rtf_content.append(f"File generated: {conclusion_time}\\par")
-        rtf_content.append(r"}\par")
+        rtf_content.append(f"File generated: {conclusion_time}\par")
+        rtf_content.append(r"\par")
         
         # End document
         rtf_content.append(r"}")
@@ -170,7 +155,7 @@ def create_rtf_from_csv(csv_file, output_file, title="CSV Data", author="Unknown
         # Write RTF file
         print(f"Writing RTF file to {output_file}...")
         with open(output_file, 'w', encoding='utf-8') as f:
-            f.write('\n'.join(rtf_content))
+            f.write(''.join(rtf_content))
         
         # Verify file was created
         if os.path.exists(output_file):
