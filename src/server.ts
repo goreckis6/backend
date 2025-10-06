@@ -503,6 +503,15 @@ const convertDngToWebpPython = async (
     // Use Python script for WebP
     const pythonPath = '/opt/venv/bin/python3';
     const scriptPath = path.join('/app/scripts/dng_to_webp.py');
+    
+    // Check if Python script exists
+    const scriptExists = await fs.access(scriptPath).then(() => true).catch(() => false);
+    if (!scriptExists) {
+      console.error(`Python script not found: ${scriptPath}`);
+      throw new Error('DNG to WebP conversion script not found');
+    }
+    
+    console.log('Python script found, proceeding with conversion...');
 
     // Parse options
     const quality = parseInt(options.quality || '95');
@@ -541,7 +550,16 @@ const convertDngToWebpPython = async (
       args.push('--height', height.toString());
     }
 
-    const { stdout, stderr } = await execFileAsync(pythonPath, args);
+    let stdout, stderr;
+    try {
+      const result = await execFileAsync(pythonPath, args);
+      stdout = result.stdout;
+      stderr = result.stderr;
+    } catch (execError) {
+      console.error('Python script execution failed:', execError);
+      stdout = '';
+      stderr = execError instanceof Error ? execError.message : 'Python execution failed';
+    }
 
     if (stdout.trim().length > 0) console.log('Python stdout:', stdout.trim());
     if (stderr.trim().length > 0) console.warn('Python stderr:', stderr.trim());
@@ -553,11 +571,18 @@ const convertDngToWebpPython = async (
     if (stderr.includes('DNG file I/O error')) {
       throw new Error('DNG file I/O error. Please check that the file is not corrupted.');
     }
+    if (stderr.includes('rawpy not available') || stderr.includes('ImportError')) {
+      throw new Error('Required Python library (rawpy) is not available. Please install it.');
+    }
+    if (stderr.includes('Traceback') || stderr.includes('SyntaxError')) {
+      throw new Error(`Python script error: ${stderr}`);
+    }
 
     // Check if output file was created
     const outputExists = await fs.access(outputPath).then(() => true).catch(() => false);
     if (!outputExists) {
-      throw new Error(`Python WebP script did not produce output file: ${outputPath}`);
+      console.error('Python script did not produce output file. This might be a Python environment issue.');
+      throw new Error(`Python WebP script did not produce output file: ${outputPath}. Check Python environment and dependencies.`);
     }
 
     // Read output file
@@ -4568,13 +4593,28 @@ app.post('/api/convert', conversionTimeout(5 * 60 * 1000), upload.single('file')
     const qualityValue = quality === 'high' ? 95 : quality === 'medium' ? 80 : 60;
     const isLossless = lossless === 'true';
 
-    let pipeline = sharp(inputBuffer, {
-      failOn: 'truncated',
-      unlimited: true
-    });
+    let pipeline;
+    let metadata;
+    
+    try {
+      pipeline = sharp(inputBuffer, {
+        failOn: 'truncated',
+        unlimited: true
+      });
 
-    const metadata = await pipeline.metadata();
-    console.log(`Metadata => ${metadata.width}x${metadata.height}, format: ${metadata.format}`);
+      metadata = await pipeline.metadata();
+      console.log(`Metadata => ${metadata.width}x${metadata.height}, format: ${metadata.format}`);
+    } catch (sharpError) {
+      console.error('Sharp cannot process this file format:', sharpError);
+      
+      // Check if this is a DNG file that Sharp can't handle
+      if (isDNG || file.originalname.toLowerCase().endsWith('.dng')) {
+        throw new Error('DNG files cannot be processed directly by Sharp. Please use the Python conversion method.');
+      }
+      
+      // For other unsupported formats, throw a generic error
+      throw new Error(`Unsupported image format: ${file.originalname}. Sharp cannot process this file type.`);
+    }
 
     let contentType: string;
     let fileExtension: string;
