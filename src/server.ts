@@ -16,6 +16,8 @@ import PptxGenJS from 'pptxgenjs';
 import mammoth from 'mammoth';
 import * as cheerio from 'cheerio';
 import { Document, Packer, Paragraph, Table, TableCell, TableRow, WidthType } from 'docx';
+import Jimp from 'jimp';
+import toIco from 'to-ico';
 
 const BATCH_OUTPUT_DIR = path.join(os.tmpdir(), 'morphy-batch-outputs');
 fs.mkdir(BATCH_OUTPUT_DIR, { recursive: true }).catch(() => undefined);
@@ -496,8 +498,8 @@ const convertDngToWebpPython = async (
     const outputPath = path.join(tmpDir, `${safeBase}.webp`);
 
     // Use Python script for WebP
-    const pythonPath = '/opt/venv/bin/python3';
-    const scriptPath = path.join('/app/scripts/dng_to_webp.py');
+    const pythonPath = 'python3';
+    const scriptPath = path.join(__dirname, '..', 'scripts', 'dng_to_webp.py');
     
     // Check if Python script exists
     const scriptExists = await fs.access(scriptPath).then(() => true).catch(() => false);
@@ -2195,8 +2197,8 @@ const convertCsvToMobiOptimized = async (
     const outputPath = path.join(tmpDir, `${safeBase}.mobi`);
     
     // Use optimized Python script for MOBI
-    const pythonPath = '/opt/venv/bin/python3';
-    const scriptPath = path.join('/app/scripts/csv_to_mobi_optimized.py');
+    const pythonPath = 'python3';
+    const scriptPath = path.join(__dirname, '..', 'scripts', 'csv_to_mobi_optimized.py');
     
     console.log('Python execution details:', {
       pythonPath,
@@ -2283,8 +2285,8 @@ const convertCsvToOdpPython = async (
     const outputPath = path.join(tmpDir, `${safeBase}.odp`);
     
     // Use Python script for ODP
-    const pythonPath = '/opt/venv/bin/python3';
-    const scriptPath = path.join('/app/scripts/csv_to_odp.py');
+    const pythonPath = 'python3';
+    const scriptPath = path.join(__dirname, '..', 'scripts', 'csv_to_odp.py');
     
     console.log('Python execution details:', {
       pythonPath,
@@ -2365,8 +2367,8 @@ const convertCsvToOdtPython = async (
     const outputPath = path.join(tmpDir, `${safeBase}.odt`);
     
     // Use Python script for ODT
-    const pythonPath = '/opt/venv/bin/python3';
-    const scriptPath = path.join('/app/scripts/csv_to_odt.py');
+    const pythonPath = 'python3';
+    const scriptPath = path.join(__dirname, '..', 'scripts', 'csv_to_odt.py');
     
     console.log('Python execution details:', {
       pythonPath,
@@ -2934,8 +2936,8 @@ const convertBmpToIcoPython = async (
     const outputPath = path.join(tmpDir, `${safeBase}.ico`);
 
     // Use Python script for ICO
-    const pythonPath = '/opt/venv/bin/python3';
-    const scriptPath = path.join('/app/scripts/bmp_to_ico.py');
+    const pythonPath = 'python3';
+    const scriptPath = path.join(__dirname, '..', 'scripts', 'bmp_to_ico.py');
     
     // Check if Python script exists
     const scriptExists = await fs.access(scriptPath).then(() => true).catch(() => false);
@@ -3118,6 +3120,80 @@ const convertBmpToIcoPython = async (
     throw new Error(`Failed to convert BMP to ICO: ${message}`);
   } finally {
     await fs.rm(tmpDir, { recursive: true, force: true }).catch(() => undefined);
+  }
+};
+
+// BMP to ICO converter using Jimp + to-ico (Node.js only)
+const convertBmpToIcoJimp = async (
+  file: Express.Multer.File,
+  options: Record<string, string | undefined> = {},
+  persistToDisk = false
+): Promise<ConversionResult> => {
+  console.log(`=== BMP TO ICO (Jimp) START ===`);
+  const originalBase = path.basename(file.originalname, path.extname(file.originalname));
+  const sanitizedBase = sanitizeFilename(originalBase);
+
+  try {
+    // Parse sizes from options
+    const sizes = options.sizes ? options.sizes.split(',').map(s => parseInt(s.trim())).filter(s => !isNaN(s)) : [16, 24, 32, 48, 64, 128, 256];
+    const includeAlpha = options.includeAlpha !== 'false';
+    
+    console.log('ICO conversion options:', {
+      sizes,
+      includeAlpha,
+      originalOptions: options
+    });
+
+    // Load the BMP image with Jimp
+    console.log('Loading BMP image with Jimp...');
+    const image = await Jimp.read(file.buffer);
+    
+    console.log('Image loaded successfully:', {
+      width: image.getWidth(),
+      height: image.getHeight(),
+      hasAlpha: image.hasAlpha()
+    });
+
+    // Create multiple sizes for the ICO
+    const iconImages: Buffer[] = [];
+    
+    for (const size of sizes) {
+      console.log(`Creating ${size}x${size} icon...`);
+      
+      // Resize the image to the target size
+      const resized = image.clone().resize(size, size, Jimp.RESIZE_LANCZOS);
+      
+      // Convert to PNG format (ICO uses PNG internally for modern formats)
+      const pngBuffer = await resized.getBufferAsync(Jimp.MIME_PNG);
+      iconImages.push(pngBuffer);
+    }
+
+    console.log(`Created ${iconImages.length} icon sizes: ${sizes.join(', ')}`);
+
+    // Convert to ICO format using to-ico
+    console.log('Converting to ICO format...');
+    const icoBuffer = await toIco(iconImages);
+    
+    console.log('ICO conversion successful:', {
+      icoSize: icoBuffer.length,
+      iconCount: iconImages.length
+    });
+
+    const downloadName = `${sanitizedBase}.ico`;
+
+    if (persistToDisk) {
+      return await persistOutputBuffer(icoBuffer, downloadName, 'image/x-icon');
+    }
+
+    return {
+      buffer: icoBuffer,
+      filename: downloadName,
+      mime: 'image/x-icon'
+    };
+  } catch (error) {
+    console.error(`BMP->ICO (Jimp) conversion error:`, error);
+    const message = error instanceof Error ? error.message : `Unknown BMP->ICO error`;
+    throw new Error(`Failed to convert BMP to ICO with Jimp: ${message}`);
   }
 };
 
@@ -4487,6 +4563,7 @@ app.post('/api/convert', conversionTimeout(5 * 60 * 1000), upload.single('file')
       isEPS,
       isDNG,
       isDOC,
+      isBMP,
       mimetype: file.mimetype,
       extension: file.originalname.split('.').pop()?.toLowerCase(),
       originalname: file.originalname
@@ -4556,8 +4633,8 @@ app.post('/api/convert', conversionTimeout(5 * 60 * 1000), upload.single('file')
       });
       result = await convertDngFile(file, targetFormat, requestOptions, true);
     } else if (isBMP && targetFormat === 'ico') {
-      console.log('Single: Routing to Python (BMP to ICO conversion)');
-      result = await convertBmpToIcoPython(file, requestOptions, true);
+      console.log('Single: Routing to Jimp (BMP to ICO conversion)');
+      result = await convertBmpToIcoJimp(file, requestOptions, true);
     } else {
       // Check if this is a DOC file that wasn't detected properly
       if (file.originalname.toLowerCase().endsWith('.doc') && targetFormat === 'csv') {
@@ -4605,6 +4682,11 @@ app.post('/api/convert', conversionTimeout(5 * 60 * 1000), upload.single('file')
       // Check if this is a DNG file that Sharp can't handle
       if (isDNG || file.originalname.toLowerCase().endsWith('.dng')) {
         throw new Error('DNG files cannot be processed directly by Sharp. Please use the Python conversion method.');
+      }
+      
+      // Check if this is a BMP file that Sharp can't handle
+      if (isBMP || file.originalname.toLowerCase().endsWith('.bmp')) {
+        throw new Error('BMP files cannot be processed directly by Sharp. Please use ImageMagick or another conversion method.');
       }
       
       // For other unsupported formats, throw a generic error
