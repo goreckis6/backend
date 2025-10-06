@@ -2775,10 +2775,22 @@ const convertBmpToIcoPython = async (
       fileSize: file.buffer.length
     });
 
+    // Parse sizes from options
+    const sizes = options.sizes ? options.sizes.split(',').map(s => parseInt(s.trim())).filter(s => !isNaN(s)) : [16, 24, 32, 48, 64, 128, 256];
+    const includeAlpha = options.includeAlpha !== 'false';
+    
+    console.log('ICO conversion options:', {
+      sizes,
+      includeAlpha,
+      originalOptions: options
+    });
+
     const { stdout, stderr } = await execFileAsync(pythonPath, [
       scriptPath,
       bmpPath,
-      outputPath
+      outputPath,
+      '--sizes', sizes.join(','),
+      '--alpha', includeAlpha.toString()
     ]);
 
     if (stdout.trim().length > 0) console.log('Python stdout:', stdout.trim());

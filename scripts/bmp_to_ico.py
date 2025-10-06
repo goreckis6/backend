@@ -11,7 +11,7 @@ import sys
 from datetime import datetime
 import traceback
 
-def create_ico_from_bmp(bmp_file, output_file, sizes=None):
+def create_ico_from_bmp(bmp_file, output_file, sizes=None, include_alpha=True):
     """
     Convert BMP file to ICO format with multiple sizes.
     
@@ -29,31 +29,49 @@ def create_ico_from_bmp(bmp_file, output_file, sizes=None):
     print(f"Target sizes: {sizes}")
     
     try:
-        # Open the BMP image
-        print("Opening BMP file...")
+        # Open the image file
+        print("Opening image file...")
         with Image.open(bmp_file) as img:
-            print(f"Original image: {img.size[0]}x{img.size[1]} pixels, mode: {img.mode}")
+            print(f"Original image: {img.size[0]}x{img.size[1]} pixels, mode: {img.mode}, format: {img.format}")
             
             # Verify it's a valid image format
-            if img.format not in ['BMP', 'PNG', 'JPEG', 'JPG', 'GIF', 'TIFF']:
+            if img.format not in ['BMP', 'PNG', 'JPEG', 'JPG', 'GIF', 'TIFF', 'WEBP']:
                 print(f"Warning: Unsupported image format: {img.format}")
+                # Try to convert anyway
+                print("Attempting to process despite unsupported format...")
             
-            # Convert to RGBA if not already (for alpha support)
-            if img.mode != 'RGBA':
+            # Convert to RGBA if not already (for alpha support) and alpha is requested
+            if include_alpha and img.mode != 'RGBA':
                 print("Converting to RGBA for alpha support...")
                 try:
                     img = img.convert('RGBA')
+                    print("Successfully converted to RGBA")
                 except Exception as convert_error:
                     print(f"Error converting to RGBA: {convert_error}")
                     # Try converting to RGB first, then to RGBA
                     try:
+                        print("Trying RGB intermediate conversion...")
                         img = img.convert('RGB').convert('RGBA')
                         print("Successfully converted via RGB intermediate step")
                     except Exception as rgb_error:
                         print(f"Error converting via RGB: {rgb_error}")
                         # Last resort: convert to RGB only
-                        img = img.convert('RGB')
-                        print("Converted to RGB only (no alpha support)")
+                        try:
+                            img = img.convert('RGB')
+                            print("Converted to RGB only (no alpha support)")
+                        except Exception as final_error:
+                            print(f"Final conversion attempt failed: {final_error}")
+                            raise Exception(f"Cannot process image: {final_error}")
+            elif not include_alpha and img.mode != 'RGB':
+                print("Converting to RGB (no alpha support requested)...")
+                try:
+                    img = img.convert('RGB')
+                    print("Successfully converted to RGB")
+                except Exception as convert_error:
+                    print(f"Error converting to RGB: {convert_error}")
+                    raise Exception(f"Cannot process image: {convert_error}")
+            else:
+                print(f"Image already in {'RGBA' if include_alpha else 'RGB'} mode")
             
             # Create list of resized images for different icon sizes
             icon_images = []
@@ -116,6 +134,8 @@ def main():
     parser.add_argument('output_file', help='Output ICO file path')
     parser.add_argument('--sizes', nargs='+', type=int, default=[16, 24, 32, 48, 64, 128, 256],
                        help='Icon sizes to include (default: 16 24 32 48 64 128 256)')
+    parser.add_argument('--alpha', type=str, default='true',
+                       help='Include alpha transparency (default: true)')
     
     args = parser.parse_args()
     
@@ -152,11 +172,15 @@ def main():
     if output_dir and not os.path.exists(output_dir):
         os.makedirs(output_dir)
     
+    # Parse alpha setting
+    include_alpha = args.alpha.lower() in ['true', '1', 'yes', 'on']
+    
     # Convert BMP to ICO
     success = create_ico_from_bmp(
         args.bmp_file,
         args.output_file,
-        args.sizes
+        args.sizes,
+        include_alpha
     )
     
     if success:
