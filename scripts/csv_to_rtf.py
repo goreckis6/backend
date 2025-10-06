@@ -35,7 +35,7 @@ def escape_rtf(text):
 
 def create_rtf_from_csv(csv_file, output_file, title="CSV Data", author="Unknown"):
     """
-    Convert CSV file to RTF format.
+    Convert CSV file to RTF format using the most basic RTF structure.
     
     Args:
         csv_file (str): Path to input CSV file
@@ -65,71 +65,63 @@ def create_rtf_from_csv(csv_file, output_file, title="CSV Data", author="Unknown
         print(f"Data types: {df.dtypes.to_dict()}")
         print(f"Any null values: {df.isnull().sum().sum()}")
         
-        # Start building RTF content
+        # Create the most basic RTF structure possible
         rtf_content = []
         
-        # RTF header - simplified for better compatibility
-        rtf_content.append(r"{\rtf1\ansi\deff0")
-        rtf_content.append(r"{\fonttbl{\f0\fswiss Arial;}}")
-        
-        # Document content
-        rtf_content.append(r"{\f0\fs24")  # Start with Arial, 12pt
+        # Basic RTF header - minimal structure
+        rtf_content.append("{\\rtf1\\ansi\\deff0")
+        rtf_content.append("{\\fonttbl{\\f0\\fswiss Arial;}}")
+        rtf_content.append("\\f0\\fs24")  # Arial, 12pt
         
         # Title
-        rtf_content.append(r"{\qc\b\fs32 " + escape_rtf(title) + r"\par}")
-        
-        # Create title info strings separately
-        title_time = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-        rtf_content.append(r"{\qc\fs18 " + escape_rtf(f"Generated on {title_time}") + r"\par}")
-        rtf_content.append(r"{\qc\fs18 " + escape_rtf(f"Author: {author}") + r"\par}")
-        rtf_content.append(r"\par")
+        rtf_content.append("\\b\\fs32 " + escape_rtf(title) + "\\par")
+        rtf_content.append("\\fs18 Generated on " + escape_rtf(datetime.now().strftime('%Y-%m-%d %H:%M:%S')) + "\\par")
+        rtf_content.append("\\fs18 Author: " + escape_rtf(author) + "\\par")
+        rtf_content.append("\\par")
         
         # Summary
-        rtf_content.append(r"{\b\fs20 Data Summary\par}")
-        rtf_content.append(f"Total Rows: {len(df):,}\par")
-        rtf_content.append(f"Total Columns: {len(df.columns)}\par")
-        rtf_content.append(f"File Size: {os.path.getsize(csv_file):,} bytes\par")
-        
-        # Create generation time string separately
-        gen_time = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-        rtf_content.append(f"Generated: {gen_time}\par")
-        rtf_content.append(r"\par")
+        rtf_content.append("\\b\\fs20 Data Summary\\par")
+        rtf_content.append("\\fs18 Total Rows: " + str(len(df)) + "\\par")
+        rtf_content.append("\\fs18 Total Columns: " + str(len(df.columns)) + "\\par")
+        rtf_content.append("\\fs18 File Size: " + str(os.path.getsize(csv_file)) + " bytes\\par")
+        rtf_content.append("\\fs18 Generated: " + escape_rtf(datetime.now().strftime('%Y-%m-%d %H:%M:%S')) + "\\par")
+        rtf_content.append("\\par")
         
         # Column headers
-        rtf_content.append(r"{\b\fs20 Column Headers\par}")
+        rtf_content.append("\\b\\fs20 Column Headers\\par")
         for i, col in enumerate(df.columns, 1):
-            rtf_content.append(f"{i}. {escape_rtf(str(col))}\par")
-        rtf_content.append(r"\par")
+            rtf_content.append("\\fs18 " + str(i) + ". " + escape_rtf(str(col)) + "\\par")
+        rtf_content.append("\\par")
         
-        # Data table - use simple formatted text approach
-        rtf_content.append(r"{\b\fs20 Data Table\par}")
-        rtf_content.append(r"{\fs10")
+        # Data table
+        rtf_content.append("\\b\\fs20 Data Table\\par")
+        rtf_content.append("\\fs10")
         
         print(f"Processing {len(df)} data rows...")
         processed_rows = 0
         
-        # Create a simple, reliable format that works in all RTF viewers
+        # Create simple row format
         try:
             for idx, (_, row) in enumerate(df.iterrows()):
                 if idx % 1000 == 0:
                     print(f"Processing row {idx + 1}/{len(df)}")
                 
-                # Create a formatted row
-                row_text = f"Row {idx + 1}: "
+                # Create simple row format
+                row_text = "Row " + str(idx + 1) + ": "
                 row_data = []
                 for i, value in enumerate(row):
                     col_name = df.columns[i]
                     cell_value = str(value) if pd.notna(value) else ""
-                    row_data.append(f"{col_name}={cell_value}")
+                    row_data.append(col_name + "=" + cell_value)
                 
-                # Join with pipe separator for clarity
+                # Join with pipe separator
                 row_text += " | ".join(row_data)
-                rtf_content.append(f"{escape_rtf(row_text)}\par")
+                rtf_content.append(escape_rtf(row_text) + "\\par")
                 processed_rows += 1
                 
-                # Add spacing every 10 rows for readability
+                # Add spacing every 10 rows
                 if (idx + 1) % 10 == 0:
-                    rtf_content.append(r"\par")
+                    rtf_content.append("\\par")
                 
         except Exception as e:
             print(f"Error processing rows: {e}")
@@ -137,20 +129,14 @@ def create_rtf_from_csv(csv_file, output_file, title="CSV Data", author="Unknown
         
         print(f"Successfully processed {processed_rows} rows out of {len(df)} total rows")
         
-        # End data section
-        rtf_content.append(r"}\par")
-        
         # Conclusion
-        rtf_content.append(r"{\b\fs20 Conclusion\par}")
-        rtf_content.append(f"Data processing complete. Total rows processed: {len(df):,}, Columns analyzed: {len(df.columns)}.\par")
-        
-        # Create conclusion time string separately
-        conclusion_time = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-        rtf_content.append(f"File generated: {conclusion_time}\par")
-        rtf_content.append(r"\par")
+        rtf_content.append("\\par")
+        rtf_content.append("\\b\\fs20 Conclusion\\par")
+        rtf_content.append("\\fs18 Data processing complete. Total rows processed: " + str(len(df)) + ", Columns analyzed: " + str(len(df.columns)) + ".\\par")
+        rtf_content.append("\\fs18 File generated: " + escape_rtf(datetime.now().strftime('%Y-%m-%d %H:%M:%S')) + "\\par")
         
         # End document
-        rtf_content.append(r"}")
+        rtf_content.append("}")
         
         # Write RTF file
         print(f"Writing RTF file to {output_file}...")
