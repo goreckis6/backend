@@ -2117,7 +2117,7 @@ const convertCsvToOdpPython = async (
       outputPath,
       '--title', options.title || sanitizedBase,
       '--author', options.author || 'Unknown',
-      '--max-rows', '100' // Optimize for presentations
+      '--max-rows-per-slide', '50' // Optimize for presentations
     ]);
 
     if (stdout.trim().length > 0) console.log('Python stdout:', stdout.trim());
@@ -2341,9 +2341,9 @@ const convertCsvToPptPython = async (
     // Prepare output file
     const outputPath = path.join(tmpDir, `${safeBase}.pptx`);
     
-    // Use optimized Python script for PPT
+    // Use Python script for PPT
     const pythonPath = '/opt/venv/bin/python3';
-    const scriptPath = path.join('/app/scripts/csv_to_ppt_optimized.py');
+    const scriptPath = path.join('/app/scripts/csv_to_ppt.py');
     
     console.log('Python execution details:', {
       pythonPath,
@@ -2361,7 +2361,7 @@ const convertCsvToPptPython = async (
       outputPath,
       '--title', options.title || sanitizedBase,
       '--author', options.author || 'Unknown',
-      '--max-rows', '100' // Optimize for presentations
+      '--max-rows-per-slide', '50' // Optimize for presentations
     ]);
 
     if (stdout.trim().length > 0) console.log('Python stdout:', stdout.trim());
@@ -2423,9 +2423,9 @@ const convertCsvToPptxPython = async (
     // Prepare output file
     const outputPath = path.join(tmpDir, `${safeBase}.pptx`);
     
-    // Use optimized Python script for PPTX
+    // Use Python script for PPTX
     const pythonPath = '/opt/venv/bin/python3';
-    const scriptPath = path.join('/app/scripts/csv_to_pptx_optimized.py');
+    const scriptPath = path.join('/app/scripts/csv_to_pptx.py');
     
     console.log('Python execution details:', {
       pythonPath,
@@ -2443,7 +2443,7 @@ const convertCsvToPptxPython = async (
       outputPath,
       '--title', options.title || sanitizedBase,
       '--author', options.author || 'Unknown',
-      '--max-rows', '100' // Optimize for presentations
+      '--max-rows-per-slide', '50' // Optimize for presentations
     ]);
 
     if (stdout.trim().length > 0) console.log('Python stdout:', stdout.trim());
@@ -2723,87 +2723,6 @@ const convertCsvToXlsPython = async (
     console.error(`CSV->XLS conversion error:`, error);
     const message = error instanceof Error ? error.message : `Unknown CSV->XLS error`;
     throw new Error(`Failed to convert CSV to XLS: ${message}`);
-  } finally {
-    await fs.rm(tmpDir, { recursive: true, force: true }).catch(() => undefined);
-  }
-};
-
-// CSV to XLSX converter using Python
-const convertCsvToXlsxPython = async (
-  file: Express.Multer.File,
-  options: Record<string, string | undefined> = {},
-  persistToDisk = false
-): Promise<ConversionResult> => {
-  console.log(`=== CSV TO XLSX (Python) START ===`);
-  const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'morphy-csv-xlsx-'));
-  const originalBase = path.basename(file.originalname, path.extname(file.originalname));
-  const sanitizedBase = sanitizeFilename(originalBase);
-  const safeBase = `${sanitizedBase}_${randomUUID()}`;
-
-  try {
-    // Write CSV file to temp directory
-    const csvPath = path.join(tmpDir, `${safeBase}.csv`);
-    await fs.writeFile(csvPath, file.buffer);
-
-    // Prepare output file
-    const outputPath = path.join(tmpDir, `${safeBase}.xlsx`);
-
-    // Use Python script for XLSX
-    const pythonPath = '/opt/venv/bin/python3';
-    const scriptPath = path.join('/app/scripts/csv_to_xlsx.py');
-
-    console.log('Python execution details:', {
-      pythonPath,
-      scriptPath,
-      csvPath,
-      outputPath,
-      title: options.title || sanitizedBase,
-      author: options.author || 'Unknown',
-      fileSize: file.buffer.length
-    });
-
-    const { stdout, stderr } = await execFileAsync(pythonPath, [
-      scriptPath,
-      csvPath,
-      outputPath,
-      '--title', options.title || sanitizedBase,
-      '--author', options.author || 'Unknown'
-    ]);
-
-    if (stdout.trim().length > 0) console.log('Python stdout:', stdout.trim());
-    if (stderr.trim().length > 0) console.warn('Python stderr:', stderr.trim());
-
-    // Check if output file was created
-    const outputExists = await fs.access(outputPath).then(() => true).catch(() => false);
-    if (!outputExists) {
-      throw new Error(`Python XLSX script did not produce output file: ${outputPath}`);
-    }
-
-    // Read output file
-    const outputBuffer = await fs.readFile(outputPath);
-    if (!outputBuffer || outputBuffer.length === 0) {
-      throw new Error('Python XLSX script produced empty output file');
-    }
-
-    const downloadName = `${sanitizedBase}.xlsx`;
-    console.log(`CSV->XLSX conversion successful:`, {
-      filename: downloadName,
-      size: outputBuffer.length
-    });
-
-    if (persistToDisk) {
-      return await persistOutputBuffer(outputBuffer, downloadName, 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
-    }
-
-    return {
-      buffer: outputBuffer,
-      filename: downloadName,
-      mime: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
-    };
-  } catch (error) {
-    console.error(`CSV->XLSX conversion error:`, error);
-    const message = error instanceof Error ? error.message : `Unknown CSV->XLSX error`;
-    throw new Error(`Failed to convert CSV to XLSX: ${message}`);
   } finally {
     await fs.rm(tmpDir, { recursive: true, force: true }).catch(() => undefined);
   }
@@ -4218,9 +4137,6 @@ app.post('/api/convert', conversionTimeout(5 * 60 * 1000), upload.single('file')
       } else if (isCSV && targetFormat === 'xls') {
         console.log('Single: Routing to Python (CSV to XLS conversion)');
         result = await convertCsvToXlsPython(file, requestOptions, true);
-      } else if (isCSV && targetFormat === 'xlsx') {
-        console.log('Single: Routing to Python (CSV to XLSX conversion)');
-        result = await convertCsvToXlsxPython(file, requestOptions, true);
       } else if (isCSV && ['epub', 'html'].includes(targetFormat)) {
       console.log(`Single: Routing to Python (CSV to ${targetFormat.toUpperCase()} conversion)`);
       result = await convertCsvToEbookPython(file, targetFormat, requestOptions, true);
@@ -4452,9 +4368,6 @@ app.post('/api/convert/batch', conversionTimeout(10 * 60 * 1000), uploadBatch.ar
       } else if (isCSV && format === 'xls') {
         console.log('Batch: Routing to Python (CSV to XLS conversion)');
         output = await convertCsvToXlsPython(file, requestOptions, true);
-      } else if (isCSV && format === 'xlsx') {
-        console.log('Batch: Routing to Python (CSV to XLSX conversion)');
-        output = await convertCsvToXlsxPython(file, requestOptions, true);
       } else if (isCSV && ['epub', 'html'].includes(format)) {
         console.log(`Batch: Routing to Python (CSV to ${format.toUpperCase()} conversion)`);
         output = await convertCsvToEbookPython(file, format, requestOptions, true);
