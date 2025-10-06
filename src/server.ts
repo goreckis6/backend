@@ -814,14 +814,34 @@ const isEpsFile = (file: Express.Multer.File) => {
 };
 
 const isDngFile = (file: Express.Multer.File) => {
-  const ext = path.extname(file.originalname).replace('.', '').toLowerCase();
-  const result = ext === 'dng';
-  console.log('DNG file detection:', {
-    filename: file.originalname,
-    extension: ext,
-    isDNG: result
-  });
-  return result;
+  if (!file) {
+    console.log('DNG file detection: No file provided');
+    return false;
+  }
+  
+  // Try to detect DNG by filename first
+  if (file.originalname) {
+    const ext = path.extname(file.originalname).replace('.', '').toLowerCase();
+    const result = ext === 'dng';
+    console.log('DNG file detection (by filename):', {
+      filename: file.originalname,
+      extension: ext,
+      isDNG: result
+    });
+    return result;
+  }
+  
+  // Fallback: try to detect DNG by MIME type or file content
+  if (file.mimetype === 'application/octet-stream' || file.mimetype === 'image/x-adobe-dng') {
+    console.log('DNG file detection (by MIME type):', {
+      mimetype: file.mimetype,
+      isDNG: true
+    });
+    return true;
+  }
+  
+  console.log('DNG file detection: No filename or MIME type match');
+  return false;
 };
 
 const isDocFile = (file: Express.Multer.File) => {
@@ -4447,6 +4467,15 @@ const upload = multer({
   limits: {
     fileSize: 100 * 1024 * 1024,
     files: 1
+  },
+  fileFilter: (req, file, cb) => {
+    console.log('Multer file filter:', {
+      fieldname: file.fieldname,
+      originalname: file.originalname,
+      mimetype: file.mimetype,
+      encoding: file.encoding
+    });
+    cb(null, true);
   }
 });
 
@@ -4525,6 +4554,17 @@ const conversionTimeout = (timeoutMs: number) => {
   };
 };
 
+// Debug middleware for file uploads
+app.use('/api/convert', (req, res, next) => {
+  console.log('=== CONVERSION REQUEST DEBUG ===');
+  console.log('Request method:', req.method);
+  console.log('Request headers:', req.headers);
+  console.log('Content-Type:', req.get('content-type'));
+  console.log('Content-Length:', req.get('content-length'));
+  console.log('Request body keys:', Object.keys(req.body || {}));
+  next();
+});
+
 app.post('/api/convert', conversionTimeout(5 * 60 * 1000), upload.single('file'), async (req, res) => {
   try {
     const file = req.file;
@@ -4537,7 +4577,70 @@ app.post('/api/convert', conversionTimeout(5 * 60 * 1000), upload.single('file')
 
     if (!file) {
       console.log('ERROR: No file uploaded');
-      return res.status(400).json({ error: 'No file uploaded' });
+      console.log('Available files in request:', req.files);
+      console.log('Request body:', req.body);
+      
+      // Check if file was sent with a different field name
+      if (req.files && Array.isArray(req.files) && req.files.length > 0) {
+        console.log('Found files in array format, using first file');
+        const firstFile = req.files[0];
+        req.file = firstFile;
+        file = firstFile;
+      } else if (req.files && typeof req.files === 'object') {
+        console.log('Found files in object format, checking for common field names');
+        const commonFieldNames = ['file', 'upload', 'image', 'document', 'attachment'];
+        for (const fieldName of commonFieldNames) {
+          if (req.files[fieldName]) {
+            console.log(`Found file with field name: ${fieldName}`);
+            req.file = req.files[fieldName];
+            file = req.files[fieldName];
+            break;
+          }
+        }
+      }
+      
+      if (!file) {
+        return res.status(400).json({ error: 'No file uploaded' });
+      }
+    }
+
+    // Validate file object
+    if (!file.originalname) {
+      console.log('ERROR: File missing originalname property');
+      console.log('File object details:', {
+        fieldname: file.fieldname,
+        mimetype: file.mimetype,
+        size: file.size,
+        buffer: file.buffer ? `Buffer(${file.buffer.length})` : 'undefined'
+      });
+      
+      // Try to create a fallback filename based on content type
+      if (file.mimetype) {
+        let ext = file.mimetype.split('/')[1] || 'bin';
+        
+        // Handle special cases
+        if (file.mimetype === 'application/octet-stream') {
+          // This could be a DNG file, try to detect from buffer
+          if (file.buffer && file.buffer.length > 0) {
+            // Check for DNG signature (starts with TIFF header)
+            if (file.buffer[0] === 0x49 && file.buffer[1] === 0x49) { // II (Intel byte order)
+              ext = 'dng';
+            } else if (file.buffer[0] === 0x4D && file.buffer[1] === 0x4D) { // MM (Motorola byte order)
+              ext = 'dng';
+            }
+          }
+        }
+        
+        file.originalname = `upload.${ext}`;
+        console.log('Created fallback filename:', file.originalname);
+      } else {
+        return res.status(400).json({ error: 'Invalid file upload - missing filename' });
+      }
+    }
+
+    if (!file.buffer || file.buffer.length === 0) {
+      console.log('ERROR: File has no content');
+      return res.status(400).json({ error: 'Invalid file upload - empty file' });
     }
 
     console.log(`Processing file details:`, {
@@ -4565,8 +4668,10 @@ app.post('/api/convert', conversionTimeout(5 * 60 * 1000), upload.single('file')
       isDOC,
       isBMP,
       mimetype: file.mimetype,
-      extension: file.originalname.split('.').pop()?.toLowerCase(),
-      originalname: file.originalname
+      extension: file.originalname ? file.originalname.split('.').pop()?.toLowerCase() : 'undefined',
+      originalname: file.originalname,
+      fileSize: file.size,
+      hasBuffer: !!file.buffer
     });
     
     console.log('Available CALIBRE_CONVERSIONS:', Object.keys(CALIBRE_CONVERSIONS));
@@ -4680,17 +4785,18 @@ app.post('/api/convert', conversionTimeout(5 * 60 * 1000), upload.single('file')
       console.error('Sharp cannot process this file format:', sharpError);
       
       // Check if this is a DNG file that Sharp can't handle
-      if (isDNG || file.originalname.toLowerCase().endsWith('.dng')) {
+      if (isDNG || (file.originalname && file.originalname.toLowerCase().endsWith('.dng'))) {
         throw new Error('DNG files cannot be processed directly by Sharp. Please use the Python conversion method.');
       }
       
       // Check if this is a BMP file that Sharp can't handle
-      if (isBMP || file.originalname.toLowerCase().endsWith('.bmp')) {
+      if (isBMP || (file.originalname && file.originalname.toLowerCase().endsWith('.bmp'))) {
         throw new Error('BMP files cannot be processed directly by Sharp. Please use ImageMagick or another conversion method.');
       }
       
       // For other unsupported formats, throw a generic error
-      throw new Error(`Unsupported image format: ${file.originalname}. Sharp cannot process this file type.`);
+      const filename = file.originalname || 'unknown';
+      throw new Error(`Unsupported image format: ${filename}. Sharp cannot process this file type.`);
     }
 
     let contentType: string;
