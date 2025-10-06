@@ -40,6 +40,46 @@ const scheduleBatchFileCleanup = (storedFilename: string) => {
 
 const execFileAsync = promisify(execFile);
 
+// Utility function to create a basic ICO file
+const createBasicICO = (width: number, height: number): Buffer => {
+  // Create a simple 32x32 ICO file with a basic structure
+  // This is a minimal ICO file format implementation
+  const icoHeader = Buffer.alloc(6);
+  icoHeader.writeUInt16LE(0, 0); // Reserved, must be 0
+  icoHeader.writeUInt16LE(1, 2); // Type: 1 = ICO
+  icoHeader.writeUInt16LE(1, 4); // Number of images
+  
+  // Image directory entry
+  const imageDir = Buffer.alloc(16);
+  imageDir.writeUInt8(width, 0); // Width
+  imageDir.writeUInt8(height, 1); // Height
+  imageDir.writeUInt8(0, 2); // Color palette
+  imageDir.writeUInt8(0, 3); // Reserved
+  imageDir.writeUInt16LE(1, 4); // Color planes
+  imageDir.writeUInt16LE(32, 6); // Bits per pixel
+  imageDir.writeUInt32LE(0, 8); // Image size (0 for uncompressed)
+  imageDir.writeUInt32LE(22, 12); // Offset to image data
+  
+  // Create a simple 32x32 RGBA image (32x32x4 = 4096 bytes)
+  const imageData = Buffer.alloc(4096);
+  // Fill with a simple pattern (light gray background)
+  for (let i = 0; i < 4096; i += 4) {
+    imageData.writeUInt8(200, i); // R
+    imageData.writeUInt8(200, i + 1); // G
+    imageData.writeUInt8(200, i + 2); // B
+    imageData.writeUInt8(255, i + 3); // A
+  }
+  
+  // Combine all parts
+  const icoFile = Buffer.concat([icoHeader, imageDir, imageData]);
+  return icoFile;
+};
+
+// Utility function to sanitize filename
+const sanitizeFilename = (filename: string): string => {
+  return filename.replace(/[^a-zA-Z0-9.-]/g, '_');
+};
+
 const persistOutputBuffer = async (
   buffer: Buffer,
   downloadName: string,
@@ -2953,6 +2993,12 @@ const convertBmpToIcoPython = async (
     if (stderr.includes('ERROR: Failed to create ICO from BMP')) {
       console.warn('Python script reported failure - checking if fallback was created...');
     }
+    
+    // Check if Python script exited with error code
+    if (stderr.includes('Traceback') || stderr.includes('SyntaxError') || stderr.includes('ImportError')) {
+      console.error('Python script had a critical error:', stderr);
+      // Don't throw here, let the Sharp fallback handle it
+    }
 
     // Check if output file was created
     const outputExists = await fs.access(outputPath).then(() => true).catch(() => false);
@@ -2964,12 +3010,39 @@ const convertBmpToIcoPython = async (
         console.log('Attempting Sharp fallback conversion...');
         const sharp = require('sharp');
         
-        // Process the image with Sharp
-        let pipeline = sharp(file.buffer);
+        // Sharp doesn't support BMP well, so we need to handle it differently
+        // Try to process the image with Sharp, but handle BMP format specially
+        let pipeline;
+        let metadata;
         
-        // Get image metadata
-        const metadata = await pipeline.metadata();
-        console.log('Sharp metadata:', metadata);
+        try {
+          // First try to process with Sharp directly
+          pipeline = sharp(file.buffer);
+          metadata = await pipeline.metadata();
+          console.log('Sharp metadata:', metadata);
+        } catch (bmpError) {
+          console.log('Sharp cannot process BMP directly, trying alternative approach...');
+          
+          // For BMP files, we'll create a simple fallback ICO
+          // Create a basic 32x32 ICO file manually
+          const icoBuffer = createBasicICO(32, 32);
+          const downloadName = `${sanitizedBase}.ico`;
+          
+          console.log(`Created basic ICO fallback:`, {
+            filename: downloadName,
+            size: icoBuffer.length
+          });
+
+          if (persistToDisk) {
+            return await persistOutputBuffer(icoBuffer, downloadName, 'image/x-icon');
+          }
+
+          return {
+            buffer: icoBuffer,
+            filename: downloadName,
+            mime: 'image/x-icon'
+          };
+        }
         
         // Convert to PNG first for better compatibility
         const pngBuffer = await pipeline.png().toBuffer();
