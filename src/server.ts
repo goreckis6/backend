@@ -2928,7 +2928,7 @@ const convertBmpToIcoPython = async (
       console.error('This might be a Python environment issue');
       // Try to continue with Sharp fallback
       stdout = '';
-      stderr = execError.message || 'Python execution failed';
+      stderr = execError instanceof Error ? execError.message : 'Python execution failed';
     }
 
     console.log('Python execution completed');
