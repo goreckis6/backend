@@ -17,7 +17,7 @@ import mammoth from 'mammoth';
 import * as cheerio from 'cheerio';
 import { Document, Packer, Paragraph, Table, TableCell, TableRow, WidthType } from 'docx';
 import Jimp from 'jimp';
-import toIco from 'to-ico';
+import pngToIco from 'png-to-ico';
 
 const BATCH_OUTPUT_DIR = path.join(os.tmpdir(), 'morphy-batch-outputs');
 fs.mkdir(BATCH_OUTPUT_DIR, { recursive: true }).catch(() => undefined);
@@ -3170,9 +3170,9 @@ const convertBmpToIcoJimp = async (
 
     console.log(`Created ${iconImages.length} icon sizes: ${sizes.join(', ')}`);
 
-    // Convert to ICO format using to-ico
+    // Convert to ICO format using png-to-ico
     console.log('Converting to ICO format...');
-    const icoBuffer = await toIco(iconImages);
+    const icoBuffer = await pngToIco(iconImages);
     
     console.log('ICO conversion successful:', {
       icoSize: icoBuffer.length,

@@ -24,7 +24,7 @@
     "mammoth": "^1.6.0",
     "cheerio": "^1.0.0-rc.12",
     "jimp": "^0.22.10",
-    "to-ico": "^1.1.6"
+    "png-to-ico": "^2.1.0"
   },
   "devDependencies": {
     "@types/express": "^4.17.21",
