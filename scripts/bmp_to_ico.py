@@ -34,10 +34,26 @@ def create_ico_from_bmp(bmp_file, output_file, sizes=None):
         with Image.open(bmp_file) as img:
             print(f"Original image: {img.size[0]}x{img.size[1]} pixels, mode: {img.mode}")
             
+            # Verify it's a valid image format
+            if img.format not in ['BMP', 'PNG', 'JPEG', 'JPG', 'GIF', 'TIFF']:
+                print(f"Warning: Unsupported image format: {img.format}")
+            
             # Convert to RGBA if not already (for alpha support)
             if img.mode != 'RGBA':
                 print("Converting to RGBA for alpha support...")
-                img = img.convert('RGBA')
+                try:
+                    img = img.convert('RGBA')
+                except Exception as convert_error:
+                    print(f"Error converting to RGBA: {convert_error}")
+                    # Try converting to RGB first, then to RGBA
+                    try:
+                        img = img.convert('RGB').convert('RGBA')
+                        print("Successfully converted via RGB intermediate step")
+                    except Exception as rgb_error:
+                        print(f"Error converting via RGB: {rgb_error}")
+                        # Last resort: convert to RGB only
+                        img = img.convert('RGB')
+                        print("Converted to RGB only (no alpha support)")
             
             # Create list of resized images for different icon sizes
             icon_images = []
@@ -60,12 +76,24 @@ def create_ico_from_bmp(bmp_file, output_file, sizes=None):
             
             # Save as ICO with multiple sizes
             print(f"Saving ICO file with {len(icon_images)} sizes...")
-            icon_images[0].save(
-                output_file,
-                format='ICO',
-                sizes=[(img.width, img.height) for img in icon_images],
-                append_images=icon_images[1:]
-            )
+            try:
+                icon_images[0].save(
+                    output_file,
+                    format='ICO',
+                    sizes=[(img.width, img.height) for img in icon_images],
+                    append_images=icon_images[1:]
+                )
+                print("ICO file saved successfully")
+            except Exception as save_error:
+                print(f"Error saving ICO file: {save_error}")
+                # Try saving with a simpler approach
+                try:
+                    print("Trying alternative ICO save method...")
+                    icon_images[0].save(output_file, format='ICO')
+                    print("ICO file saved with alternative method")
+                except Exception as alt_error:
+                    print(f"Alternative save method also failed: {alt_error}")
+                    raise Exception(f"Failed to save ICO file: {save_error}")
             
             # Verify the file was created
             if os.path.exists(output_file):

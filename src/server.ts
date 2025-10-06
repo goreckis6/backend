@@ -2783,6 +2783,14 @@ const convertBmpToIcoPython = async (
 
     if (stdout.trim().length > 0) console.log('Python stdout:', stdout.trim());
     if (stderr.trim().length > 0) console.warn('Python stderr:', stderr.trim());
+    
+    // Check for specific error patterns
+    if (stderr.includes('Input buffer contains unsupported image format')) {
+      throw new Error('Unsupported image format. Please ensure the file is a valid BMP image.');
+    }
+    if (stderr.includes('cannot identify image file')) {
+      throw new Error('Invalid image file. Please check that the file is a valid BMP image.');
+    }
 
     // Check if output file was created
     const outputExists = await fs.access(outputPath).then(() => true).catch(() => false);
