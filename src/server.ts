@@ -75,11 +75,6 @@ const createBasicICO = (width: number, height: number): Buffer => {
   return icoFile;
 };
 
-// Utility function to sanitize filename
-const sanitizeFilename = (filename: string): string => {
-  return filename.replace(/[^a-zA-Z0-9.-]/g, '_');
-};
-
 const persistOutputBuffer = async (
   buffer: Buffer,
   downloadName: string,
