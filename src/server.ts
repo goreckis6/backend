@@ -3161,7 +3161,7 @@ const convertBmpToIcoJimp = async (
       console.log(`Creating ${size}x${size} icon...`);
       
       // Resize the image to the target size
-      const resized = image.clone().resize(size, size, Jimp.RESIZE_LANCZOS);
+      const resized = image.clone().resize(size, size);
       
       // Convert to PNG format (ICO uses PNG internally for modern formats)
       const pngBuffer = await resized.getBufferAsync(Jimp.MIME_PNG);
