@@ -54,9 +54,16 @@ def create_rtf_from_csv(csv_file, output_file, title="CSV Data", author="Unknown
         print("Reading CSV file...")
         df = pd.read_csv(csv_file)
         print(f"CSV loaded successfully: {len(df)} rows, {len(df.columns)} columns")
+        print(f"Column names: {list(df.columns)}")
+        print(f"First few rows:")
+        print(df.head())
         
         # Process all rows - no limits
         print(f"Processing all {len(df)} rows (including any repeated data)")
+        
+        # Check for any data issues
+        print(f"Data types: {df.dtypes.to_dict()}")
+        print(f"Any null values: {df.isnull().sum().sum()}")
         
         # Start building RTF content
         rtf_content = []
@@ -108,11 +115,11 @@ def create_rtf_from_csv(csv_file, output_file, title="CSV Data", author="Unknown
             rtf_content.append(f"\\bullet {i}. {escape_rtf(str(col))}\\par")
         rtf_content.append(r"}\par")
         
-        # Data table
+        # Data table - use a more reliable approach
         rtf_content.append(r"{\b\fs20 Data Table\par}")
         rtf_content.append(r"{\fs16")
         
-        # Create table
+        # Create table with proper RTF structure
         rtf_content.append(r"{\trowd")
         
         # Set column widths (equal width for all columns)
@@ -126,23 +133,38 @@ def create_rtf_from_csv(csv_file, output_file, title="CSV Data", author="Unknown
             rtf_content.append(f"\\cell\\cbpat2\\cf2\\b {escape_rtf(str(col))}\\cell")
         rtf_content.append(r"}")
         
-        # Data rows
-        for idx, (_, row) in enumerate(df.iterrows()):
-            if idx % 1000 == 0:
-                print(f"Processing row {idx + 1}/{len(df)}")
-            
-            # Alternate row background
-            if idx % 2 == 0:
-                rtf_content.append(r"{\row")
-            else:
-                rtf_content.append(r"{\row\cbpat3}")  # Light gray background
-            
-            for value in row:
-                cell_value = str(value) if pd.notna(value) else ""
-                rtf_content.append(f"\\cell {escape_rtf(cell_value)}\\cell")
-            rtf_content.append(r"}")
+        # Data rows - process ALL rows with better error handling
+        print(f"Processing {len(df)} data rows...")
+        processed_rows = 0
         
-        rtf_content.append(r"}\par")  # End table
+        try:
+            for idx, (_, row) in enumerate(df.iterrows()):
+                if idx % 1000 == 0:
+                    print(f"Processing row {idx + 1}/{len(df)}")
+                
+                # Start new row
+                if idx % 2 == 0:
+                    rtf_content.append(r"{\row")
+                else:
+                    rtf_content.append(r"{\row\cbpat3}")  # Light gray background
+                
+                # Add all cells in the row
+                for value in row:
+                    cell_value = str(value) if pd.notna(value) else ""
+                    rtf_content.append(f"\\cell {escape_rtf(cell_value)}\\cell")
+                
+                # End row
+                rtf_content.append(r"}")
+                processed_rows += 1
+                
+        except Exception as e:
+            print(f"Error processing rows: {e}")
+            print(f"Processed {processed_rows} rows before error")
+        
+        print(f"Successfully processed {processed_rows} rows out of {len(df)} total rows")
+        
+        # End table
+        rtf_content.append(r"}\par")
         rtf_content.append(r"}\par")  # End data section
         
         # Conclusion
