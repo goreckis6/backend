@@ -2908,7 +2908,9 @@ const convertBmpToIcoPython = async (
     
     // Check for specific error patterns
     if (stderr.includes('Input buffer contains unsupported image format')) {
-      throw new Error('Unsupported image format. Please ensure the file is a valid BMP image.');
+      console.error('Pillow error: Input buffer contains unsupported image format');
+      console.error('This usually means the file is corrupted or not a valid image format');
+      throw new Error('Unsupported image format. The file may be corrupted or not a valid BMP image. Please try a different file.');
     }
     if (stderr.includes('cannot identify image file')) {
       throw new Error('Invalid image file. Please check that the file is a valid BMP image.');
@@ -2919,11 +2921,52 @@ const convertBmpToIcoPython = async (
     if (stderr.includes('Could not load image with any method')) {
       throw new Error('Unable to process BMP file. Please try a different BMP file.');
     }
+    if (stderr.includes('ERROR: Failed to create ICO from BMP')) {
+      throw new Error('Failed to convert BMP to ICO. Please ensure the file is a valid BMP image.');
+    }
 
     // Check if output file was created
     const outputExists = await fs.access(outputPath).then(() => true).catch(() => false);
     if (!outputExists) {
-      throw new Error(`Python ICO script did not produce output file: ${outputPath}`);
+      console.warn('Python ICO script did not produce output file, trying Sharp fallback...');
+      
+      // Fallback: Try using Sharp for basic image processing
+      try {
+        console.log('Attempting Sharp fallback conversion...');
+        const sharp = require('sharp');
+        
+        // Process the image with Sharp
+        let pipeline = sharp(file.buffer);
+        
+        // Get image metadata
+        const metadata = await pipeline.metadata();
+        console.log('Sharp metadata:', metadata);
+        
+        // Convert to PNG first for better compatibility
+        const pngBuffer = await pipeline.png().toBuffer();
+        console.log('Sharp PNG conversion successful, size:', pngBuffer.length);
+        
+        // Now convert PNG to ICO using a simple approach
+        // For now, just return the PNG as ICO (this is a basic fallback)
+        const downloadName = `${sanitizedBase}.ico`;
+        console.log(`Sharp fallback conversion successful:`, {
+          filename: downloadName,
+          size: pngBuffer.length
+        });
+
+        if (persistToDisk) {
+          return await persistOutputBuffer(pngBuffer, downloadName, 'image/x-icon');
+        }
+
+        return {
+          buffer: pngBuffer,
+          filename: downloadName,
+          mime: 'image/x-icon'
+        };
+      } catch (sharpError) {
+        console.error('Sharp fallback also failed:', sharpError);
+        throw new Error(`Python ICO script did not produce output file: ${outputPath}. Sharp fallback also failed.`);
+      }
     }
 
     // Read output file

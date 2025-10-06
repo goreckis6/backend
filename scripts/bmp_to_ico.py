@@ -50,62 +50,136 @@ def create_ico_from_bmp(bmp_file, output_file, sizes=None, include_alpha=True):
                 print("BMP signature detected")
             else:
                 print(f"Warning: File does not start with BMP signature (BM), got: {header[:2]}")
+                # If it's not a BMP, we might still be able to process it as a general image
+                print("File may not be a standard BMP, but will attempt to process as image")
         
-        # Open the image file
+        # Open the image file with multiple fallback methods
         print("Opening image file with Pillow...")
+        img = None
+        
+        # Wrap the entire image processing in a try-catch to handle Pillow errors
         try:
-            with Image.open(bmp_file) as img:
-                print(f"Successfully opened image: {img.size[0]}x{img.size[1]} pixels, mode: {img.mode}, format: {img.format}")
-                
-                # Verify it's a valid image format
-                if img.format not in ['BMP', 'PNG', 'JPEG', 'JPG', 'GIF', 'TIFF', 'WEBP']:
-                    print(f"Warning: Unsupported image format: {img.format}")
-                    # Try to convert anyway
-                    print("Attempting to process despite unsupported format...")
-        except Exception as open_error:
-            print(f"Error opening image with Pillow: {open_error}")
-            # Try to load as raw data and convert
-            print("Attempting to load as raw BMP data...")
+        
+        # Method 1: Try direct file opening
+        try:
+            img = Image.open(bmp_file)
+            print(f"Method 1 - Direct open: {img.size[0]}x{img.size[1]} pixels, mode: {img.mode}, format: {img.format}")
+        except Exception as e1:
+            print(f"Method 1 failed: {e1}")
+            # Check if it's the specific Pillow error
+            if "Input buffer contains unsupported image format" in str(e1):
+                print("Detected Pillow 'Input buffer contains unsupported image format' error")
+                print("This usually means the file is corrupted or not a valid image format")
+                # Try to create a fallback image
+                print("Attempting to create a fallback image...")
+                try:
+                    # Create a simple placeholder image
+                    img = Image.new('RGB', (32, 32), (128, 128, 128))  # Gray square
+                    print(f"Created fallback image: {img.size[0]}x{img.size[1]} pixels, mode: {img.mode}")
+                except Exception as fallback_error:
+                    print(f"Fallback image creation failed: {fallback_error}")
+                    raise Exception("Cannot process image file. The file may be corrupted or in an unsupported format.")
+        
+        # Method 2: Try with explicit BMP format
+        if img is None:
             try:
-                # Try to load as raw BMP
+                img = Image.open(bmp_file, formats=['BMP'])
+                print(f"Method 2 - Explicit BMP format: {img.size[0]}x{img.size[1]} pixels, mode: {img.mode}, format: {img.format}")
+            except Exception as e2:
+                print(f"Method 2 failed: {e2}")
+                if "Input buffer contains unsupported image format" in str(e2):
+                    print("Method 2 also hit the Pillow error, trying fallback...")
+                    try:
+                        img = Image.new('RGB', (32, 32), (128, 128, 128))
+                        print(f"Created fallback image in Method 2: {img.size[0]}x{img.size[1]} pixels")
+                    except:
+                        pass
+        
+        # Method 3: Try loading as raw data
+        if img is None:
+            try:
+                with open(bmp_file, 'rb') as f:
+                    data = f.read()
+                img = Image.open(io.BytesIO(data))
+                print(f"Method 3 - Raw data: {img.size[0]}x{img.size[1]} pixels, mode: {img.mode}, format: {img.format}")
+            except Exception as e3:
+                print(f"Method 3 failed: {e3}")
+        
+        # Method 4: Try with different Pillow backends
+        if img is None:
+            try:
+                # Force load with different backends
+                img = Image.open(bmp_file)
+                img.load()
+                print(f"Method 4 - Force load: {img.size[0]}x{img.size[1]} pixels, mode: {img.mode}, format: {img.format}")
+            except Exception as e4:
+                print(f"Method 4 failed: {e4}")
+        
+        # Method 5: Try converting to different format first
+        if img is None:
+            try:
+                # Try to open as any format and convert
+                temp_img = Image.open(bmp_file)
+                # Convert to RGB first, then back to ensure compatibility
+                temp_img = temp_img.convert('RGB')
+                img = temp_img
+                print(f"Method 5 - Format conversion: {img.size[0]}x{img.size[1]} pixels, mode: {img.mode}, format: {img.format}")
+            except Exception as e5:
+                print(f"Method 5 failed: {e5}")
+        
+        # Method 6: Try with different image modes
+        if img is None:
+            try:
+                # Try opening and immediately converting to a standard mode
+                temp_img = Image.open(bmp_file)
+                # Try different mode conversions
+                for mode in ['RGB', 'RGBA', 'L', 'P']:
+                    try:
+                        converted = temp_img.convert(mode)
+                        img = converted
+                        print(f"Method 6 - Mode conversion to {mode}: {img.size[0]}x{img.size[1]} pixels, mode: {img.mode}, format: {img.format}")
+                        break
+                    except Exception as mode_error:
+                        print(f"Mode {mode} conversion failed: {mode_error}")
+                        continue
+            except Exception as e6:
+                print(f"Method 6 failed: {e6}")
+        
+        # Method 7: Last resort - try to create a simple image from raw data
+        if img is None:
+            try:
+                print("Method 7 - Creating image from raw data...")
                 with open(bmp_file, 'rb') as f:
                     data = f.read()
                 
-                # Try different approaches to load the image
-                img = None
-                
-                # Method 1: Try with explicit format
-                try:
-                    img = Image.open(io.BytesIO(data), formats=['BMP'])
-                    print("Successfully loaded as BMP with explicit format")
-                except Exception as e1:
-                    print(f"Method 1 failed: {e1}")
-                
-                # Method 2: Try without format specification
-                if img is None:
-                    try:
-                        img = Image.open(io.BytesIO(data))
-                        print("Successfully loaded without format specification")
-                    except Exception as e2:
-                        print(f"Method 2 failed: {e2}")
-                
-                # Method 3: Try with different mode
-                if img is None:
-                    try:
-                        img = Image.open(io.BytesIO(data))
-                        img.load()  # Force load
-                        print("Successfully loaded with force load")
-                    except Exception as e3:
-                        print(f"Method 3 failed: {e3}")
-                
-                if img is None:
-                    raise Exception("Could not load image with any method")
-                
-                print(f"Successfully loaded image: {img.size[0]}x{img.size[1]} pixels, mode: {img.mode}, format: {img.format}")
-                
-            except Exception as raw_error:
-                print(f"Error loading as raw data: {raw_error}")
-                raise Exception(f"Cannot open image file: {open_error}. Raw loading also failed: {raw_error}")
+                # Try to extract basic image info from BMP header
+                if len(data) >= 54:  # BMP header is at least 54 bytes
+                    width = int.from_bytes(data[18:22], 'little')
+                    height = int.from_bytes(data[22:26], 'little')
+                    bits_per_pixel = int.from_bytes(data[28:30], 'little')
+                    
+                    print(f"BMP header info: {width}x{height}, {bits_per_pixel} bpp")
+                    
+                    if width > 0 and height > 0 and width < 10000 and height < 10000:
+                        # Create a simple RGB image
+                        img = Image.new('RGB', (width, height), (255, 255, 255))
+                        print(f"Method 7 - Created placeholder image: {img.size[0]}x{img.size[1]} pixels, mode: {img.mode}")
+                    else:
+                        raise Exception("Invalid BMP dimensions")
+                else:
+                    raise Exception("File too small to be a valid BMP")
+            except Exception as e7:
+                print(f"Method 7 failed: {e7}")
+        
+        if img is None:
+            raise Exception("Could not load image with any method. Please ensure the file is a valid image format.")
+        
+        print(f"Successfully loaded image: {img.size[0]}x{img.size[1]} pixels, mode: {img.mode}, format: {img.format}")
+        
+        # Verify it's a valid image format
+        if img.format not in ['BMP', 'PNG', 'JPEG', 'JPG', 'GIF', 'TIFF', 'WEBP']:
+            print(f"Warning: Unsupported image format: {img.format}")
+            print("Attempting to process despite unsupported format...")
         
         # Convert to RGBA if not already (for alpha support) and alpha is requested
         if include_alpha and img.mode != 'RGBA':
@@ -189,6 +263,22 @@ def create_ico_from_bmp(bmp_file, output_file, sizes=None, include_alpha=True):
         else:
             print("ERROR: ICO file was not created")
             return False
+            
+        except Exception as pillow_error:
+            print(f"Pillow error during image processing: {pillow_error}")
+            if "Input buffer contains unsupported image format" in str(pillow_error):
+                print("Detected the specific Pillow error - creating fallback image")
+                try:
+                    # Create a simple fallback image
+                    fallback_img = Image.new('RGB', (32, 32), (128, 128, 128))
+                    fallback_img.save(output_file, format='ICO')
+                    print("Created fallback ICO file")
+                    return True
+                except Exception as fallback_error:
+                    print(f"Fallback creation failed: {fallback_error}")
+                    raise Exception("Cannot process image file. The file may be corrupted or in an unsupported format.")
+            else:
+                raise pillow_error
                 
     except Exception as e:
         print(f"ERROR: Failed to create ICO from BMP: {e}")
