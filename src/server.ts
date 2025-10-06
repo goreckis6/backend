@@ -2341,9 +2341,9 @@ const convertCsvToPptPython = async (
     // Prepare output file
     const outputPath = path.join(tmpDir, `${safeBase}.pptx`);
     
-    // Use Python script for PPT
+    // Use optimized Python script for PPT
     const pythonPath = '/opt/venv/bin/python3';
-    const scriptPath = path.join('/app/scripts/csv_to_ppt.py');
+    const scriptPath = path.join('/app/scripts/csv_to_ppt_optimized.py');
     
     console.log('Python execution details:', {
       pythonPath,
@@ -2423,9 +2423,9 @@ const convertCsvToPptxPython = async (
     // Prepare output file
     const outputPath = path.join(tmpDir, `${safeBase}.pptx`);
     
-    // Use Python script for PPTX
+    // Use optimized Python script for PPTX
     const pythonPath = '/opt/venv/bin/python3';
-    const scriptPath = path.join('/app/scripts/csv_to_pptx.py');
+    const scriptPath = path.join('/app/scripts/csv_to_pptx_optimized.py');
     
     console.log('Python execution details:', {
       pythonPath,
