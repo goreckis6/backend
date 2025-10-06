@@ -115,47 +115,35 @@ def create_rtf_from_csv(csv_file, output_file, title="CSV Data", author="Unknown
             rtf_content.append(f"\\bullet {i}. {escape_rtf(str(col))}\\par")
         rtf_content.append(r"}\par")
         
-        # Data table - use a more reliable approach
+        # Data table - use simple formatted text approach
         rtf_content.append(r"{\b\fs20 Data Table\par}")
-        rtf_content.append(r"{\fs16")
+        rtf_content.append(r"{\fs10")
         
-        # Create table with proper RTF structure
-        rtf_content.append(r"{\trowd")
-        
-        # Set column widths (equal width for all columns)
-        col_width = int(6000 / len(df.columns))  # Total table width divided by number of columns
-        for i in range(len(df.columns)):
-            rtf_content.append(f"\\cellx{col_width * (i + 1)}")
-        
-        # Header row
-        rtf_content.append(r"{\row")
-        for col in df.columns:
-            rtf_content.append(f"\\cell\\cbpat2\\cf2\\b {escape_rtf(str(col))}\\cell")
-        rtf_content.append(r"}")
-        
-        # Data rows - process ALL rows with better error handling
         print(f"Processing {len(df)} data rows...")
         processed_rows = 0
         
+        # Create a simple, reliable format that works in all RTF viewers
         try:
             for idx, (_, row) in enumerate(df.iterrows()):
                 if idx % 1000 == 0:
                     print(f"Processing row {idx + 1}/{len(df)}")
                 
-                # Start new row
-                if idx % 2 == 0:
-                    rtf_content.append(r"{\row")
-                else:
-                    rtf_content.append(r"{\row\cbpat3}")  # Light gray background
-                
-                # Add all cells in the row
-                for value in row:
+                # Create a formatted row
+                row_text = f"Row {idx + 1}: "
+                row_data = []
+                for i, value in enumerate(row):
+                    col_name = df.columns[i]
                     cell_value = str(value) if pd.notna(value) else ""
-                    rtf_content.append(f"\\cell {escape_rtf(cell_value)}\\cell")
+                    row_data.append(f"{col_name}={cell_value}")
                 
-                # End row
-                rtf_content.append(r"}")
+                # Join with pipe separator for clarity
+                row_text += " | ".join(row_data)
+                rtf_content.append(f"{escape_rtf(row_text)}\\par")
                 processed_rows += 1
+                
+                # Add spacing every 5 rows for readability
+                if (idx + 1) % 5 == 0:
+                    rtf_content.append(r"\\par")
                 
         except Exception as e:
             print(f"Error processing rows: {e}")
@@ -163,9 +151,8 @@ def create_rtf_from_csv(csv_file, output_file, title="CSV Data", author="Unknown
         
         print(f"Successfully processed {processed_rows} rows out of {len(df)} total rows")
         
-        # End table
+        # End data section
         rtf_content.append(r"}\par")
-        rtf_content.append(r"}\par")  # End data section
         
         # Conclusion
         rtf_content.append(r"{\b\fs20 Conclusion\par}")
