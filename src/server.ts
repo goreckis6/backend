@@ -2566,6 +2566,87 @@ const convertCsvToRtfPython = async (
   }
 };
 
+// CSV to TXT converter using Python
+const convertCsvToTxtPython = async (
+  file: Express.Multer.File,
+  options: Record<string, string | undefined> = {},
+  persistToDisk = false
+): Promise<ConversionResult> => {
+  console.log(`=== CSV TO TXT (Python) START ===`);
+  const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'morphy-csv-txt-'));
+  const originalBase = path.basename(file.originalname, path.extname(file.originalname));
+  const sanitizedBase = sanitizeFilename(originalBase);
+  const safeBase = `${sanitizedBase}_${randomUUID()}`;
+
+  try {
+    // Write CSV file to temp directory
+    const csvPath = path.join(tmpDir, `${safeBase}.csv`);
+    await fs.writeFile(csvPath, file.buffer);
+
+    // Prepare output file
+    const outputPath = path.join(tmpDir, `${safeBase}.txt`);
+
+    // Use Python script for TXT
+    const pythonPath = '/opt/venv/bin/python3';
+    const scriptPath = path.join('/app/scripts/csv_to_txt.py');
+
+    console.log('Python execution details:', {
+      pythonPath,
+      scriptPath,
+      csvPath,
+      outputPath,
+      title: options.title || sanitizedBase,
+      author: options.author || 'Unknown',
+      fileSize: file.buffer.length
+    });
+
+    const { stdout, stderr } = await execFileAsync(pythonPath, [
+      scriptPath,
+      csvPath,
+      outputPath,
+      '--title', options.title || sanitizedBase,
+      '--author', options.author || 'Unknown'
+    ]);
+
+    if (stdout.trim().length > 0) console.log('Python stdout:', stdout.trim());
+    if (stderr.trim().length > 0) console.warn('Python stderr:', stderr.trim());
+
+    // Check if output file was created
+    const outputExists = await fs.access(outputPath).then(() => true).catch(() => false);
+    if (!outputExists) {
+      throw new Error(`Python TXT script did not produce output file: ${outputPath}`);
+    }
+
+    // Read output file
+    const outputBuffer = await fs.readFile(outputPath);
+    if (!outputBuffer || outputBuffer.length === 0) {
+      throw new Error('Python TXT script produced empty output file');
+    }
+
+    const downloadName = `${sanitizedBase}.txt`;
+    console.log(`CSV->TXT conversion successful:`, {
+      filename: downloadName,
+      size: outputBuffer.length
+    });
+
+    if (persistToDisk) {
+      return await persistOutputBuffer(outputBuffer, downloadName, 'text/plain');
+    }
+
+    return {
+      buffer: outputBuffer,
+      filename: downloadName,
+      mime: 'text/plain'
+    };
+  } catch (error) {
+    console.error(`CSV->TXT conversion error:`, error);
+    const message = error instanceof Error ? error.message : `Unknown CSV->TXT error`;
+    throw new Error(`Failed to convert CSV to TXT: ${message}`);
+  } finally {
+    await fs.rm(tmpDir, { recursive: true, force: true }).catch(() => undefined);
+  }
+};
+
 const convertCsvToEbookPython = async (
   file: Express.Multer.File,
   targetFormat: string,
@@ -3969,7 +4050,10 @@ app.post('/api/convert', conversionTimeout(5 * 60 * 1000), upload.single('file')
       } else if (isCSV && targetFormat === 'rtf') {
         console.log('Single: Routing to Python (CSV to RTF conversion)');
         result = await convertCsvToRtfPython(file, requestOptions, true);
-      } else if (isCSV && ['epub', 'html', 'txt'].includes(targetFormat)) {
+      } else if (isCSV && targetFormat === 'txt') {
+        console.log('Single: Routing to Python (CSV to TXT conversion)');
+        result = await convertCsvToTxtPython(file, requestOptions, true);
+      } else if (isCSV && ['epub', 'html'].includes(targetFormat)) {
       console.log(`Single: Routing to Python (CSV to ${targetFormat.toUpperCase()} conversion)`);
       result = await convertCsvToEbookPython(file, targetFormat, requestOptions, true);
     } else if (isCSV && LIBREOFFICE_CONVERSIONS[targetFormat]) {
@@ -4194,7 +4278,10 @@ app.post('/api/convert/batch', conversionTimeout(10 * 60 * 1000), uploadBatch.ar
       } else if (isCSV && format === 'rtf') {
         console.log('Batch: Routing to Python (CSV to RTF conversion)');
         output = await convertCsvToRtfPython(file, requestOptions, true);
-      } else if (isCSV && ['epub', 'html', 'txt'].includes(format)) {
+      } else if (isCSV && format === 'txt') {
+        console.log('Batch: Routing to Python (CSV to TXT conversion)');
+        output = await convertCsvToTxtPython(file, requestOptions, true);
+      } else if (isCSV && ['epub', 'html'].includes(format)) {
         console.log(`Batch: Routing to Python (CSV to ${format.toUpperCase()} conversion)`);
         output = await convertCsvToEbookPython(file, format, requestOptions, true);
       } else if (isCSV && LIBREOFFICE_CONVERSIONS[format]) {
