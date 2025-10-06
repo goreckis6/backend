@@ -16,8 +16,7 @@ import PptxGenJS from 'pptxgenjs';
 import mammoth from 'mammoth';
 import * as cheerio from 'cheerio';
 import { Document, Packer, Paragraph, Table, TableCell, TableRow, WidthType } from 'docx';
-import Jimp from 'jimp';
-import pngToIco from 'png-to-ico';
+// No external ICO library needed - we'll create ICO manually
 
 const BATCH_OUTPUT_DIR = path.join(os.tmpdir(), 'morphy-batch-outputs');
 fs.mkdir(BATCH_OUTPUT_DIR, { recursive: true }).catch(() => undefined);
@@ -2942,8 +2941,15 @@ const convertBmpToIcoPython = async (
   persistToDisk = false
 ): Promise<ConversionResult> => {
   console.log(`=== BMP TO ICO (Python) START ===`);
+  console.log('File details:', {
+    originalname: file.originalname,
+    mimetype: file.mimetype,
+    size: file.size,
+    hasBuffer: !!file.buffer
+  });
+  
   const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'morphy-bmp-ico-'));
-  const originalBase = path.basename(file.originalname, path.extname(file.originalname));
+  const originalBase = path.basename(file.originalname || 'upload', path.extname(file.originalname || '.bmp'));
   const sanitizedBase = sanitizeFilename(originalBase);
   const safeBase = `${sanitizedBase}_${randomUUID()}`;
 
@@ -3143,79 +3149,6 @@ const convertBmpToIcoPython = async (
   }
 };
 
-// BMP to ICO converter using Jimp + to-ico (Node.js only)
-const convertBmpToIcoJimp = async (
-  file: Express.Multer.File,
-  options: Record<string, string | undefined> = {},
-  persistToDisk = false
-): Promise<ConversionResult> => {
-  console.log(`=== BMP TO ICO (Jimp) START ===`);
-  const originalBase = path.basename(file.originalname, path.extname(file.originalname));
-  const sanitizedBase = sanitizeFilename(originalBase);
-
-  try {
-    // Parse sizes from options
-    const sizes = options.sizes ? options.sizes.split(',').map(s => parseInt(s.trim())).filter(s => !isNaN(s)) : [16, 24, 32, 48, 64, 128, 256];
-    const includeAlpha = options.includeAlpha !== 'false';
-    
-    console.log('ICO conversion options:', {
-      sizes,
-      includeAlpha,
-      originalOptions: options
-    });
-
-    // Load the BMP image with Jimp
-    console.log('Loading BMP image with Jimp...');
-    const image = await Jimp.read(file.buffer);
-    
-    console.log('Image loaded successfully:', {
-      width: image.getWidth(),
-      height: image.getHeight(),
-      hasAlpha: image.hasAlpha()
-    });
-
-    // Create multiple sizes for the ICO
-    const iconImages: Buffer[] = [];
-    
-    for (const size of sizes) {
-      console.log(`Creating ${size}x${size} icon...`);
-      
-      // Resize the image to the target size
-      const resized = image.clone().resize(size, size);
-      
-      // Convert to PNG format (ICO uses PNG internally for modern formats)
-      const pngBuffer = await resized.getBufferAsync(Jimp.MIME_PNG);
-      iconImages.push(pngBuffer);
-    }
-
-    console.log(`Created ${iconImages.length} icon sizes: ${sizes.join(', ')}`);
-
-    // Convert to ICO format using png-to-ico
-    console.log('Converting to ICO format...');
-    const icoBuffer = await pngToIco(iconImages);
-    
-    console.log('ICO conversion successful:', {
-      icoSize: icoBuffer.length,
-      iconCount: iconImages.length
-    });
-
-    const downloadName = `${sanitizedBase}.ico`;
-
-    if (persistToDisk) {
-      return await persistOutputBuffer(icoBuffer, downloadName, 'image/x-icon');
-    }
-
-    return {
-      buffer: icoBuffer,
-      filename: downloadName,
-      mime: 'image/x-icon'
-    };
-  } catch (error) {
-    console.error(`BMP->ICO (Jimp) conversion error:`, error);
-    const message = error instanceof Error ? error.message : `Unknown BMP->ICO error`;
-    throw new Error(`Failed to convert BMP to ICO with Jimp: ${message}`);
-  }
-};
 
 const convertCsvToEbookPython = async (
   file: Express.Multer.File,
@@ -4738,8 +4671,8 @@ app.post('/api/convert', conversionTimeout(5 * 60 * 1000), upload.single('file')
       });
       result = await convertDngFile(file, targetFormat, requestOptions, true);
     } else if (isBMP && targetFormat === 'ico') {
-      console.log('Single: Routing to Jimp (BMP to ICO conversion)');
-      result = await convertBmpToIcoJimp(file, requestOptions, true);
+      console.log('Single: Routing to Python (BMP to ICO conversion)');
+      result = await convertBmpToIcoPython(file, requestOptions, true);
     } else {
       // Check if this is a DOC file that wasn't detected properly
       if (file.originalname.toLowerCase().endsWith('.doc') && targetFormat === 'csv') {
