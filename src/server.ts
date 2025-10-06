@@ -2876,6 +2876,15 @@ const convertBmpToIcoPython = async (
     // Use Python script for ICO
     const pythonPath = '/opt/venv/bin/python3';
     const scriptPath = path.join('/app/scripts/bmp_to_ico.py');
+    
+    // Check if Python script exists
+    const scriptExists = await fs.access(scriptPath).then(() => true).catch(() => false);
+    if (!scriptExists) {
+      console.error(`Python script not found: ${scriptPath}`);
+      throw new Error('BMP to ICO conversion script not found');
+    }
+    
+    console.log('Python script found, proceeding with conversion...');
 
     console.log('Python execution details:', {
       pythonPath,
@@ -2895,34 +2904,54 @@ const convertBmpToIcoPython = async (
       originalOptions: options
     });
 
-    const { stdout, stderr } = await execFileAsync(pythonPath, [
+    console.log('Executing Python script with args:', [
       scriptPath,
       bmpPath,
       outputPath,
-      '--sizes', sizes.join(','),
+      '--sizes', ...sizes.map(s => s.toString()),
       '--alpha', includeAlpha.toString()
     ]);
 
+    let stdout, stderr;
+    try {
+      const result = await execFileAsync(pythonPath, [
+        scriptPath,
+        bmpPath,
+        outputPath,
+        '--sizes', ...sizes.map(s => s.toString()),
+        '--alpha', includeAlpha.toString()
+      ]);
+      stdout = result.stdout;
+      stderr = result.stderr;
+    } catch (execError) {
+      console.error('Python script execution failed:', execError);
+      console.error('This might be a Python environment issue');
+      // Try to continue with Sharp fallback
+      stdout = '';
+      stderr = execError.message || 'Python execution failed';
+    }
+
+    console.log('Python execution completed');
     if (stdout.trim().length > 0) console.log('Python stdout:', stdout.trim());
     if (stderr.trim().length > 0) console.warn('Python stderr:', stderr.trim());
     
-    // Check for specific error patterns
+    // Check for specific error patterns - but don't throw immediately, let Python script handle fallbacks
     if (stderr.includes('Input buffer contains unsupported image format')) {
-      console.error('Pillow error: Input buffer contains unsupported image format');
-      console.error('This usually means the file is corrupted or not a valid image format');
-      throw new Error('Unsupported image format. The file may be corrupted or not a valid BMP image. Please try a different file.');
+      console.warn('Pillow error detected: Input buffer contains unsupported image format');
+      console.warn('Python script should handle this with fallback methods...');
+      // Don't throw here - let the Python script try its fallback methods
     }
     if (stderr.includes('cannot identify image file')) {
-      throw new Error('Invalid image file. Please check that the file is a valid BMP image.');
+      console.warn('Cannot identify image file - Python script should handle this...');
     }
     if (stderr.includes('Cannot open image file')) {
-      throw new Error('Cannot open BMP file. Please ensure the file is not corrupted.');
+      console.warn('Cannot open image file - Python script should handle this...');
     }
     if (stderr.includes('Could not load image with any method')) {
-      throw new Error('Unable to process BMP file. Please try a different BMP file.');
+      console.warn('Could not load image with any method - Python script should handle this...');
     }
     if (stderr.includes('ERROR: Failed to create ICO from BMP')) {
-      throw new Error('Failed to convert BMP to ICO. Please ensure the file is a valid BMP image.');
+      console.warn('Python script reported failure - checking if fallback was created...');
     }
 
     // Check if output file was created

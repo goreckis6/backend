@@ -57,9 +57,6 @@ def create_ico_from_bmp(bmp_file, output_file, sizes=None, include_alpha=True):
         print("Opening image file with Pillow...")
         img = None
         
-        # Wrap the entire image processing in a try-catch to handle Pillow errors
-        try:
-        
         # Method 1: Try direct file opening
         try:
             img = Image.open(bmp_file)
@@ -263,22 +260,6 @@ def create_ico_from_bmp(bmp_file, output_file, sizes=None, include_alpha=True):
         else:
             print("ERROR: ICO file was not created")
             return False
-            
-        except Exception as pillow_error:
-            print(f"Pillow error during image processing: {pillow_error}")
-            if "Input buffer contains unsupported image format" in str(pillow_error):
-                print("Detected the specific Pillow error - creating fallback image")
-                try:
-                    # Create a simple fallback image
-                    fallback_img = Image.new('RGB', (32, 32), (128, 128, 128))
-                    fallback_img.save(output_file, format='ICO')
-                    print("Created fallback ICO file")
-                    return True
-                except Exception as fallback_error:
-                    print(f"Fallback creation failed: {fallback_error}")
-                    raise Exception("Cannot process image file. The file may be corrupted or in an unsupported format.")
-            else:
-                raise pillow_error
                 
     except Exception as e:
         print(f"ERROR: Failed to create ICO from BMP: {e}")
