@@ -4553,13 +4553,20 @@ app.post('/api/convert', conversionTimeout(5 * 60 * 1000), upload.single('file')
         
         // Handle special cases
         if (file.mimetype === 'application/octet-stream') {
-          // This could be a DNG file, try to detect from buffer
+          // This could be a DNG or BMP file, try to detect from buffer
           if (file.buffer && file.buffer.length > 0) {
+            // Check for BMP signature
+            if (file.buffer[0] === 0x42 && file.buffer[1] === 0x4D) { // BM
+              ext = 'bmp';
+              console.log('Detected BMP file from signature');
+            }
             // Check for DNG signature (starts with TIFF header)
-            if (file.buffer[0] === 0x49 && file.buffer[1] === 0x49) { // II (Intel byte order)
+            else if (file.buffer[0] === 0x49 && file.buffer[1] === 0x49) { // II (Intel byte order)
               ext = 'dng';
+              console.log('Detected DNG file from signature');
             } else if (file.buffer[0] === 0x4D && file.buffer[1] === 0x4D) { // MM (Motorola byte order)
               ext = 'dng';
+              console.log('Detected DNG file from signature');
             }
           }
         }
@@ -4567,7 +4574,18 @@ app.post('/api/convert', conversionTimeout(5 * 60 * 1000), upload.single('file')
         file.originalname = `upload.${ext}`;
         console.log('Created fallback filename:', file.originalname);
       } else {
-        return res.status(400).json({ error: 'Invalid file upload - missing filename' });
+        // If no mimetype, try to detect from buffer
+        if (file.buffer && file.buffer.length > 0) {
+          if (file.buffer[0] === 0x42 && file.buffer[1] === 0x4D) { // BM
+            file.originalname = 'upload.bmp';
+            console.log('Detected BMP file from buffer signature');
+          } else {
+            file.originalname = 'upload.bin';
+            console.log('Created generic fallback filename');
+          }
+        } else {
+          return res.status(400).json({ error: 'Invalid file upload - missing filename and content' });
+        }
       }
     }
 
@@ -4606,6 +4624,14 @@ app.post('/api/convert', conversionTimeout(5 * 60 * 1000), upload.single('file')
       fileSize: file.size,
       hasBuffer: !!file.buffer
     });
+
+    // Additional check: if file has BMP signature but isBMP is false, force it
+    if (!isBMP && file.buffer && file.buffer.length > 2) {
+      if (file.buffer[0] === 0x42 && file.buffer[1] === 0x4D) { // BM signature
+        console.log('BMP signature detected in buffer, forcing isBMP to true');
+        isBMP = true;
+      }
+    }
     
     console.log('Available CALIBRE_CONVERSIONS:', Object.keys(CALIBRE_CONVERSIONS));
     console.log('Target format in CALIBRE_CONVERSIONS?', !!CALIBRE_CONVERSIONS[targetFormat]);
