@@ -4654,7 +4654,7 @@ app.post('/api/convert', conversionTimeout(5 * 60 * 1000), upload.single('file')
     console.log('Available CALIBRE_CONVERSIONS:', Object.keys(CALIBRE_CONVERSIONS));
     console.log('Target format in CALIBRE_CONVERSIONS?', !!CALIBRE_CONVERSIONS[targetFormat]);
 
-    let result: ConversionResult;
+    let result: ConversionResult | null = null;
 
     // PRIORITY ROUTE: Check for BMP to ICO conversion FIRST
     if (targetFormat === 'ico') {
@@ -4669,8 +4669,7 @@ app.post('/api/convert', conversionTimeout(5 * 60 * 1000), upload.single('file')
         result = await convertBmpToIcoPython(file, requestOptions, true);
       } else {
         console.log('!!! ICO conversion but not BMP - falling through to Sharp !!!');
-        // Set result to null to fall through to Sharp handler
-        result = null as any;
+        // result remains null to fall through to Sharp handler
       }
     }
     
