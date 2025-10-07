@@ -499,6 +499,13 @@ const convertDngToWebpPython = async (
     // Write DNG file to temp directory
     const dngPath = path.join(tmpDir, `${safeBase}.dng`);
     await fs.writeFile(dngPath, file.buffer);
+    
+    // Verify the DNG file was written successfully
+    const dngExists = await fs.access(dngPath).then(() => true).catch(() => false);
+    if (!dngExists) {
+      throw new Error('Failed to write DNG file to temporary directory');
+    }
+    console.log('DNG file written successfully:', dngPath);
 
     // Prepare output file
     const outputPath = path.join(tmpDir, `${safeBase}.webp`);
@@ -584,13 +591,15 @@ const convertDngToWebpPython = async (
     }
 
     let stdout, stderr;
+    let pythonFailed = false;
     try {
       console.log('Executing Python script:', pythonPath, args.join(' '));
       const result = await execFileAsync(pythonPath, args);
       stdout = result.stdout;
       stderr = result.stderr;
       console.log('Python script execution completed successfully');
-    } catch (execError) {
+    } catch (execError: any) {
+      pythonFailed = true;
       console.error('!!! Python script execution FAILED !!!');
       console.error('Error type:', typeof execError);
       console.error('Error details:', execError);
@@ -598,9 +607,11 @@ const convertDngToWebpPython = async (
         console.error('Error message:', execError.message);
         console.error('Error stack:', execError.stack);
       }
-      stdout = '';
-      stderr = execError instanceof Error ? execError.message : 'Python execution failed';
-      console.error('Setting stderr to:', stderr);
+      // When execFileAsync fails, the error object contains stdout and stderr
+      stdout = execError.stdout || '';
+      stderr = execError.stderr || execError.message || 'Python execution failed';
+      console.error('Python stdout:', stdout);
+      console.error('Python stderr:', stderr);
     }
 
     if (stdout.trim().length > 0) console.log('Python stdout:', stdout.trim());
