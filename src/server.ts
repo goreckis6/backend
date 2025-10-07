@@ -987,6 +987,113 @@ const convertCsvToJsonPython = async (
   }
 };
 
+// CSV to NDJSON converter using Python
+const convertCsvToNdjsonPython = async (
+  file: Express.Multer.File,
+  options: Record<string, string | undefined> = {},
+  persistToDisk = false
+): Promise<ConversionResult> => {
+  console.log(`=== CSV TO NDJSON (Python) START ===`);
+  const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'morphy-csv-ndjson-'));
+  const originalBase = path.basename(file.originalname, path.extname(file.originalname));
+  const sanitizedBase = sanitizeFilename(originalBase);
+  const safeBase = `${sanitizedBase}_${randomUUID()}`;
+
+  try {
+    // Write CSV file to temp directory
+    const csvPath = path.join(tmpDir, `${safeBase}.csv`);
+    await fs.writeFile(csvPath, file.buffer);
+    
+    console.log('CSV file written successfully:', csvPath);
+
+    // Prepare output file
+    const outputPath = path.join(tmpDir, `${safeBase}.ndjson`);
+
+    // Use Python script for NDJSON
+    const pythonPath = 'python3';
+    const scriptPath = path.join(__dirname, '..', 'scripts', 'csv_to_ndjson.py');
+    
+    // Check if Python script exists
+    const scriptExists = await fs.access(scriptPath).then(() => true).catch(() => false);
+    if (!scriptExists) {
+      console.error(`Python script not found: ${scriptPath}`);
+      throw new Error('CSV to NDJSON conversion script not found');
+    }
+
+    // Parse options
+    const includeHeaders = options.includeHeaders || 'true';
+
+    console.log('Python execution details:', {
+      pythonPath,
+      scriptPath,
+      csvPath,
+      outputPath,
+      includeHeaders,
+      fileSize: file.buffer.length
+    });
+
+    const args = [
+      scriptPath,
+      csvPath,
+      outputPath,
+      '--include-headers', includeHeaders
+    ];
+
+    let stdout, stderr;
+    try {
+      const result = await execFileAsync(pythonPath, args);
+      stdout = result.stdout;
+      stderr = result.stderr;
+    } catch (execError: any) {
+      console.error('Python script execution failed:', execError);
+      stdout = execError.stdout || '';
+      stderr = execError.stderr || execError.message || 'Python execution failed';
+    }
+
+    if (stdout.trim().length > 0) console.log('Python stdout:', stdout.trim());
+    if (stderr.trim().length > 0) console.warn('Python stderr:', stderr.trim());
+    
+    // Check for errors
+    if (stderr.includes('ERROR:') || stderr.includes('Traceback')) {
+      throw new Error(`Python script error: ${stderr}`);
+    }
+
+    // Check if output file was created
+    const outputExists = await fs.access(outputPath).then(() => true).catch(() => false);
+    if (!outputExists) {
+      throw new Error(`Python script did not produce output file: ${outputPath}`);
+    }
+
+    // Read output file
+    const outputBuffer = await fs.readFile(outputPath);
+    if (!outputBuffer || outputBuffer.length === 0) {
+      throw new Error('Python script produced empty output file');
+    }
+
+    const downloadName = `${sanitizedBase}.ndjson`;
+    console.log(`CSV->NDJSON conversion successful:`, {
+      filename: downloadName,
+      size: outputBuffer.length
+    });
+
+    if (persistToDisk) {
+      return await persistOutputBuffer(outputBuffer, downloadName, 'application/x-ndjson');
+    }
+
+    return {
+      buffer: outputBuffer,
+      filename: downloadName,
+      mime: 'application/x-ndjson'
+    };
+  } catch (error) {
+    console.error(`CSV->NDJSON conversion error:`, error);
+    const message = error instanceof Error ? error.message : `Unknown CSV->NDJSON error`;
+    throw new Error(`Failed to convert CSV to NDJSON: ${message}`);
+  } finally {
+    await fs.rm(tmpDir, { recursive: true, force: true }).catch(() => undefined);
+  }
+};
+
 const app = express();
 const PORT = Number(process.env.PORT || 3000);
 
@@ -4913,6 +5020,9 @@ app.post('/api/convert', conversionTimeout(5 * 60 * 1000), upload.single('file')
       } else if (!result && isCSV && targetFormat === 'json') {
         console.log('Single: Routing to Python (CSV to JSON conversion)');
         result = await convertCsvToJsonPython(file, requestOptions, true);
+      } else if (!result && isCSV && targetFormat === 'ndjson') {
+        console.log('Single: Routing to Python (CSV to NDJSON conversion)');
+        result = await convertCsvToNdjsonPython(file, requestOptions, true);
       } else if (!result && isCSV && ['epub', 'html'].includes(targetFormat)) {
       console.log(`Single: Routing to Python (CSV to ${targetFormat.toUpperCase()} conversion)`);
       result = await convertCsvToEbookPython(file, targetFormat, requestOptions, true);
@@ -5177,6 +5287,9 @@ app.post('/api/convert/batch', conversionTimeout(10 * 60 * 1000), uploadBatch.ar
       } else if (isCSV && format === 'json') {
         console.log('Batch: Routing to Python (CSV to JSON conversion)');
         output = await convertCsvToJsonPython(file, requestOptions, true);
+      } else if (isCSV && format === 'ndjson') {
+        console.log('Batch: Routing to Python (CSV to NDJSON conversion)');
+        output = await convertCsvToNdjsonPython(file, requestOptions, true);
       } else if (isCSV && ['epub', 'html'].includes(format)) {
         console.log(`Batch: Routing to Python (CSV to ${format.toUpperCase()} conversion)`);
         output = await convertCsvToEbookPython(file, format, requestOptions, true);
