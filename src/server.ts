@@ -4628,9 +4628,27 @@ app.post('/api/convert', conversionTimeout(5 * 60 * 1000), upload.single('file')
     // Additional check: if file has BMP signature but isBMP is false, force it
     if (!isBMP && file.buffer && file.buffer.length > 2) {
       if (file.buffer[0] === 0x42 && file.buffer[1] === 0x4D) { // BM signature
-        console.log('BMP signature detected in buffer, forcing isBMP to true');
+        console.log('!!! BMP signature detected in buffer, forcing isBMP to true !!!');
         isBMP = true;
       }
+    }
+
+    // CRITICAL CHECK: If target format is ICO and we have any indication of BMP, force routing to Python
+    if (targetFormat === 'ico') {
+      console.log('!!! ICO conversion requested - checking if this should be BMP to ICO !!!');
+      
+      // Check if it's a BMP file by any means
+      if (!isBMP && file.buffer && file.buffer.length > 2) {
+        if (file.buffer[0] === 0x42 && file.buffer[1] === 0x4D) {
+          console.log('!!! FORCING BMP detection for ICO conversion !!!');
+          isBMP = true;
+          if (!file.originalname || !file.originalname.endsWith('.bmp')) {
+            file.originalname = 'upload.bmp';
+          }
+        }
+      }
+      
+      console.log('After ICO check - isBMP:', isBMP, 'originalname:', file.originalname);
     }
     
     console.log('Available CALIBRE_CONVERSIONS:', Object.keys(CALIBRE_CONVERSIONS));
@@ -4705,6 +4723,26 @@ app.post('/api/convert', conversionTimeout(5 * 60 * 1000), upload.single('file')
         console.log('DOC file detected by fallback - routing to LibreOffice');
         result = await convertDocWithLibreOffice(file, 'doc-to-csv', requestOptions, true);
       } else {
+        // CRITICAL: Check if this is a BMP to ICO conversion that shouldn't be here
+        if (targetFormat === 'ico' && file.buffer && file.buffer.length > 2) {
+          if (file.buffer[0] === 0x42 && file.buffer[1] === 0x4D) {
+            console.log('!!! CRITICAL: BMP to ICO conversion reached Sharp fallback !!!');
+            console.log('!!! Redirecting to Python script !!!');
+            result = await convertBmpToIcoPython(file, requestOptions, true);
+            
+            // Send response and return immediately
+            res.set({
+              'Content-Type': result.mime,
+              'Content-Disposition': `attachment; filename="${result.filename}"`,
+              'Content-Length': result.buffer.length.toString(),
+              'Cache-Control': 'no-cache'
+            });
+            res.send(result.buffer);
+            console.log('=== CONVERSION REQUEST END (SUCCESS via fallback redirect) ===');
+            return;
+          }
+        }
+        
         // Handle Sharp image conversions
         console.log('Falling back to Sharp image processing - this should not happen for DOC files!');
         console.log('File details:', {
@@ -4715,7 +4753,8 @@ app.post('/api/convert', conversionTimeout(5 * 60 * 1000), upload.single('file')
           isCSV,
           isEPUB,
           isEPS,
-          isDNG
+          isDNG,
+          isBMP
         });
         
         const quality = requestOptions.quality ?? 'high';
