@@ -4656,7 +4656,30 @@ app.post('/api/convert', conversionTimeout(5 * 60 * 1000), upload.single('file')
 
     let result: ConversionResult;
 
-    if ((isDocFile(file) || isDocxFile(file) || isOdtFile(file)) && targetFormat === 'epub') {
+    // PRIORITY ROUTE: Check for BMP to ICO conversion FIRST
+    if (targetFormat === 'ico') {
+      console.log('!!! ICO conversion detected - checking for BMP file !!!');
+      
+      // Check if it's a BMP file by signature
+      if (file.buffer && file.buffer.length > 2 && file.buffer[0] === 0x42 && file.buffer[1] === 0x4D) {
+        console.log('!!! BMP file detected by signature - routing to Python !!!');
+        result = await convertBmpToIcoPython(file, requestOptions, true);
+      } else if (isBMP) {
+        console.log('!!! BMP file detected by isBMP flag - routing to Python !!!');
+        result = await convertBmpToIcoPython(file, requestOptions, true);
+      } else {
+        console.log('!!! ICO conversion but not BMP - falling through to other handlers !!!');
+        // Fall through to other handlers
+        if ((isDocFile(file) || isDocxFile(file) || isOdtFile(file)) && targetFormat === 'epub') {
+          console.log('Single: Routing to LibreOffice (DOC/DOCX/ODT to EPUB conversion)');
+          const inputHint = isDocxFile(file) ? 'docx' : isOdtFile(file) ? 'odt' : 'doc';
+          result = await convertDocxWithLibreOffice(file, inputHint, requestOptions, true);
+        } else {
+          // This will fall through to the else block at the end
+          result = null as any;
+        }
+      }
+    } else if ((isDocFile(file) || isDocxFile(file) || isOdtFile(file)) && targetFormat === 'epub') {
       console.log('Single: Routing to LibreOffice (DOC/DOCX/ODT to EPUB conversion)');
       const inputHint = isDocxFile(file) ? 'docx' : isOdtFile(file) ? 'odt' : 'doc';
       result = await convertDocxWithLibreOffice(file, inputHint, requestOptions, true);
@@ -4714,9 +4737,6 @@ app.post('/api/convert', conversionTimeout(5 * 60 * 1000), upload.single('file')
         requestOptions
       });
       result = await convertDngFile(file, targetFormat, requestOptions, true);
-    } else if (isBMP && targetFormat === 'ico') {
-      console.log('Single: Routing to Python (BMP to ICO conversion)');
-      result = await convertBmpToIcoPython(file, requestOptions, true);
     } else {
       // Check if this is a DOC file that wasn't detected properly
       if (file.originalname.toLowerCase().endsWith('.doc') && targetFormat === 'csv') {
