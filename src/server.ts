@@ -4765,6 +4765,36 @@ app.post('/api/convert', conversionTimeout(5 * 60 * 1000), upload.single('file')
 
     const inputBuffer = await prepareRawBuffer(file);
 
+    // CRITICAL CHECK: Before calling Sharp, check if this is a BMP file
+    if (inputBuffer && inputBuffer.length > 2) {
+      if (inputBuffer[0] === 0x42 && inputBuffer[1] === 0x4D) { // BM signature
+        console.error('!!! CRITICAL ERROR: BMP file detected in Sharp fallback !!!');
+        console.error('!!! BMP files cannot be processed by Sharp !!!');
+        console.error('!!! This file should have been routed to Python script !!!');
+        
+        if (targetFormat === 'ico') {
+          console.log('!!! Attempting emergency redirect to Python script !!!');
+          try {
+            result = await convertBmpToIcoPython(file, requestOptions, true);
+            res.set({
+              'Content-Type': result.mime,
+              'Content-Disposition': `attachment; filename="${result.filename}"`,
+              'Content-Length': result.buffer.length.toString(),
+              'Cache-Control': 'no-cache'
+            });
+            res.send(result.buffer);
+            console.log('=== CONVERSION REQUEST END (SUCCESS via emergency redirect) ===');
+            return;
+          } catch (pythonError) {
+            console.error('Emergency Python redirect failed:', pythonError);
+            throw new Error('BMP to ICO conversion failed. BMP files cannot be processed by Sharp.');
+          }
+        }
+        
+        throw new Error('BMP files cannot be processed by Sharp. Please check your file upload.');
+      }
+    }
+
     const qualityValue = quality === 'high' ? 95 : quality === 'medium' ? 80 : 60;
     const isLossless = lossless === 'true';
 
