@@ -685,6 +685,195 @@ const convertDngToWebpPython = async (
   }
 };
 
+// DNG to ICO converter using Python
+const convertDngToIcoPython = async (
+  file: Express.Multer.File,
+  options: Record<string, string | undefined> = {},
+  persistToDisk = false
+): Promise<ConversionResult> => {
+  console.log(`=== DNG TO ICO (Python) START ===`);
+  const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'morphy-dng-ico-'));
+  const originalBase = path.basename(file.originalname, path.extname(file.originalname));
+  const sanitizedBase = sanitizeFilename(originalBase);
+  const safeBase = `${sanitizedBase}_${randomUUID()}`;
+
+  try {
+    // Write DNG file to temp directory
+    const dngPath = path.join(tmpDir, `${safeBase}.dng`);
+    await fs.writeFile(dngPath, file.buffer);
+    
+    // Verify the DNG file was written successfully
+    const dngExists = await fs.access(dngPath).then(() => true).catch(() => false);
+    if (!dngExists) {
+      throw new Error('Failed to write DNG file to temporary directory');
+    }
+    console.log('DNG file written successfully:', dngPath);
+
+    // Prepare output file
+    const outputPath = path.join(tmpDir, `${safeBase}.ico`);
+
+    // Use Python script for ICO
+    const pythonPath = 'python3';
+    const scriptPath = path.join(__dirname, '..', 'scripts', 'dng_to_ico.py');
+    
+    // Check if Python script exists
+    console.log('Checking for Python script at:', scriptPath);
+    const scriptExists = await fs.access(scriptPath).then(() => true).catch((err) => {
+      console.error('Script access check failed:', err);
+      return false;
+    });
+    
+    if (!scriptExists) {
+      console.error(`!!! Python script not found at: ${scriptPath} !!!`);
+      console.error('Current directory (__dirname):', __dirname);
+      console.error('Expected script path:', scriptPath);
+      
+      // Try to list the scripts directory
+      try {
+        const scriptsDir = path.join(__dirname, '..', 'scripts');
+        console.log('Attempting to list scripts directory:', scriptsDir);
+        const files = await fs.readdir(scriptsDir);
+        console.log('Files in scripts directory:', files);
+      } catch (listError) {
+        console.error('Could not list scripts directory:', listError);
+      }
+      
+      throw new Error('DNG to ICO conversion script not found. Please check deployment.');
+    }
+    
+    console.log('✅ Python script found, proceeding with conversion...');
+
+    // Check if Python is available
+    try {
+      console.log('Checking Python availability...');
+      const pythonCheck = await execFileAsync(pythonPath, ['--version']);
+      console.log('Python version:', pythonCheck.stdout.trim());
+    } catch (pythonError) {
+      console.error('!!! Python is not available !!!');
+      console.error('Python path tried:', pythonPath);
+      console.error('Error:', pythonError);
+      throw new Error('Python is not available on the system');
+    }
+
+    // Parse options
+    const sizes = options.sizes 
+      ? options.sizes.split(',').map(s => parseInt(s.trim())).filter(s => !isNaN(s) && s >= 16 && s <= 256)
+      : [16, 32, 48, 64, 128, 256];
+    const qualityLevel = options.quality || 'high';
+
+    console.log('Python execution details:', {
+      pythonPath,
+      scriptPath,
+      dngPath,
+      outputPath,
+      sizes,
+      qualityLevel,
+      fileSize: file.buffer.length
+    });
+
+    const args = [
+      scriptPath,
+      dngPath,
+      outputPath,
+      '--sizes', ...sizes.map(s => s.toString()),
+      '--quality', qualityLevel
+    ];
+
+    let stdout, stderr;
+    let pythonFailed = false;
+    try {
+      console.log('Executing Python script:', pythonPath, args.join(' '));
+      const result = await execFileAsync(pythonPath, args);
+      stdout = result.stdout;
+      stderr = result.stderr;
+      console.log('Python script execution completed successfully');
+    } catch (execError: any) {
+      pythonFailed = true;
+      console.error('!!! Python script execution FAILED !!!');
+      console.error('Error type:', typeof execError);
+      console.error('Error details:', execError);
+      if (execError instanceof Error) {
+        console.error('Error message:', execError.message);
+        console.error('Error stack:', execError.stack);
+      }
+      // When execFileAsync fails, the error object contains stdout and stderr
+      stdout = execError.stdout || '';
+      stderr = execError.stderr || execError.message || 'Python execution failed';
+      console.error('Python stdout:', stdout);
+      console.error('Python stderr:', stderr);
+    }
+
+    if (stdout.trim().length > 0) console.log('Python stdout:', stdout.trim());
+    if (stderr.trim().length > 0) console.warn('Python stderr:', stderr.trim());
+    
+    // Check for specific error patterns
+    if (stderr.includes('Unsupported DNG file format')) {
+      throw new Error('Unsupported DNG file format. Please ensure the file is a valid DNG image.');
+    }
+    if (stderr.includes('DNG file I/O error')) {
+      throw new Error('DNG file I/O error. Please check that the file is not corrupted.');
+    }
+    if (stderr.includes('rawpy not available') || stderr.includes('ImportError')) {
+      throw new Error('Required Python library (rawpy) is not available. Please install it.');
+    }
+    if (stderr.includes('Traceback') || stderr.includes('SyntaxError')) {
+      throw new Error(`Python script error: ${stderr}`);
+    }
+
+    // Check if output file was created
+    const outputExists = await fs.access(outputPath).then(() => true).catch(() => false);
+    if (!outputExists) {
+      console.error('!!! Python script did not produce output file !!!');
+      console.error('Expected output path:', outputPath);
+      console.error('Full Python stdout:', stdout);
+      console.error('Full Python stderr:', stderr);
+      
+      // Try to provide more helpful error message based on stderr
+      let errorMessage = `Python ICO script did not produce output file: ${outputPath}.`;
+      
+      if (stderr.includes('ModuleNotFoundError') || stderr.includes('No module named')) {
+        errorMessage += ' Missing Python dependencies (rawpy or Pillow). Please install them.';
+      } else if (stderr.includes('ERROR:') || stderr.includes('Failed')) {
+        errorMessage += ` Python error: ${stderr.substring(0, 200)}`;
+      } else if (stdout.includes('ERROR:') || stdout.includes('Failed')) {
+        errorMessage += ` Python error: ${stdout.substring(0, 200)}`;
+      } else {
+        errorMessage += ' Check Python environment and dependencies.';
+      }
+      
+      throw new Error(errorMessage);
+    }
+
+    // Read output file
+    const outputBuffer = await fs.readFile(outputPath);
+    if (!outputBuffer || outputBuffer.length === 0) {
+      throw new Error('Python ICO script produced empty output file');
+    }
+
+    const downloadName = `${sanitizedBase}.ico`;
+    console.log(`DNG->ICO conversion successful:`, {
+      filename: downloadName,
+      size: outputBuffer.length
+    });
+
+    if (persistToDisk) {
+      return await persistOutputBuffer(outputBuffer, downloadName, 'image/x-icon');
+    }
+
+    return {
+      buffer: outputBuffer,
+      filename: downloadName,
+      mime: 'image/x-icon'
+    };
+  } catch (error) {
+    console.error(`DNG->ICO conversion error:`, error);
+    const message = error instanceof Error ? error.message : `Unknown DNG->ICO error`;
+    throw new Error(`Failed to convert DNG to ICO: ${message}`);
+  } finally {
+    await fs.rm(tmpDir, { recursive: true, force: true }).catch(() => undefined);
+  }
+};
+
 const app = express();
 const PORT = Number(process.env.PORT || 3000);
 
@@ -4623,12 +4812,15 @@ app.post('/api/convert', conversionTimeout(5 * 60 * 1000), upload.single('file')
     } else if (!result && isDNG && targetFormat === 'webp') {
       console.log('Single: Routing to Python (DNG to WebP conversion)');
       result = await convertDngToWebpPython(file, requestOptions, true);
-    } else if (!result && isDNG && ['png', 'jpeg', 'jpg', 'ico'].includes(targetFormat)) {
+    } else if (!result && isDNG && targetFormat === 'ico') {
+      console.log('Single: Routing to Python (DNG to ICO conversion)');
+      result = await convertDngToIcoPython(file, requestOptions, true);
+    } else if (!result && isDNG && ['png', 'jpeg', 'jpg'].includes(targetFormat)) {
       console.log('Single: Routing to DNG conversion (legacy)');
       console.log('DNG conversion details:', {
         filename: file.originalname,
         targetFormat,
-        supportedFormats: ['png', 'jpeg', 'jpg', 'ico'],
+        supportedFormats: ['png', 'jpeg', 'jpg'],
         requestOptions
       });
       result = await convertDngFile(file, targetFormat, requestOptions, true);
@@ -4881,12 +5073,15 @@ app.post('/api/convert/batch', conversionTimeout(10 * 60 * 1000), uploadBatch.ar
       } else if (isDNG && format === 'webp') {
         console.log('Batch: Routing to Python (DNG to WebP conversion)');
         output = await convertDngToWebpPython(file, requestOptions, true);
-      } else if (isDNG && ['png', 'jpeg', 'jpg', 'ico'].includes(format)) {
+      } else if (isDNG && format === 'ico') {
+        console.log('Batch: Routing to Python (DNG to ICO conversion)');
+        output = await convertDngToIcoPython(file, requestOptions, true);
+      } else if (isDNG && ['png', 'jpeg', 'jpg'].includes(format)) {
         console.log('Batch: Routing to DNG conversion (legacy)');
         console.log('Batch DNG conversion details:', {
           filename: file.originalname,
           targetFormat: format,
-          supportedFormats: ['png', 'jpeg', 'jpg', 'ico'],
+          supportedFormats: ['png', 'jpeg', 'jpg'],
           requestOptions
         });
         output = await convertDngFile(file, format, requestOptions, true);
