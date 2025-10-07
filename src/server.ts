@@ -4668,67 +4668,64 @@ app.post('/api/convert', conversionTimeout(5 * 60 * 1000), upload.single('file')
         console.log('!!! BMP file detected by isBMP flag - routing to Python !!!');
         result = await convertBmpToIcoPython(file, requestOptions, true);
       } else {
-        console.log('!!! ICO conversion but not BMP - falling through to other handlers !!!');
-        // Fall through to other handlers
-        if ((isDocFile(file) || isDocxFile(file) || isOdtFile(file)) && targetFormat === 'epub') {
-          console.log('Single: Routing to LibreOffice (DOC/DOCX/ODT to EPUB conversion)');
-          const inputHint = isDocxFile(file) ? 'docx' : isOdtFile(file) ? 'odt' : 'doc';
-          result = await convertDocxWithLibreOffice(file, inputHint, requestOptions, true);
-        } else {
-          // This will fall through to the else block at the end
-          result = null as any;
-        }
+        console.log('!!! ICO conversion but not BMP - falling through to Sharp !!!');
+        // Set result to null to fall through to Sharp handler
+        result = null as any;
       }
-    } else if ((isDocFile(file) || isDocxFile(file) || isOdtFile(file)) && targetFormat === 'epub') {
+    }
+    
+    if (!result && (isDocFile(file) || isDocxFile(file) || isOdtFile(file)) && targetFormat === 'epub') {
       console.log('Single: Routing to LibreOffice (DOC/DOCX/ODT to EPUB conversion)');
       const inputHint = isDocxFile(file) ? 'docx' : isOdtFile(file) ? 'odt' : 'doc';
       result = await convertDocxWithLibreOffice(file, inputHint, requestOptions, true);
-    } else if (isEPUB && CALIBRE_CONVERSIONS[targetFormat]) {
+    }
+    
+    if (!result && isEPUB && CALIBRE_CONVERSIONS[targetFormat]) {
       console.log('Single: Routing to Calibre (EPUB conversion)');
       result = await convertWithCalibre(file, targetFormat, requestOptions, true);
-    } else if (isCSV && targetFormat === 'mobi') {
+    } else if (!result && isCSV && targetFormat === 'mobi') {
       console.log('Single: Routing to Simple CSV to MOBI conversion');
       result = await convertCsvToMobiSimple(file, requestOptions, true);
-    } else if (isCSV && targetFormat === 'odp') {
+    } else if (!result && isCSV && targetFormat === 'odp') {
       console.log('Single: Routing to Python (CSV to ODP conversion)');
       result = await convertCsvToOdpPython(file, requestOptions, true);
-    } else if (isCSV && targetFormat === 'odt') {
+    } else if (!result && isCSV && targetFormat === 'odt') {
       console.log('Single: Routing to Python (CSV to ODT conversion)');
       result = await convertCsvToOdtPython(file, requestOptions, true);
-      } else if (isCSV && targetFormat === 'pdf') {
+      } else if (!result && isCSV && targetFormat === 'pdf') {
         console.log('Single: Routing to Python (CSV to PDF conversion)');
         result = await convertCsvToPdfPython(file, requestOptions, true);
-      } else if (isCSV && targetFormat === 'ppt') {
+      } else if (!result && isCSV && targetFormat === 'ppt') {
         console.log('Single: Routing to Python (CSV to PPT conversion)');
         result = await convertCsvToPptPython(file, requestOptions, true);
-      } else if (isCSV && targetFormat === 'pptx') {
+      } else if (!result && isCSV && targetFormat === 'pptx') {
         console.log('Single: Routing to Python (CSV to PPTX conversion)');
         result = await convertCsvToPptxPython(file, requestOptions, true);
-      } else if (isCSV && targetFormat === 'rtf') {
+      } else if (!result && isCSV && targetFormat === 'rtf') {
         console.log('Single: Routing to Python (CSV to RTF conversion)');
         result = await convertCsvToRtfPython(file, requestOptions, true);
-      } else if (isCSV && targetFormat === 'txt') {
+      } else if (!result && isCSV && targetFormat === 'txt') {
         console.log('Single: Routing to Python (CSV to TXT conversion)');
         result = await convertCsvToTxtPython(file, requestOptions, true);
-      } else if (isCSV && targetFormat === 'xls') {
+      } else if (!result && isCSV && targetFormat === 'xls') {
         console.log('Single: Routing to Python (CSV to XLS conversion)');
         result = await convertCsvToXlsPython(file, requestOptions, true);
-      } else if (isCSV && ['epub', 'html'].includes(targetFormat)) {
+      } else if (!result && isCSV && ['epub', 'html'].includes(targetFormat)) {
       console.log(`Single: Routing to Python (CSV to ${targetFormat.toUpperCase()} conversion)`);
       result = await convertCsvToEbookPython(file, targetFormat, requestOptions, true);
-    } else if (isCSV && LIBREOFFICE_CONVERSIONS[targetFormat]) {
+    } else if (!result && isCSV && LIBREOFFICE_CONVERSIONS[targetFormat]) {
       console.log('Single: Routing to LibreOffice (CSV conversion)');
       result = await convertCsvWithLibreOffice(file, targetFormat, requestOptions, true);
-    } else if ((isDOC || file.originalname.toLowerCase().endsWith('.doc')) && targetFormat === 'csv') {
+    } else if (!result && (isDOC || file.originalname.toLowerCase().endsWith('.doc')) && targetFormat === 'csv') {
       console.log('Single: Routing to LibreOffice (DOC to CSV conversion)');
       result = await convertDocWithLibreOffice(file, 'doc-to-csv', requestOptions, true);
-    } else if (isEPS && ['webp', 'png', 'jpeg', 'jpg', 'ico'].includes(targetFormat)) {
+    } else if (!result && isEPS && ['webp', 'png', 'jpeg', 'jpg', 'ico'].includes(targetFormat)) {
       console.log('Single: Routing to EPS conversion');
       result = await convertEpsFile(file, targetFormat, requestOptions, true);
-    } else if (isDNG && targetFormat === 'webp') {
+    } else if (!result && isDNG && targetFormat === 'webp') {
       console.log('Single: Routing to Python (DNG to WebP conversion)');
       result = await convertDngToWebpPython(file, requestOptions, true);
-    } else if (isDNG && ['png', 'jpeg', 'jpg', 'ico'].includes(targetFormat)) {
+    } else if (!result && isDNG && ['png', 'jpeg', 'jpg', 'ico'].includes(targetFormat)) {
       console.log('Single: Routing to DNG conversion (legacy)');
       console.log('DNG conversion details:', {
         filename: file.originalname,
@@ -4737,7 +4734,7 @@ app.post('/api/convert', conversionTimeout(5 * 60 * 1000), upload.single('file')
         requestOptions
       });
       result = await convertDngFile(file, targetFormat, requestOptions, true);
-    } else {
+    } else if (!result) {
       // Check if this is a DOC file that wasn't detected properly
       if (file.originalname.toLowerCase().endsWith('.doc') && targetFormat === 'csv') {
         console.log('DOC file detected by fallback - routing to LibreOffice');
