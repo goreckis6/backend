@@ -40,9 +40,15 @@ def convert_dng_to_webp(dng_file, output_file, quality=95, lossless=False, width
         print("Opening DNG file with rawpy...")
         with rawpy.imread(dng_file) as raw:
             print(f"Raw image info: {raw.sizes}")
-            print(f"Color description: {raw.color_description}")
-            print(f"White balance: {raw.camera_whitebalance}")
-            print(f"Color matrix: {raw.color_matrix}")
+            # Try to print optional attributes if they exist
+            try:
+                print(f"White balance: {raw.camera_whitebalance}")
+            except (AttributeError, ValueError):
+                print("White balance: Not available")
+            try:
+                print(f"Color matrix: {raw.color_matrix}")
+            except (AttributeError, ValueError):
+                print("Color matrix: Not available")
             
             # Process the raw image
             print("Processing raw image...")
