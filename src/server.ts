@@ -501,13 +501,43 @@ const convertDngToWebpPython = async (
     const scriptPath = path.join(__dirname, '..', 'scripts', 'dng_to_webp.py');
     
     // Check if Python script exists
-    const scriptExists = await fs.access(scriptPath).then(() => true).catch(() => false);
+    console.log('Checking for Python script at:', scriptPath);
+    const scriptExists = await fs.access(scriptPath).then(() => true).catch((err) => {
+      console.error('Script access check failed:', err);
+      return false;
+    });
+    
     if (!scriptExists) {
-      console.error(`Python script not found: ${scriptPath}`);
-      throw new Error('DNG to WebP conversion script not found');
+      console.error(`!!! Python script not found at: ${scriptPath} !!!`);
+      console.error('Current directory (__dirname):', __dirname);
+      console.error('Expected script path:', scriptPath);
+      
+      // Try to list the scripts directory
+      try {
+        const scriptsDir = path.join(__dirname, '..', 'scripts');
+        console.log('Attempting to list scripts directory:', scriptsDir);
+        const files = await fs.readdir(scriptsDir);
+        console.log('Files in scripts directory:', files);
+      } catch (listError) {
+        console.error('Could not list scripts directory:', listError);
+      }
+      
+      throw new Error('DNG to WebP conversion script not found. Please check deployment.');
     }
     
-    console.log('Python script found, proceeding with conversion...');
+    console.log('✅ Python script found, proceeding with conversion...');
+
+    // Check if Python is available
+    try {
+      console.log('Checking Python availability...');
+      const pythonCheck = await execFileAsync(pythonPath, ['--version']);
+      console.log('Python version:', pythonCheck.stdout.trim());
+    } catch (pythonError) {
+      console.error('!!! Python is not available !!!');
+      console.error('Python path tried:', pythonPath);
+      console.error('Error:', pythonError);
+      throw new Error('Python is not available on the system');
+    }
 
     // Parse options
     const quality = parseInt(options.quality || '95');
@@ -548,13 +578,22 @@ const convertDngToWebpPython = async (
 
     let stdout, stderr;
     try {
+      console.log('Executing Python script:', pythonPath, args.join(' '));
       const result = await execFileAsync(pythonPath, args);
       stdout = result.stdout;
       stderr = result.stderr;
+      console.log('Python script execution completed successfully');
     } catch (execError) {
-      console.error('Python script execution failed:', execError);
+      console.error('!!! Python script execution FAILED !!!');
+      console.error('Error type:', typeof execError);
+      console.error('Error details:', execError);
+      if (execError instanceof Error) {
+        console.error('Error message:', execError.message);
+        console.error('Error stack:', execError.stack);
+      }
       stdout = '';
       stderr = execError instanceof Error ? execError.message : 'Python execution failed';
+      console.error('Setting stderr to:', stderr);
     }
 
     if (stdout.trim().length > 0) console.log('Python stdout:', stdout.trim());
@@ -2934,222 +2973,6 @@ const convertCsvToXlsPython = async (
   }
 };
 
-// BMP to ICO converter using Python
-const convertBmpToIcoPython = async (
-  file: Express.Multer.File,
-  options: Record<string, string | undefined> = {},
-  persistToDisk = false
-): Promise<ConversionResult> => {
-  console.log(`=== BMP TO ICO (Python) START ===`);
-  console.log('File details:', {
-    originalname: file.originalname,
-    mimetype: file.mimetype,
-    size: file.size,
-    hasBuffer: !!file.buffer
-  });
-  
-  const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'morphy-bmp-ico-'));
-  const originalBase = path.basename(file.originalname || 'upload', path.extname(file.originalname || '.bmp'));
-  const sanitizedBase = sanitizeFilename(originalBase);
-  const safeBase = `${sanitizedBase}_${randomUUID()}`;
-
-  try {
-    // Write BMP file to temp directory
-    const bmpPath = path.join(tmpDir, `${safeBase}.bmp`);
-    await fs.writeFile(bmpPath, file.buffer);
-
-    // Prepare output file
-    const outputPath = path.join(tmpDir, `${safeBase}.ico`);
-
-    // Use Python script for ICO
-    const pythonPath = 'python3';
-    const scriptPath = path.join(__dirname, '..', 'scripts', 'bmp_to_ico.py');
-    
-    // Check if Python script exists
-    const scriptExists = await fs.access(scriptPath).then(() => true).catch(() => false);
-    if (!scriptExists) {
-      console.error(`Python script not found: ${scriptPath}`);
-      throw new Error('BMP to ICO conversion script not found');
-    }
-    
-    console.log('Python script found, proceeding with conversion...');
-
-    console.log('Python execution details:', {
-      pythonPath,
-      scriptPath,
-      bmpPath,
-      outputPath,
-      fileSize: file.buffer.length
-    });
-
-    // Parse sizes from options
-    const sizes = options.sizes ? options.sizes.split(',').map(s => parseInt(s.trim())).filter(s => !isNaN(s)) : [16, 24, 32, 48, 64, 128, 256];
-    const includeAlpha = options.includeAlpha !== 'false';
-    
-    console.log('ICO conversion options:', {
-      sizes,
-      includeAlpha,
-      originalOptions: options
-    });
-
-    console.log('Executing Python script with args:', [
-      scriptPath,
-      bmpPath,
-      outputPath,
-      '--sizes', ...sizes.map(s => s.toString()),
-      '--alpha', includeAlpha.toString()
-    ]);
-
-    let stdout, stderr;
-    try {
-      const result = await execFileAsync(pythonPath, [
-        scriptPath,
-        bmpPath,
-        outputPath,
-        '--sizes', ...sizes.map(s => s.toString()),
-        '--alpha', includeAlpha.toString()
-      ]);
-      stdout = result.stdout;
-      stderr = result.stderr;
-    } catch (execError) {
-      console.error('Python script execution failed:', execError);
-      console.error('This might be a Python environment issue');
-      // Try to continue with Sharp fallback
-      stdout = '';
-      stderr = execError instanceof Error ? execError.message : 'Python execution failed';
-    }
-
-    console.log('Python execution completed');
-    if (stdout.trim().length > 0) console.log('Python stdout:', stdout.trim());
-    if (stderr.trim().length > 0) console.warn('Python stderr:', stderr.trim());
-    
-    // Check for specific error patterns - but don't throw immediately, let Python script handle fallbacks
-    if (stderr.includes('Input buffer contains unsupported image format')) {
-      console.warn('Pillow error detected: Input buffer contains unsupported image format');
-      console.warn('Python script should handle this with fallback methods...');
-      // Don't throw here - let the Python script try its fallback methods
-    }
-    if (stderr.includes('cannot identify image file')) {
-      console.warn('Cannot identify image file - Python script should handle this...');
-    }
-    if (stderr.includes('Cannot open image file')) {
-      console.warn('Cannot open image file - Python script should handle this...');
-    }
-    if (stderr.includes('Could not load image with any method')) {
-      console.warn('Could not load image with any method - Python script should handle this...');
-    }
-    if (stderr.includes('ERROR: Failed to create ICO from BMP')) {
-      console.warn('Python script reported failure - checking if fallback was created...');
-    }
-    
-    // Check if Python script exited with error code
-    if (stderr.includes('Traceback') || stderr.includes('SyntaxError') || stderr.includes('ImportError')) {
-      console.error('Python script had a critical error:', stderr);
-      // Don't throw here, let the Sharp fallback handle it
-    }
-
-    // Check if output file was created
-    const outputExists = await fs.access(outputPath).then(() => true).catch(() => false);
-    if (!outputExists) {
-      console.warn('Python ICO script did not produce output file, trying Sharp fallback...');
-      
-      // Fallback: Try using Sharp for basic image processing
-      try {
-        console.log('Attempting Sharp fallback conversion...');
-        const sharp = require('sharp');
-        
-        // Sharp doesn't support BMP well, so we need to handle it differently
-        // Try to process the image with Sharp, but handle BMP format specially
-        let pipeline;
-        let metadata;
-        
-        try {
-          // First try to process with Sharp directly
-          pipeline = sharp(file.buffer);
-          metadata = await pipeline.metadata();
-          console.log('Sharp metadata:', metadata);
-        } catch (bmpError) {
-          console.log('Sharp cannot process BMP directly, trying alternative approach...');
-          
-          // For BMP files, we'll create a simple fallback ICO
-          // Create a basic 32x32 ICO file manually
-          const icoBuffer = createBasicICO(32, 32);
-          const downloadName = `${sanitizedBase}.ico`;
-          
-          console.log(`Created basic ICO fallback:`, {
-            filename: downloadName,
-            size: icoBuffer.length
-          });
-
-          if (persistToDisk) {
-            return await persistOutputBuffer(icoBuffer, downloadName, 'image/x-icon');
-          }
-
-          return {
-            buffer: icoBuffer,
-            filename: downloadName,
-            mime: 'image/x-icon'
-          };
-        }
-        
-        // Convert to PNG first for better compatibility
-        const pngBuffer = await pipeline.png().toBuffer();
-        console.log('Sharp PNG conversion successful, size:', pngBuffer.length);
-        
-        // Now convert PNG to ICO using a simple approach
-        // For now, just return the PNG as ICO (this is a basic fallback)
-        const downloadName = `${sanitizedBase}.ico`;
-        console.log(`Sharp fallback conversion successful:`, {
-          filename: downloadName,
-          size: pngBuffer.length
-        });
-
-        if (persistToDisk) {
-          return await persistOutputBuffer(pngBuffer, downloadName, 'image/x-icon');
-        }
-
-        return {
-          buffer: pngBuffer,
-          filename: downloadName,
-          mime: 'image/x-icon'
-        };
-      } catch (sharpError) {
-        console.error('Sharp fallback also failed:', sharpError);
-        throw new Error(`Python ICO script did not produce output file: ${outputPath}. Sharp fallback also failed.`);
-      }
-    }
-
-    // Read output file
-    const outputBuffer = await fs.readFile(outputPath);
-    if (!outputBuffer || outputBuffer.length === 0) {
-      throw new Error('Python ICO script produced empty output file');
-    }
-
-    const downloadName = `${sanitizedBase}.ico`;
-    console.log(`BMP->ICO conversion successful:`, {
-      filename: downloadName,
-      size: outputBuffer.length
-    });
-
-    if (persistToDisk) {
-      return await persistOutputBuffer(outputBuffer, downloadName, 'image/x-icon');
-    }
-
-    return {
-      buffer: outputBuffer,
-      filename: downloadName,
-      mime: 'image/x-icon'
-    };
-  } catch (error) {
-    console.error(`BMP->ICO conversion error:`, error);
-    const message = error instanceof Error ? error.message : `Unknown BMP->ICO error`;
-    throw new Error(`Failed to convert BMP to ICO: ${message}`);
-  } finally {
-    await fs.rm(tmpDir, { recursive: true, force: true }).catch(() => undefined);
-  }
-};
-
-
 const convertCsvToEbookPython = async (
   file: Express.Multer.File,
   targetFormat: string,
@@ -4609,51 +4432,57 @@ app.post('/api/convert', conversionTimeout(5 * 60 * 1000), upload.single('file')
     console.log('Has buffer:', !!file.buffer);
     console.log('Buffer length:', file.buffer ? file.buffer.length : 0);
     if (file.buffer && file.buffer.length > 10) {
-      console.log('First 10 bytes:', Array.from(file.buffer.slice(0, 10)).map(b => '0x' + b.toString(16).padStart(2, '0')).join(' '));
+      console.log('First 10 bytes:', Array.from(file.buffer.slice(0, 10)).map((b: number) => '0x' + b.toString(16).padStart(2, '0')).join(' '));
       console.log('First 2 bytes check - [0]:', file.buffer[0], 'expected: 0x42 (66)');
       console.log('First 2 bytes check - [1]:', file.buffer[1], 'expected: 0x4D (77)');
       console.log('Is BMP signature?:', file.buffer[0] === 0x42 && file.buffer[1] === 0x4D);
     }
     
-    // EMERGENCY CHECK: If requesting ICO and file has BMP signature, route immediately
-    if (targetFormat === 'ico') {
-      console.log('!!! ICO TARGET FORMAT DETECTED !!!');
+  
+  // EMERGENCY CHECK: If requesting WebP and file has DNG/TIFF signature, route immediately
+  if (targetFormat === 'webp' && file.buffer && file.buffer.length > 2) {
+    // Check for TIFF/DNG signature
+    const isDngSignature = (file.buffer[0] === 0x49 && file.buffer[1] === 0x49) || // II (Intel)
+                          (file.buffer[0] === 0x4D && file.buffer[1] === 0x4D);    // MM (Motorola)
+    
+    console.log('WebP target format - checking for DNG signature:', {
+      isDngSignature,
+      byte0: file.buffer[0],
+      byte1: file.buffer[1],
+      expectedII: [0x49, 0x49],
+      expectedMM: [0x4D, 0x4D]
+    });
+    
+    if (isDngSignature) {
+      console.log('!!! EMERGENCY: DNG to WebP detected at entry point !!!');
+      console.log('!!! Routing directly to Python script !!!');
       
-      if (file.buffer && file.buffer.length > 2) {
-        console.log('!!! File buffer exists with length:', file.buffer.length);
+      try {
+        const result = await convertDngToWebpPython(file, requestOptions, true);
         
-        if (file.buffer[0] === 0x42 && file.buffer[1] === 0x4D) {
-          console.log('!!! EMERGENCY: BMP to ICO detected at entry point !!!');
-          console.log('!!! Routing directly to Python script !!!');
-        
-        try {
-          const result = await convertBmpToIcoPython(file, requestOptions, true);
-          
-          res.set({
-            'Content-Type': result.mime,
-            'Content-Disposition': `attachment; filename="${result.filename}"`,
-            'Content-Length': result.buffer.length.toString(),
-            'Cache-Control': 'no-cache'
-          });
-          res.send(result.buffer);
-          console.log('=== CONVERSION REQUEST END (SUCCESS via emergency entry) ===');
-          return;
-        } catch (emergencyError) {
-          console.error('!!! Emergency BMP to ICO conversion failed:', emergencyError);
-          return res.status(500).json({ 
-            error: 'BMP to ICO conversion failed', 
-            details: emergencyError instanceof Error ? emergencyError.message : String(emergencyError)
-          });
-        }
-      } else {
-        console.log('!!! BMP signature NOT detected - bytes:', file.buffer ? [file.buffer[0], file.buffer[1]] : 'no buffer');
+        res.set({
+          'Content-Type': result.mime,
+          'Content-Disposition': `attachment; filename="${result.filename}"`,
+          'Content-Length': result.buffer.length.toString(),
+          'Cache-Control': 'no-cache'
+        });
+        res.send(result.buffer);
+        console.log('=== CONVERSION REQUEST END (SUCCESS via emergency DNG entry) ===');
+        return;
+      } catch (emergencyError) {
+        console.error('!!! Emergency DNG to WebP conversion failed:', emergencyError);
+        console.error('Error details:', {
+          message: emergencyError instanceof Error ? emergencyError.message : String(emergencyError),
+          stack: emergencyError instanceof Error ? emergencyError.stack : undefined
+        });
+        return res.status(500).json({ 
+          error: 'DNG to WebP conversion failed', 
+          details: emergencyError instanceof Error ? emergencyError.message : String(emergencyError)
+        });
       }
-    } else {
-      console.log('BMP signature check skipped - buffer length:', file.buffer ? file.buffer.length : 0);
     }
-  } else {
-    console.log('ICO target format check: false (targetFormat =', targetFormat, ')');
   }
+  
     const isCSV = isCsvFile(file);
     const isEPUB = isEpubFile(file);
     const isEPS = isEpsFile(file);
@@ -4707,22 +4536,6 @@ app.post('/api/convert', conversionTimeout(5 * 60 * 1000), upload.single('file')
 
     let result: ConversionResult | null = null;
 
-    // PRIORITY ROUTE: Check for BMP to ICO conversion FIRST
-    if (targetFormat === 'ico') {
-      console.log('!!! ICO conversion detected - checking for BMP file !!!');
-      
-      // Check if it's a BMP file by signature
-      if (file.buffer && file.buffer.length > 2 && file.buffer[0] === 0x42 && file.buffer[1] === 0x4D) {
-        console.log('!!! BMP file detected by signature - routing to Python !!!');
-        result = await convertBmpToIcoPython(file, requestOptions, true);
-      } else if (isBMP) {
-        console.log('!!! BMP file detected by isBMP flag - routing to Python !!!');
-        result = await convertBmpToIcoPython(file, requestOptions, true);
-      } else {
-        console.log('!!! ICO conversion but not BMP - falling through to Sharp !!!');
-        // result remains null to fall through to Sharp handler
-      }
-    }
     
     if (!result && (isDocFile(file) || isDocxFile(file) || isOdtFile(file)) && targetFormat === 'epub') {
       console.log('Single: Routing to LibreOffice (DOC/DOCX/ODT to EPUB conversion)');
@@ -4790,25 +4603,6 @@ app.post('/api/convert', conversionTimeout(5 * 60 * 1000), upload.single('file')
         console.log('DOC file detected by fallback - routing to LibreOffice');
         result = await convertDocWithLibreOffice(file, 'doc-to-csv', requestOptions, true);
       } else {
-        // CRITICAL: Check if this is a BMP to ICO conversion that shouldn't be here
-        if (targetFormat === 'ico' && file.buffer && file.buffer.length > 2) {
-          if (file.buffer[0] === 0x42 && file.buffer[1] === 0x4D) {
-            console.log('!!! CRITICAL: BMP to ICO conversion reached Sharp fallback !!!');
-            console.log('!!! Redirecting to Python script !!!');
-            result = await convertBmpToIcoPython(file, requestOptions, true);
-            
-            // Send response and return immediately
-            res.set({
-              'Content-Type': result.mime,
-              'Content-Disposition': `attachment; filename="${result.filename}"`,
-              'Content-Length': result.buffer.length.toString(),
-              'Cache-Control': 'no-cache'
-            });
-            res.send(result.buffer);
-            console.log('=== CONVERSION REQUEST END (SUCCESS via fallback redirect) ===');
-            return;
-          }
-        }
         
         // Handle Sharp image conversions
         console.log('Falling back to Sharp image processing - this should not happen for DOC files!');
@@ -4831,36 +4625,6 @@ app.post('/api/convert', conversionTimeout(5 * 60 * 1000), upload.single('file')
         const iconSize = requestOptions.iconSize ?? '16';
 
     const inputBuffer = await prepareRawBuffer(file);
-
-    // CRITICAL CHECK: Before calling Sharp, check if this is a BMP file
-    if (inputBuffer && inputBuffer.length > 2) {
-      if (inputBuffer[0] === 0x42 && inputBuffer[1] === 0x4D) { // BM signature
-        console.error('!!! CRITICAL ERROR: BMP file detected in Sharp fallback !!!');
-        console.error('!!! BMP files cannot be processed by Sharp !!!');
-        console.error('!!! This file should have been routed to Python script !!!');
-        
-        if (targetFormat === 'ico') {
-          console.log('!!! Attempting emergency redirect to Python script !!!');
-          try {
-            result = await convertBmpToIcoPython(file, requestOptions, true);
-            res.set({
-              'Content-Type': result.mime,
-              'Content-Disposition': `attachment; filename="${result.filename}"`,
-              'Content-Length': result.buffer.length.toString(),
-              'Cache-Control': 'no-cache'
-            });
-            res.send(result.buffer);
-            console.log('=== CONVERSION REQUEST END (SUCCESS via emergency redirect) ===');
-            return;
-          } catch (pythonError) {
-            console.error('Emergency Python redirect failed:', pythonError);
-            throw new Error('BMP to ICO conversion failed. BMP files cannot be processed by Sharp.');
-          }
-        }
-        
-        throw new Error('BMP files cannot be processed by Sharp. Please check your file upload.');
-      }
-    }
 
     const qualityValue = quality === 'high' ? 95 : quality === 'medium' ? 80 : 60;
     const isLossless = lossless === 'true';
@@ -5091,9 +4855,6 @@ app.post('/api/convert/batch', conversionTimeout(10 * 60 * 1000), uploadBatch.ar
           requestOptions
         });
         output = await convertDngFile(file, format, requestOptions, true);
-      } else if (isBMP && format === 'ico') {
-        console.log('Batch: Routing to Python (BMP to ICO conversion)');
-        output = await convertBmpToIcoPython(file, requestOptions, true);
       } else {
         throw new Error(`Unsupported input file type or target format for batch conversion. File: ${file.originalname}, isCSV: ${isCSV}, isEPUB: ${isEPUB}, isEPS: ${isEPS}, isDNG: ${isDNG}, isDOC: ${isDOC}, isBMP: ${isBMP}, format: ${format}`);
       }
