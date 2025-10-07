@@ -4608,7 +4608,7 @@ app.post('/api/convert', conversionTimeout(5 * 60 * 1000), upload.single('file')
     const isEPS = isEpsFile(file);
     const isDNG = isDngFile(file);
     const isDOC = isDocFile(file);
-    const isBMP = isBmpFile(file);
+    let isBMP = isBmpFile(file);
     
     console.log('File type detection:', {
       targetFormat,
