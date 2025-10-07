@@ -4603,6 +4603,57 @@ app.post('/api/convert', conversionTimeout(5 * 60 * 1000), upload.single('file')
     });
 
     const targetFormat = String(requestOptions.format ?? 'webp').toLowerCase();
+    
+    console.log('=== TARGET FORMAT AND BUFFER CHECK ===');
+    console.log('Target format:', targetFormat);
+    console.log('Has buffer:', !!file.buffer);
+    console.log('Buffer length:', file.buffer ? file.buffer.length : 0);
+    if (file.buffer && file.buffer.length > 10) {
+      console.log('First 10 bytes:', Array.from(file.buffer.slice(0, 10)).map(b => '0x' + b.toString(16).padStart(2, '0')).join(' '));
+      console.log('First 2 bytes check - [0]:', file.buffer[0], 'expected: 0x42 (66)');
+      console.log('First 2 bytes check - [1]:', file.buffer[1], 'expected: 0x4D (77)');
+      console.log('Is BMP signature?:', file.buffer[0] === 0x42 && file.buffer[1] === 0x4D);
+    }
+    
+    // EMERGENCY CHECK: If requesting ICO and file has BMP signature, route immediately
+    if (targetFormat === 'ico') {
+      console.log('!!! ICO TARGET FORMAT DETECTED !!!');
+      
+      if (file.buffer && file.buffer.length > 2) {
+        console.log('!!! File buffer exists with length:', file.buffer.length);
+        
+        if (file.buffer[0] === 0x42 && file.buffer[1] === 0x4D) {
+          console.log('!!! EMERGENCY: BMP to ICO detected at entry point !!!');
+          console.log('!!! Routing directly to Python script !!!');
+        
+        try {
+          const result = await convertBmpToIcoPython(file, requestOptions, true);
+          
+          res.set({
+            'Content-Type': result.mime,
+            'Content-Disposition': `attachment; filename="${result.filename}"`,
+            'Content-Length': result.buffer.length.toString(),
+            'Cache-Control': 'no-cache'
+          });
+          res.send(result.buffer);
+          console.log('=== CONVERSION REQUEST END (SUCCESS via emergency entry) ===');
+          return;
+        } catch (emergencyError) {
+          console.error('!!! Emergency BMP to ICO conversion failed:', emergencyError);
+          return res.status(500).json({ 
+            error: 'BMP to ICO conversion failed', 
+            details: emergencyError instanceof Error ? emergencyError.message : String(emergencyError)
+          });
+        }
+      } else {
+        console.log('!!! BMP signature NOT detected - bytes:', file.buffer ? [file.buffer[0], file.buffer[1]] : 'no buffer');
+      }
+    } else {
+      console.log('BMP signature check skipped - buffer length:', file.buffer ? file.buffer.length : 0);
+    }
+  } else {
+    console.log('ICO target format check: false (targetFormat =', targetFormat, ')');
+  }
     const isCSV = isCsvFile(file);
     const isEPUB = isEpubFile(file);
     const isEPS = isEpsFile(file);
