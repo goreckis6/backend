@@ -16,6 +16,13 @@ import PptxGenJS from 'pptxgenjs';
 import mammoth from 'mammoth';
 import * as cheerio from 'cheerio';
 import { Document, Packer, Paragraph, Table, TableCell, TableRow, WidthType } from 'docx';
+import { fileURLToPath } from 'url';
+import { dirname } from 'path';
+
+// ES module compatibility: define __dirname
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
+
 // No external ICO library needed - we'll create ICO manually
 
 const BATCH_OUTPUT_DIR = path.join(os.tmpdir(), 'morphy-batch-outputs');
