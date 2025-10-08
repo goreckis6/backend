@@ -5707,22 +5707,64 @@ app.post('/api/preview/docx', uploadDocument.single('file'), async (req, res) =>
       size: file.size
     });
 
-    // Use mammoth to convert DOCX to HTML
-    const result = await mammoth.convertToHtml({ buffer: file.buffer });
-    const html = result.value; // The HTML content
-    const messages = result.messages; // Any warnings/errors
+    // Save DOCX file to temp location
+    const docxPath = path.join(tmpDir, 'input.docx');
+    await fs.writeFile(docxPath, file.buffer);
 
-    if (messages && messages.length > 0) {
-      console.log('Mammoth conversion messages:', messages);
+    // Use Python script with LibreOffice to convert DOCX to HTML
+    const pythonPath = process.env.PYTHON_PATH || 'python3';
+    const scriptPath = path.join(__dirname, '..', 'viewers', 'docx_to_html.py');
+    const htmlPath = path.join(tmpDir, 'output.html');
+
+    // Check if script exists
+    const scriptExists = await fs.access(scriptPath).then(() => true).catch(() => false);
+    if (!scriptExists) {
+      console.error(`Python script not found: ${scriptPath}`);
+      return res.status(500).json({ error: 'DOCX preview script not found' });
     }
+
+    const args = [
+      scriptPath,
+      docxPath,
+      htmlPath
+    ];
+
+    console.log('Executing Python script:', { pythonPath, scriptPath, args });
+
+    let stdout, stderr;
+    try {
+      const result = await execFileAsync(pythonPath, args);
+      stdout = result.stdout;
+      stderr = result.stderr;
+    } catch (execError: any) {
+      console.error('Python script execution failed:', execError);
+      stdout = execError.stdout || '';
+      stderr = execError.stderr || execError.message || 'Python execution failed';
+    }
+
+    if (stdout.trim().length > 0) console.log('Python stdout:', stdout.trim());
+    if (stderr.trim().length > 0) console.warn('Python stderr:', stderr.trim());
+    
+    // Check for errors
+    if (stderr.includes('ERROR:') || stderr.includes('Traceback')) {
+      throw new Error(`Python script error: ${stderr}`);
+    }
+
+    // Check if output file was created
+    const htmlExists = await fs.access(htmlPath).then(() => true).catch(() => false);
+    if (!htmlExists) {
+      throw new Error(`Python script did not produce HTML preview: ${htmlPath}`);
+    }
+
+    // Read HTML file
+    const html = await fs.readFile(htmlPath, 'utf-8');
 
     console.log('DOCX preview successful:', {
       inputSize: file.size,
-      outputLength: html.length,
-      warnings: messages.length
+      outputLength: html.length
     });
 
-    // Send HTML wrapped in a styled document
+    // Send HTML wrapped in a styled document with A4 page layout
     const styledHtml = `
       <!DOCTYPE html>
       <html>
@@ -5730,56 +5772,29 @@ app.post('/api/preview/docx', uploadDocument.single('file'), async (req, res) =>
         <meta charset="UTF-8">
         <title>${file.originalname}</title>
         <style>
+          * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+          }
           body {
             font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            max-width: 800px;
-            margin: 0 auto;
-            padding: 40px 20px;
-            background: #f5f5f5;
+            background: #525659;
             color: #333;
             line-height: 1.6;
-          }
-          .document-container {
-            background: white;
-            padding: 60px;
-            box-shadow: 0 0 20px rgba(0,0,0,0.1);
-            border-radius: 8px;
-          }
-          h1, h2, h3, h4, h5, h6 {
-            margin-top: 1.5em;
-            margin-bottom: 0.5em;
-            color: #2c3e50;
-          }
-          p { margin-bottom: 1em; }
-          table {
-            border-collapse: collapse;
-            width: 100%;
-            margin: 1em 0;
-          }
-          table, th, td {
-            border: 1px solid #ddd;
-          }
-          th, td {
-            padding: 12px;
-            text-align: left;
-          }
-          th {
-            background-color: #f8f9fa;
-            font-weight: bold;
-          }
-          img {
-            max-width: 100%;
-            height: auto;
+            padding: 20px 0;
           }
           .toolbar {
+            position: sticky;
+            top: 0;
             background: #2c3e50;
             color: white;
             padding: 15px 20px;
-            margin: -40px -20px 20px -20px;
-            border-radius: 8px 8px 0 0;
             display: flex;
             justify-content: space-between;
             align-items: center;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+            z-index: 1000;
           }
           .toolbar button {
             background: #3498db;
@@ -5789,9 +5804,88 @@ app.post('/api/preview/docx', uploadDocument.single('file'), async (req, res) =>
             border-radius: 4px;
             cursor: pointer;
             margin-left: 10px;
+            font-size: 14px;
           }
           .toolbar button:hover {
             background: #2980b9;
+          }
+          .page-container {
+            max-width: 210mm;
+            margin: 20px auto;
+            padding: 0 10px;
+          }
+          .page {
+            width: 210mm;
+            min-height: 297mm;
+            padding: 20mm;
+            margin-bottom: 20px;
+            background: white;
+            box-shadow: 0 0 10px rgba(0,0,0,0.3);
+            page-break-after: always;
+          }
+          .page:last-child {
+            margin-bottom: 0;
+          }
+          h1, h2, h3, h4, h5, h6 {
+            margin-top: 1.2em;
+            margin-bottom: 0.6em;
+            color: #2c3e50;
+            page-break-after: avoid;
+          }
+          h1 { font-size: 2em; }
+          h2 { font-size: 1.5em; }
+          h3 { font-size: 1.17em; }
+          p { 
+            margin-bottom: 1em;
+            text-align: justify;
+          }
+          table {
+            border-collapse: collapse;
+            width: 100%;
+            margin: 1em 0;
+            page-break-inside: avoid;
+          }
+          table, th, td {
+            border: 1px solid #ddd;
+          }
+          th, td {
+            padding: 8px 12px;
+            text-align: left;
+          }
+          th {
+            background-color: #f8f9fa;
+            font-weight: bold;
+          }
+          img {
+            max-width: 100%;
+            height: auto;
+            page-break-inside: avoid;
+          }
+          ul, ol {
+            margin-left: 2em;
+            margin-bottom: 1em;
+          }
+          li {
+            margin-bottom: 0.5em;
+          }
+          @media print {
+            body {
+              background: white;
+              padding: 0;
+            }
+            .toolbar {
+              display: none;
+            }
+            .page-container {
+              max-width: 100%;
+              margin: 0;
+              padding: 0;
+            }
+            .page {
+              margin: 0;
+              box-shadow: none;
+              page-break-after: always;
+            }
           }
         </style>
       </head>
@@ -5803,8 +5897,10 @@ app.post('/api/preview/docx', uploadDocument.single('file'), async (req, res) =>
             <button onclick="window.close()">✖️ Close</button>
           </div>
         </div>
-        <div class="document-container">
-          ${html}
+        <div class="page-container">
+          <div class="page">
+            ${html}
+          </div>
         </div>
       </body>
       </html>
@@ -5847,7 +5943,7 @@ app.post('/api/preview/rtf', uploadDocument.single('file'), async (req, res) => 
 
     // Use Python script with LibreOffice/Pandoc to convert RTF to HTML
     const pythonPath = process.env.PYTHON_PATH || 'python3';
-    const scriptPath = path.join(__dirname, '..', 'scripts', 'rtf_to_html.py');
+    const scriptPath = path.join(__dirname, '..', 'viewers', 'rtf_to_html.py');
     const htmlPath = path.join(tmpDir, 'output.html');
 
     // Check if script exists
@@ -5893,7 +5989,7 @@ app.post('/api/preview/rtf', uploadDocument.single('file'), async (req, res) => 
     // Read HTML file
     let htmlContent = await fs.readFile(htmlPath, 'utf-8');
     
-    // Wrap HTML in styled template
+    // Wrap HTML in styled template with A4 page layout
     const styledHtml = `
       <!DOCTYPE html>
       <html>
@@ -5901,56 +5997,29 @@ app.post('/api/preview/rtf', uploadDocument.single('file'), async (req, res) => 
         <meta charset="UTF-8">
         <title>${file.originalname}</title>
         <style>
+          * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+          }
           body {
             font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            max-width: 800px;
-            margin: 0 auto;
-            padding: 40px 20px;
-            background: #f5f5f5;
+            background: #525659;
             color: #333;
             line-height: 1.6;
-          }
-          .document-container {
-            background: white;
-            padding: 60px;
-            box-shadow: 0 0 20px rgba(0,0,0,0.1);
-            border-radius: 8px;
-          }
-          h1, h2, h3, h4, h5, h6 {
-            margin-top: 1.5em;
-            margin-bottom: 0.5em;
-            color: #2c3e50;
-          }
-          p { margin-bottom: 1em; }
-          table {
-            border-collapse: collapse;
-            width: 100%;
-            margin: 1em 0;
-          }
-          table, th, td {
-            border: 1px solid #ddd;
-          }
-          th, td {
-            padding: 12px;
-            text-align: left;
-          }
-          th {
-            background-color: #f8f9fa;
-            font-weight: bold;
-          }
-          img {
-            max-width: 100%;
-            height: auto;
+            padding: 20px 0;
           }
           .toolbar {
+            position: sticky;
+            top: 0;
             background: #d35400;
             color: white;
             padding: 15px 20px;
-            margin: -40px -20px 20px -20px;
-            border-radius: 8px 8px 0 0;
             display: flex;
             justify-content: space-between;
             align-items: center;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+            z-index: 1000;
           }
           .toolbar button {
             background: #e67e22;
@@ -5960,9 +6029,88 @@ app.post('/api/preview/rtf', uploadDocument.single('file'), async (req, res) => 
             border-radius: 4px;
             cursor: pointer;
             margin-left: 10px;
+            font-size: 14px;
           }
           .toolbar button:hover {
             background: #f39c12;
+          }
+          .page-container {
+            max-width: 210mm;
+            margin: 20px auto;
+            padding: 0 10px;
+          }
+          .page {
+            width: 210mm;
+            min-height: 297mm;
+            padding: 20mm;
+            margin-bottom: 20px;
+            background: white;
+            box-shadow: 0 0 10px rgba(0,0,0,0.3);
+            page-break-after: always;
+          }
+          .page:last-child {
+            margin-bottom: 0;
+          }
+          h1, h2, h3, h4, h5, h6 {
+            margin-top: 1.2em;
+            margin-bottom: 0.6em;
+            color: #2c3e50;
+            page-break-after: avoid;
+          }
+          h1 { font-size: 2em; }
+          h2 { font-size: 1.5em; }
+          h3 { font-size: 1.17em; }
+          p { 
+            margin-bottom: 1em;
+            text-align: justify;
+          }
+          table {
+            border-collapse: collapse;
+            width: 100%;
+            margin: 1em 0;
+            page-break-inside: avoid;
+          }
+          table, th, td {
+            border: 1px solid #ddd;
+          }
+          th, td {
+            padding: 8px 12px;
+            text-align: left;
+          }
+          th {
+            background-color: #f8f9fa;
+            font-weight: bold;
+          }
+          img {
+            max-width: 100%;
+            height: auto;
+            page-break-inside: avoid;
+          }
+          ul, ol {
+            margin-left: 2em;
+            margin-bottom: 1em;
+          }
+          li {
+            margin-bottom: 0.5em;
+          }
+          @media print {
+            body {
+              background: white;
+              padding: 0;
+            }
+            .toolbar {
+              display: none;
+            }
+            .page-container {
+              max-width: 100%;
+              margin: 0;
+              padding: 0;
+            }
+            .page {
+              margin: 0;
+              box-shadow: none;
+              page-break-after: always;
+            }
           }
         </style>
       </head>
@@ -5974,8 +6122,10 @@ app.post('/api/preview/rtf', uploadDocument.single('file'), async (req, res) => 
             <button onclick="window.close()">✖️ Close</button>
           </div>
         </div>
-        <div class="document-container">
-          ${htmlContent}
+        <div class="page-container">
+          <div class="page">
+            ${htmlContent}
+          </div>
         </div>
       </body>
       </html>
@@ -6023,7 +6173,7 @@ app.post('/api/preview/odt', uploadDocument.single('file'), async (req, res) => 
 
     // Use Python script with LibreOffice to convert ODT to HTML
     const pythonPath = process.env.PYTHON_PATH || 'python3';
-    const scriptPath = path.join(__dirname, '..', 'scripts', 'odt_to_html.py');
+    const scriptPath = path.join(__dirname, '..', 'viewers', 'odt_to_html.py');
     const htmlPath = path.join(tmpDir, 'output.html');
 
     // Check if script exists
@@ -6069,7 +6219,7 @@ app.post('/api/preview/odt', uploadDocument.single('file'), async (req, res) => 
     // Read HTML file
     let htmlContent = await fs.readFile(htmlPath, 'utf-8');
     
-    // Wrap HTML in styled template
+    // Wrap HTML in styled template with A4 page layout
     const styledHtml = `
       <!DOCTYPE html>
       <html>
@@ -6077,56 +6227,29 @@ app.post('/api/preview/odt', uploadDocument.single('file'), async (req, res) => 
         <meta charset="UTF-8">
         <title>${file.originalname}</title>
         <style>
+          * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+          }
           body {
             font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            max-width: 800px;
-            margin: 0 auto;
-            padding: 40px 20px;
-            background: #f5f5f5;
+            background: #525659;
             color: #333;
             line-height: 1.6;
-          }
-          .document-container {
-            background: white;
-            padding: 60px;
-            box-shadow: 0 0 20px rgba(0,0,0,0.1);
-            border-radius: 8px;
-          }
-          h1, h2, h3, h4, h5, h6 {
-            margin-top: 1.5em;
-            margin-bottom: 0.5em;
-            color: #2c3e50;
-          }
-          p { margin-bottom: 1em; }
-          table {
-            border-collapse: collapse;
-            width: 100%;
-            margin: 1em 0;
-          }
-          table, th, td {
-            border: 1px solid #ddd;
-          }
-          th, td {
-            padding: 12px;
-            text-align: left;
-          }
-          th {
-            background-color: #f8f9fa;
-            font-weight: bold;
-          }
-          img {
-            max-width: 100%;
-            height: auto;
+            padding: 20px 0;
           }
           .toolbar {
+            position: sticky;
+            top: 0;
             background: #f59e0b;
             color: white;
             padding: 15px 20px;
-            margin: -40px -20px 20px -20px;
-            border-radius: 8px 8px 0 0;
             display: flex;
             justify-content: space-between;
             align-items: center;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+            z-index: 1000;
           }
           .toolbar button {
             background: #d97706;
@@ -6136,9 +6259,88 @@ app.post('/api/preview/odt', uploadDocument.single('file'), async (req, res) => 
             border-radius: 4px;
             cursor: pointer;
             margin-left: 10px;
+            font-size: 14px;
           }
           .toolbar button:hover {
             background: #b45309;
+          }
+          .page-container {
+            max-width: 210mm;
+            margin: 20px auto;
+            padding: 0 10px;
+          }
+          .page {
+            width: 210mm;
+            min-height: 297mm;
+            padding: 20mm;
+            margin-bottom: 20px;
+            background: white;
+            box-shadow: 0 0 10px rgba(0,0,0,0.3);
+            page-break-after: always;
+          }
+          .page:last-child {
+            margin-bottom: 0;
+          }
+          h1, h2, h3, h4, h5, h6 {
+            margin-top: 1.2em;
+            margin-bottom: 0.6em;
+            color: #2c3e50;
+            page-break-after: avoid;
+          }
+          h1 { font-size: 2em; }
+          h2 { font-size: 1.5em; }
+          h3 { font-size: 1.17em; }
+          p { 
+            margin-bottom: 1em;
+            text-align: justify;
+          }
+          table {
+            border-collapse: collapse;
+            width: 100%;
+            margin: 1em 0;
+            page-break-inside: avoid;
+          }
+          table, th, td {
+            border: 1px solid #ddd;
+          }
+          th, td {
+            padding: 8px 12px;
+            text-align: left;
+          }
+          th {
+            background-color: #f8f9fa;
+            font-weight: bold;
+          }
+          img {
+            max-width: 100%;
+            height: auto;
+            page-break-inside: avoid;
+          }
+          ul, ol {
+            margin-left: 2em;
+            margin-bottom: 1em;
+          }
+          li {
+            margin-bottom: 0.5em;
+          }
+          @media print {
+            body {
+              background: white;
+              padding: 0;
+            }
+            .toolbar {
+              display: none;
+            }
+            .page-container {
+              max-width: 100%;
+              margin: 0;
+              padding: 0;
+            }
+            .page {
+              margin: 0;
+              box-shadow: none;
+              page-break-after: always;
+            }
           }
         </style>
       </head>
@@ -6150,8 +6352,10 @@ app.post('/api/preview/odt', uploadDocument.single('file'), async (req, res) => 
             <button onclick="window.close()">✖️ Close</button>
           </div>
         </div>
-        <div class="document-container">
-          ${htmlContent}
+        <div class="page-container">
+          <div class="page">
+            ${htmlContent}
+          </div>
         </div>
       </body>
       </html>
