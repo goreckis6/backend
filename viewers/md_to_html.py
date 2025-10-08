@@ -99,11 +99,15 @@ def convert_md_to_html_python(md_file, html_file):
     
     try:
         import markdown
-        from markdown.extensions import tables, fenced_code, codehilite
         
-        # Read Markdown file
-        with open(md_file, 'r', encoding='utf-8') as f:
-            md_content = f.read()
+        # Read Markdown file with encoding detection
+        try:
+            with open(md_file, 'r', encoding='utf-8') as f:
+                md_content = f.read()
+        except UnicodeDecodeError:
+            # Try with different encoding
+            with open(md_file, 'r', encoding='utf-8', errors='replace') as f:
+                md_content = f.read()
         
         # Convert to HTML with extensions
         html_content = markdown.markdown(
@@ -125,12 +129,59 @@ def convert_md_to_html_python(md_file, html_file):
         print(f"HTML file created successfully: {file_size} bytes")
         return True
         
-    except ImportError:
-        print("WARNING: Python markdown library not found")
+    except ImportError as e:
+        print(f"WARNING: Python markdown library not found: {e}")
         print("Install with: pip install markdown")
         return False
     except Exception as e:
         print(f"ERROR: Python markdown conversion error: {e}")
+        traceback.print_exc()
+        return False
+
+def convert_md_to_html_simple(md_file, html_file):
+    """
+    Simple Markdown to HTML conversion (basic text with line breaks).
+    Last resort fallback if Pandoc and Python markdown are not available.
+    
+    Args:
+        md_file (str): Path to input Markdown file
+        html_file (str): Path to output HTML file
+    
+    Returns:
+        bool: True if conversion successful, False otherwise
+    """
+    print(f"Using simple Markdown text extraction...")
+    
+    try:
+        # Read Markdown file
+        with open(md_file, 'r', encoding='utf-8', errors='replace') as f:
+            md_content = f.read()
+        
+        # Very basic conversion - preserve line breaks and escape HTML
+        import html as html_lib
+        escaped_content = html_lib.escape(md_content)
+        # Convert line breaks to <br> tags
+        html_content = escaped_content.replace('\n', '<br>\n')
+        
+        # Wrap in basic HTML
+        full_html = f'''
+<div style="font-family: monospace; white-space: pre-wrap; word-wrap: break-word;">
+<p><em>Note: Basic text preview. For full Markdown rendering, Pandoc or Python markdown library is required.</em></p>
+<hr>
+{html_content}
+</div>
+'''
+        
+        # Write HTML file
+        with open(html_file, 'w', encoding='utf-8') as f:
+            f.write(full_html)
+        
+        file_size = os.path.getsize(html_file)
+        print(f"Simple HTML file created: {file_size} bytes")
+        return True
+        
+    except Exception as e:
+        print(f"ERROR: Simple conversion failed: {e}")
         traceback.print_exc()
         return False
 
@@ -162,13 +213,17 @@ def main():
         print("\nTrying Python markdown library...")
         success = convert_md_to_html_python(args.md_file, args.html_file)
     
+    # 3. Fall back to simple text extraction
+    if not success:
+        print("\nFalling back to simple text extraction...")
+        success = convert_md_to_html_simple(args.md_file, args.html_file)
+    
     if success:
         print("=== CONVERSION SUCCESSFUL ===")
         sys.exit(0)
     else:
         print("=== CONVERSION FAILED ===")
         print("ERROR: All conversion methods failed")
-        print("Please ensure Pandoc or Python markdown is installed")
         sys.exit(1)
 
 if __name__ == "__main__":
