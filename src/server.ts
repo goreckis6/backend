@@ -5659,6 +5659,140 @@ app.post('/api/preview/tiff', upload.single('file'), async (req, res) => {
   }
 });
 
+// DOCX Preview endpoint - convert DOCX to HTML for web viewing
+app.post('/api/preview/docx', upload.single('file'), async (req, res) => {
+  console.log('=== DOCX PREVIEW REQUEST ===');
+  const tmpDir = path.join(os.tmpdir(), `docx-preview-${Date.now()}`);
+  
+  try {
+    await fs.mkdir(tmpDir, { recursive: true });
+    
+    const file = req.file;
+    if (!file) {
+      return res.status(400).json({ error: 'No file uploaded' });
+    }
+
+    console.log('DOCX file received:', {
+      originalname: file.originalname,
+      mimetype: file.mimetype,
+      size: file.size
+    });
+
+    // Use mammoth to convert DOCX to HTML
+    const result = await mammoth.convertToHtml({ buffer: file.buffer });
+    const html = result.value; // The HTML content
+    const messages = result.messages; // Any warnings/errors
+
+    if (messages && messages.length > 0) {
+      console.log('Mammoth conversion messages:', messages);
+    }
+
+    console.log('DOCX preview successful:', {
+      inputSize: file.size,
+      outputLength: html.length,
+      warnings: messages.length
+    });
+
+    // Send HTML wrapped in a styled document
+    const styledHtml = `
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <meta charset="UTF-8">
+        <title>${file.originalname}</title>
+        <style>
+          body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 40px 20px;
+            background: #f5f5f5;
+            color: #333;
+            line-height: 1.6;
+          }
+          .document-container {
+            background: white;
+            padding: 60px;
+            box-shadow: 0 0 20px rgba(0,0,0,0.1);
+            border-radius: 8px;
+          }
+          h1, h2, h3, h4, h5, h6 {
+            margin-top: 1.5em;
+            margin-bottom: 0.5em;
+            color: #2c3e50;
+          }
+          p { margin-bottom: 1em; }
+          table {
+            border-collapse: collapse;
+            width: 100%;
+            margin: 1em 0;
+          }
+          table, th, td {
+            border: 1px solid #ddd;
+          }
+          th, td {
+            padding: 12px;
+            text-align: left;
+          }
+          th {
+            background-color: #f8f9fa;
+            font-weight: bold;
+          }
+          img {
+            max-width: 100%;
+            height: auto;
+          }
+          .toolbar {
+            background: #2c3e50;
+            color: white;
+            padding: 15px 20px;
+            margin: -40px -20px 20px -20px;
+            border-radius: 8px 8px 0 0;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+          }
+          .toolbar button {
+            background: #3498db;
+            color: white;
+            border: none;
+            padding: 8px 16px;
+            border-radius: 4px;
+            cursor: pointer;
+            margin-left: 10px;
+          }
+          .toolbar button:hover {
+            background: #2980b9;
+          }
+        </style>
+      </head>
+      <body>
+        <div class="toolbar">
+          <span><strong>📄 ${file.originalname}</strong></span>
+          <div>
+            <button onclick="window.print()">🖨️ Print</button>
+            <button onclick="window.close()">✖️ Close</button>
+          </div>
+        </div>
+        <div class="document-container">
+          ${html}
+        </div>
+      </body>
+      </html>
+    `;
+
+    res.set('Content-Type', 'text/html');
+    res.send(styledHtml);
+
+  } catch (error) {
+    console.error('DOCX preview error:', error);
+    const message = error instanceof Error ? error.message : 'Unknown DOCX preview error';
+    res.status(500).json({ error: `Failed to generate DOCX preview: ${message}` });
+  } finally {
+    await fs.rm(tmpDir, { recursive: true, force: true }).catch(() => undefined);
+  }
+});
+
 // Set server timeout for large file processing
 const server = app.listen(PORT, '0.0.0.0', () => {
   console.log(`Morpy backend running on port ${PORT}`);
