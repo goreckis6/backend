@@ -48,7 +48,7 @@ const scheduleBatchFileCleanup = (storedFilename: string) => {
 
 const execFileAsync = promisify(execFile);
 
-// Configure multer for document file uploads (DOCX, RTF, etc.)
+// Configure multer for document file uploads (DOCX, RTF, ODT, etc.)
 const uploadDocument = multer({
   storage: multer.memoryStorage(),
   limits: {
@@ -62,11 +62,12 @@ const uploadDocument = multer({
       'application/msword', // DOC
       'application/rtf', // RTF
       'text/rtf', // RTF alternative
+      'application/vnd.oasis.opendocument.text', // ODT
       'application/octet-stream' // Generic fallback
     ];
     
     const extension = file.originalname.split('.').pop()?.toLowerCase();
-    const allowedExtensions = ['docx', 'doc', 'docm', 'dotx', 'dotm', 'rtf'];
+    const allowedExtensions = ['docx', 'doc', 'docm', 'dotx', 'dotm', 'rtf', 'odt'];
     
     if (allowedMimes.includes(file.mimetype) || allowedExtensions.includes(extension || '')) {
       cb(null, true);
@@ -5992,6 +5993,182 @@ app.post('/api/preview/rtf', uploadDocument.single('file'), async (req, res) => 
     console.error('RTF preview error:', error);
     const message = error instanceof Error ? error.message : 'Unknown RTF preview error';
     res.status(500).json({ error: `Failed to generate RTF preview: ${message}` });
+  } finally {
+    await fs.rm(tmpDir, { recursive: true, force: true }).catch(() => undefined);
+  }
+});
+
+// ODT Preview endpoint - convert ODT to HTML for web viewing
+app.post('/api/preview/odt', uploadDocument.single('file'), async (req, res) => {
+  console.log('=== ODT PREVIEW REQUEST ===');
+  const tmpDir = path.join(os.tmpdir(), `odt-preview-${Date.now()}`);
+  
+  try {
+    await fs.mkdir(tmpDir, { recursive: true });
+    
+    const file = req.file;
+    if (!file) {
+      return res.status(400).json({ error: 'No file uploaded' });
+    }
+
+    console.log('ODT file received:', {
+      originalname: file.originalname,
+      mimetype: file.mimetype,
+      size: file.size
+    });
+
+    // Save ODT file to temp location
+    const odtPath = path.join(tmpDir, 'input.odt');
+    await fs.writeFile(odtPath, file.buffer);
+
+    // Use Python script with LibreOffice to convert ODT to HTML
+    const pythonPath = process.env.PYTHON_PATH || 'python3';
+    const scriptPath = path.join(__dirname, '..', 'scripts', 'odt_to_html.py');
+    const htmlPath = path.join(tmpDir, 'output.html');
+
+    // Check if script exists
+    const scriptExists = await fs.access(scriptPath).then(() => true).catch(() => false);
+    if (!scriptExists) {
+      console.error(`Python script not found: ${scriptPath}`);
+      return res.status(500).json({ error: 'ODT preview script not found' });
+    }
+
+    const args = [
+      scriptPath,
+      odtPath,
+      htmlPath
+    ];
+
+    console.log('Executing Python script:', { pythonPath, scriptPath, args });
+
+    let stdout, stderr;
+    try {
+      const result = await execFileAsync(pythonPath, args);
+      stdout = result.stdout;
+      stderr = result.stderr;
+    } catch (execError: any) {
+      console.error('Python script execution failed:', execError);
+      stdout = execError.stdout || '';
+      stderr = execError.stderr || execError.message || 'Python execution failed';
+    }
+
+    if (stdout.trim().length > 0) console.log('Python stdout:', stdout.trim());
+    if (stderr.trim().length > 0) console.warn('Python stderr:', stderr.trim());
+    
+    // Check for errors
+    if (stderr.includes('ERROR:') || stderr.includes('Traceback')) {
+      throw new Error(`Python script error: ${stderr}`);
+    }
+
+    // Check if output file was created
+    const htmlExists = await fs.access(htmlPath).then(() => true).catch(() => false);
+    if (!htmlExists) {
+      throw new Error(`Python script did not produce HTML preview: ${htmlPath}`);
+    }
+
+    // Read HTML file
+    let htmlContent = await fs.readFile(htmlPath, 'utf-8');
+    
+    // Wrap HTML in styled template
+    const styledHtml = `
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <meta charset="UTF-8">
+        <title>${file.originalname}</title>
+        <style>
+          body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 40px 20px;
+            background: #f5f5f5;
+            color: #333;
+            line-height: 1.6;
+          }
+          .document-container {
+            background: white;
+            padding: 60px;
+            box-shadow: 0 0 20px rgba(0,0,0,0.1);
+            border-radius: 8px;
+          }
+          h1, h2, h3, h4, h5, h6 {
+            margin-top: 1.5em;
+            margin-bottom: 0.5em;
+            color: #2c3e50;
+          }
+          p { margin-bottom: 1em; }
+          table {
+            border-collapse: collapse;
+            width: 100%;
+            margin: 1em 0;
+          }
+          table, th, td {
+            border: 1px solid #ddd;
+          }
+          th, td {
+            padding: 12px;
+            text-align: left;
+          }
+          th {
+            background-color: #f8f9fa;
+            font-weight: bold;
+          }
+          img {
+            max-width: 100%;
+            height: auto;
+          }
+          .toolbar {
+            background: #f59e0b;
+            color: white;
+            padding: 15px 20px;
+            margin: -40px -20px 20px -20px;
+            border-radius: 8px 8px 0 0;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+          }
+          .toolbar button {
+            background: #d97706;
+            color: white;
+            border: none;
+            padding: 8px 16px;
+            border-radius: 4px;
+            cursor: pointer;
+            margin-left: 10px;
+          }
+          .toolbar button:hover {
+            background: #b45309;
+          }
+        </style>
+      </head>
+      <body>
+        <div class="toolbar">
+          <span><strong>📄 ${file.originalname}</strong></span>
+          <div>
+            <button onclick="window.print()">🖨️ Print</button>
+            <button onclick="window.close()">✖️ Close</button>
+          </div>
+        </div>
+        <div class="document-container">
+          ${htmlContent}
+        </div>
+      </body>
+      </html>
+    `;
+
+    console.log('ODT preview successful:', {
+      inputSize: file.size,
+      outputLength: htmlContent.length
+    });
+
+    res.set('Content-Type', 'text/html');
+    res.send(styledHtml);
+
+  } catch (error) {
+    console.error('ODT preview error:', error);
+    const message = error instanceof Error ? error.message : 'Unknown ODT preview error';
+    res.status(500).json({ error: `Failed to generate ODT preview: ${message}` });
   } finally {
     await fs.rm(tmpDir, { recursive: true, force: true }).catch(() => undefined);
   }
