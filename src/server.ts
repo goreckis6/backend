@@ -5472,7 +5472,7 @@ app.get('/test-python', async (req, res) => {
 });
 
 // HEIC Preview endpoint - converts HEIC to PNG for web viewing
-app.post('/api/preview/heic', uploadSingle, async (req, res) => {
+app.post('/api/preview/heic', upload.single('file'), async (req, res) => {
   console.log('=== HEIC PREVIEW REQUEST ===');
   const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'morphy-heic-preview-'));
 
@@ -5566,7 +5566,7 @@ app.post('/api/preview/heic', uploadSingle, async (req, res) => {
 });
 
 // TIFF Preview endpoint - converts TIFF to PNG for web viewing
-app.post('/api/preview/tiff', uploadSingle, async (req, res) => {
+app.post('/api/preview/tiff', upload.single('file'), async (req, res) => {
   console.log('=== TIFF PREVIEW REQUEST ===');
   const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'morphy-tiff-preview-'));
 
