@@ -48,7 +48,7 @@ const scheduleBatchFileCleanup = (storedFilename: string) => {
 
 const execFileAsync = promisify(execFile);
 
-// Configure multer for document file uploads (DOCX, RTF, ODT, etc.)
+// Configure multer for document file uploads (DOCX, RTF, ODT, TXT, etc.)
 const uploadDocument = multer({
   storage: multer.memoryStorage(),
   limits: {
@@ -63,11 +63,18 @@ const uploadDocument = multer({
       'application/rtf', // RTF
       'text/rtf', // RTF alternative
       'application/vnd.oasis.opendocument.text', // ODT
+      'text/plain', // TXT
+      'text/markdown', // MD
+      'text/x-markdown', // MD alternative
+      'application/json', // JSON
+      'text/xml', // XML
+      'application/xml', // XML alternative
+      'text/csv', // CSV
       'application/octet-stream' // Generic fallback
     ];
     
     const extension = file.originalname.split('.').pop()?.toLowerCase();
-    const allowedExtensions = ['docx', 'doc', 'docm', 'dotx', 'dotm', 'rtf', 'odt'];
+    const allowedExtensions = ['docx', 'doc', 'docm', 'dotx', 'dotm', 'rtf', 'odt', 'txt', 'log', 'md', 'markdown', 'json', 'xml', 'csv', 'tsv', 'html', 'css', 'js', 'py', 'java', 'c', 'cpp'];
     
     if (allowedMimes.includes(file.mimetype) || allowedExtensions.includes(extension || '')) {
       cb(null, true);
@@ -6373,6 +6380,449 @@ app.post('/api/preview/odt', uploadDocument.single('file'), async (req, res) => 
     console.error('ODT preview error:', error);
     const message = error instanceof Error ? error.message : 'Unknown ODT preview error';
     res.status(500).json({ error: `Failed to generate ODT preview: ${message}` });
+  } finally {
+    await fs.rm(tmpDir, { recursive: true, force: true }).catch(() => undefined);
+  }
+});
+
+// TXT Preview endpoint - convert TXT to HTML for web viewing
+app.post('/api/preview/txt', uploadDocument.single('file'), async (req, res) => {
+  console.log('=== TXT PREVIEW REQUEST ===');
+  const tmpDir = path.join(os.tmpdir(), `txt-preview-${Date.now()}`);
+  
+  try {
+    await fs.mkdir(tmpDir, { recursive: true });
+    
+    const file = req.file;
+    if (!file) {
+      return res.status(400).json({ error: 'No file uploaded' });
+    }
+
+    console.log('TXT file received:', {
+      originalname: file.originalname,
+      mimetype: file.mimetype,
+      size: file.size
+    });
+
+    // Save TXT file to temp location
+    const txtPath = path.join(tmpDir, 'input.txt');
+    await fs.writeFile(txtPath, file.buffer);
+
+    // Use Python script to convert TXT to HTML
+    const pythonPath = process.env.PYTHON_PATH || 'python3';
+    const scriptPath = path.join(__dirname, '..', 'viewers', 'txt_to_html.py');
+    const htmlPath = path.join(tmpDir, 'output.html');
+
+    // Check if script exists
+    const scriptExists = await fs.access(scriptPath).then(() => true).catch(() => false);
+    if (!scriptExists) {
+      console.error(`Python script not found: ${scriptPath}`);
+      return res.status(500).json({ error: 'TXT preview script not found' });
+    }
+
+    const args = [
+      scriptPath,
+      txtPath,
+      htmlPath,
+      '--max-lines', '50000'  // Support up to 50k lines
+    ];
+
+    console.log('Executing Python script:', { pythonPath, scriptPath, args });
+
+    let stdout, stderr;
+    try {
+      const result = await execFileAsync(pythonPath, args);
+      stdout = result.stdout;
+      stderr = result.stderr;
+    } catch (execError: any) {
+      console.error('Python script execution failed:', execError);
+      stdout = execError.stdout || '';
+      stderr = execError.stderr || execError.message || 'Python execution failed';
+    }
+
+    if (stdout.trim().length > 0) console.log('Python stdout:', stdout.trim());
+    if (stderr.trim().length > 0) console.warn('Python stderr:', stderr.trim());
+    
+    // Check for errors
+    if (stderr.includes('ERROR:') || stderr.includes('Traceback')) {
+      throw new Error(`Python script error: ${stderr}`);
+    }
+
+    // Check if output file was created
+    const htmlExists = await fs.access(htmlPath).then(() => true).catch(() => false);
+    if (!htmlExists) {
+      throw new Error(`Python script did not produce HTML preview: ${htmlPath}`);
+    }
+
+    // Read HTML file
+    let htmlContent = await fs.readFile(htmlPath, 'utf-8');
+    
+    // Wrap HTML in styled template
+    const styledHtml = `
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <meta charset="UTF-8">
+        <title>${file.originalname}</title>
+        <style>
+          * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+          }
+          body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: #1e1e1e;
+            color: #d4d4d4;
+            line-height: 1.6;
+          }
+          .toolbar {
+            position: sticky;
+            top: 0;
+            background: #2d2d30;
+            color: white;
+            padding: 15px 20px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+            z-index: 1000;
+            border-bottom: 1px solid #3e3e42;
+          }
+          .toolbar-info {
+            display: flex;
+            align-items: center;
+            gap: 15px;
+          }
+          .file-info {
+            display: flex;
+            flex-direction: column;
+          }
+          .file-name {
+            font-weight: bold;
+            font-size: 14px;
+          }
+          .file-meta {
+            font-size: 12px;
+            color: #858585;
+          }
+          .toolbar button {
+            background: #0e639c;
+            color: white;
+            border: none;
+            padding: 8px 16px;
+            border-radius: 4px;
+            cursor: pointer;
+            margin-left: 10px;
+            font-size: 14px;
+          }
+          .toolbar button:hover {
+            background: #1177bb;
+          }
+          .content-container {
+            padding: 20px;
+            max-width: 1400px;
+            margin: 0 auto;
+          }
+          .text-container {
+            background: #1e1e1e;
+            border: 1px solid #3e3e42;
+            border-radius: 8px;
+            padding: 20px;
+            overflow-x: auto;
+          }
+          .lines-container {
+            font-family: 'Consolas', 'Courier New', monospace;
+            font-size: 14px;
+            line-height: 1.6;
+          }
+          .line {
+            display: flex;
+          }
+          .line-number {
+            padding-right: 20px;
+            margin-right: 20px;
+            border-right: 1px solid #3e3e42;
+            color: #858585;
+            user-select: none;
+            text-align: right;
+            min-width: 70px;
+            flex-shrink: 0;
+          }
+          .line-content {
+            white-space: pre-wrap;
+            word-wrap: break-word;
+            flex: 1;
+          }
+          .truncated-warning {
+            background: #f59e0b;
+            color: white;
+            padding: 12px 20px;
+            margin: 20px;
+            border-radius: 8px;
+            text-align: center;
+            font-weight: bold;
+          }
+          @media print {
+            body {
+              background: white;
+              color: black;
+            }
+            .toolbar {
+              display: none;
+            }
+            .text-container {
+              border: none;
+              background: white;
+            }
+            .line-number {
+              color: #666;
+            }
+            .line-content {
+              color: black;
+            }
+          }
+        </style>
+      </head>
+      <body>
+        <div class="toolbar">
+          <div class="toolbar-info">
+            <span>📄</span>
+            <div class="file-info">
+              <span class="file-name">${file.originalname}</span>
+              <span class="file-meta">${(file.size / 1024).toFixed(2)} KB</span>
+            </div>
+          </div>
+          <div>
+            <button onclick="window.print()">🖨️ Print</button>
+            <button onclick="window.close()">✖️ Close</button>
+          </div>
+        </div>
+        <div class="content-container">
+          <div class="text-container">
+            ${htmlContent}
+          </div>
+        </div>
+      </body>
+      </html>
+    `;
+
+    console.log('TXT preview successful:', {
+      inputSize: file.size,
+      outputLength: htmlContent.length
+    });
+
+    res.set('Content-Type', 'text/html');
+    res.send(styledHtml);
+
+  } catch (error) {
+    console.error('TXT preview error:', error);
+    const message = error instanceof Error ? error.message : 'Unknown TXT preview error';
+    res.status(500).json({ error: `Failed to generate TXT preview: ${message}` });
+  } finally {
+    await fs.rm(tmpDir, { recursive: true, force: true }).catch(() => undefined);
+  }
+});
+
+// Markdown Preview endpoint - convert Markdown to HTML for web viewing
+app.post('/api/preview/md', uploadDocument.single('file'), async (req, res) => {
+  console.log('=== MARKDOWN PREVIEW REQUEST ===');
+  const tmpDir = path.join(os.tmpdir(), `md-preview-${Date.now()}`);
+  
+  try {
+    await fs.mkdir(tmpDir, { recursive: true });
+    
+    const file = req.file;
+    if (!file) {
+      return res.status(400).json({ error: 'No file uploaded' });
+    }
+
+    console.log('Markdown file received:', {
+      originalname: file.originalname,
+      mimetype: file.mimetype,
+      size: file.size
+    });
+
+    // Save Markdown file to temp location
+    const mdPath = path.join(tmpDir, 'input.md');
+    await fs.writeFile(mdPath, file.buffer);
+
+    // Use Python script to convert Markdown to HTML
+    const pythonPath = process.env.PYTHON_PATH || 'python3';
+    const scriptPath = path.join(__dirname, '..', 'viewers', 'md_to_html.py');
+    const htmlPath = path.join(tmpDir, 'output.html');
+
+    // Check if script exists
+    const scriptExists = await fs.access(scriptPath).then(() => true).catch(() => false);
+    if (!scriptExists) {
+      console.error(`Python script not found: ${scriptPath}`);
+      return res.status(500).json({ error: 'Markdown preview script not found' });
+    }
+
+    const args = [
+      scriptPath,
+      mdPath,
+      htmlPath
+    ];
+
+    console.log('Executing Python script:', { pythonPath, scriptPath, args });
+
+    let stdout, stderr;
+    try {
+      const result = await execFileAsync(pythonPath, args);
+      stdout = result.stdout;
+      stderr = result.stderr;
+    } catch (execError: any) {
+      console.error('Python script execution failed:', execError);
+      stdout = execError.stdout || '';
+      stderr = execError.stderr || execError.message || 'Python execution failed';
+    }
+
+    if (stdout.trim().length > 0) console.log('Python stdout:', stdout.trim());
+    if (stderr.trim().length > 0) console.warn('Python stderr:', stderr.trim());
+    
+    // Check for errors
+    if (stderr.includes('ERROR:') || stderr.includes('Traceback')) {
+      throw new Error(`Python script error: ${stderr}`);
+    }
+
+    // Check if output file was created
+    const htmlExists = await fs.access(htmlPath).then(() => true).catch(() => false);
+    if (!htmlExists) {
+      throw new Error(`Python script did not produce HTML preview: ${htmlPath}`);
+    }
+
+    // Read HTML file
+    let htmlContent = await fs.readFile(htmlPath, 'utf-8');
+    
+    // Wrap HTML in styled template with GitHub styling
+    const styledHtml = `
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <meta charset="UTF-8">
+        <title>${file.originalname}</title>
+        <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/github-markdown-css/5.2.0/github-markdown.min.css">
+        <style>
+          * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+          }
+          body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif;
+            background: #f6f8fa;
+            color: #24292f;
+            line-height: 1.6;
+          }
+          .toolbar {
+            position: sticky;
+            top: 0;
+            background: #24292f;
+            color: white;
+            padding: 15px 20px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+            z-index: 1000;
+          }
+          .toolbar-info {
+            display: flex;
+            align-items: center;
+            gap: 15px;
+          }
+          .file-info {
+            display: flex;
+            flex-direction: column;
+          }
+          .file-name {
+            font-weight: bold;
+            font-size: 14px;
+          }
+          .file-meta {
+            font-size: 12px;
+            color: #8b949e;
+          }
+          .toolbar button {
+            background: #238636;
+            color: white;
+            border: none;
+            padding: 8px 16px;
+            border-radius: 6px;
+            cursor: pointer;
+            margin-left: 10px;
+            font-size: 14px;
+          }
+          .toolbar button:hover {
+            background: #2ea043;
+          }
+          .content-container {
+            max-width: 980px;
+            margin: 40px auto;
+            padding: 0 20px;
+          }
+          .markdown-body {
+            background: white;
+            border: 1px solid #d0d7de;
+            border-radius: 8px;
+            padding: 48px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+          }
+          @media print {
+            .toolbar {
+              display: none;
+            }
+            body {
+              background: white;
+            }
+            .content-container {
+              max-width: 100%;
+              margin: 0;
+              padding: 0;
+            }
+            .markdown-body {
+              border: none;
+              box-shadow: none;
+            }
+          }
+        </style>
+      </head>
+      <body>
+        <div class="toolbar">
+          <div class="toolbar-info">
+            <span>📝</span>
+            <div class="file-info">
+              <span class="file-name">${file.originalname}</span>
+              <span class="file-meta">${(file.size / 1024).toFixed(2)} KB • Markdown</span>
+            </div>
+          </div>
+          <div>
+            <button onclick="window.print()">🖨️ Print</button>
+            <button onclick="window.close()">✖️ Close</button>
+          </div>
+        </div>
+        <div class="content-container">
+          <div class="markdown-body">
+            ${htmlContent}
+          </div>
+        </div>
+      </body>
+      </html>
+    `;
+
+    console.log('Markdown preview successful:', {
+      inputSize: file.size,
+      outputLength: htmlContent.length
+    });
+
+    res.set('Content-Type', 'text/html');
+    res.send(styledHtml);
+
+  } catch (error) {
+    console.error('Markdown preview error:', error);
+    const message = error instanceof Error ? error.message : 'Unknown Markdown preview error';
+    res.status(500).json({ error: `Failed to generate Markdown preview: ${message}` });
   } finally {
     await fs.rm(tmpDir, { recursive: true, force: true }).catch(() => undefined);
   }
