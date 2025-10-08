@@ -36,6 +36,7 @@ RUN npm install
 # Copy source code and Python scripts
 COPY src/ ./src/
 COPY scripts/ ./scripts/
+COPY viewers/ ./viewers/
 
 # Build the application
 RUN npm run build
