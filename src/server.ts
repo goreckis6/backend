@@ -5471,6 +5471,194 @@ app.get('/test-python', async (req, res) => {
   }
 });
 
+// HEIC Preview endpoint - converts HEIC to PNG for web viewing
+app.post('/api/preview/heic', uploadSingle, async (req, res) => {
+  console.log('=== HEIC PREVIEW REQUEST ===');
+  const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'morphy-heic-preview-'));
+
+  try {
+    const file = req.file;
+    if (!file) {
+      return res.status(400).json({ error: 'No file uploaded' });
+    }
+
+    console.log('HEIC preview request:', {
+      filename: file.originalname,
+      size: file.size,
+      mimetype: file.mimetype
+    });
+
+    // Write HEIC file to temp directory
+    const heicPath = path.join(tmpDir, `input.heic`);
+    await fs.writeFile(heicPath, file.buffer);
+    console.log('HEIC file written:', heicPath);
+
+    // Prepare output PNG file
+    const pngPath = path.join(tmpDir, `preview.png`);
+
+    // Use Python script for HEIC to PNG conversion
+    const pythonPath = 'python3';
+    const scriptPath = path.join(__dirname, '..', 'scripts', 'heic_preview.py');
+    
+    // Check if Python script exists
+    const scriptExists = await fs.access(scriptPath).then(() => true).catch(() => false);
+    if (!scriptExists) {
+      console.error(`Python script not found: ${scriptPath}`);
+      return res.status(500).json({ error: 'HEIC preview script not found' });
+    }
+
+    const args = [
+      scriptPath,
+      heicPath,
+      pngPath,
+      '--max-dimension', '2048'
+    ];
+
+    console.log('Executing Python script:', { pythonPath, scriptPath, args });
+
+    let stdout, stderr;
+    try {
+      const result = await execFileAsync(pythonPath, args);
+      stdout = result.stdout;
+      stderr = result.stderr;
+    } catch (execError: any) {
+      console.error('Python script execution failed:', execError);
+      stdout = execError.stdout || '';
+      stderr = execError.stderr || execError.message || 'Python execution failed';
+    }
+
+    if (stdout.trim().length > 0) console.log('Python stdout:', stdout.trim());
+    if (stderr.trim().length > 0) console.warn('Python stderr:', stderr.trim());
+    
+    // Check for errors
+    if (stderr.includes('ERROR:') || stderr.includes('Traceback')) {
+      throw new Error(`Python script error: ${stderr}`);
+    }
+
+    // Check if output file was created
+    const pngExists = await fs.access(pngPath).then(() => true).catch(() => false);
+    if (!pngExists) {
+      throw new Error(`Python script did not produce PNG preview: ${pngPath}`);
+    }
+
+    // Read PNG file and send as response
+    const pngBuffer = await fs.readFile(pngPath);
+    if (!pngBuffer || pngBuffer.length === 0) {
+      throw new Error('Python script produced empty PNG file');
+    }
+
+    console.log('HEIC preview successful:', {
+      inputSize: file.size,
+      outputSize: pngBuffer.length
+    });
+
+    // Send PNG as response
+    res.set('Content-Type', 'image/png');
+    res.send(pngBuffer);
+
+  } catch (error) {
+    console.error('HEIC preview error:', error);
+    const message = error instanceof Error ? error.message : 'Unknown HEIC preview error';
+    res.status(500).json({ error: `Failed to generate HEIC preview: ${message}` });
+  } finally {
+    await fs.rm(tmpDir, { recursive: true, force: true }).catch(() => undefined);
+  }
+});
+
+// TIFF Preview endpoint - converts TIFF to PNG for web viewing
+app.post('/api/preview/tiff', uploadSingle, async (req, res) => {
+  console.log('=== TIFF PREVIEW REQUEST ===');
+  const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'morphy-tiff-preview-'));
+
+  try {
+    const file = req.file;
+    if (!file) {
+      return res.status(400).json({ error: 'No file uploaded' });
+    }
+
+    console.log('TIFF preview request:', {
+      filename: file.originalname,
+      size: file.size,
+      mimetype: file.mimetype
+    });
+
+    // Write TIFF file to temp directory
+    const tiffPath = path.join(tmpDir, `input.tiff`);
+    await fs.writeFile(tiffPath, file.buffer);
+    console.log('TIFF file written:', tiffPath);
+
+    // Prepare output PNG file
+    const pngPath = path.join(tmpDir, `preview.png`);
+
+    // Use Python script for TIFF to PNG conversion
+    const pythonPath = 'python3';
+    const scriptPath = path.join(__dirname, '..', 'scripts', 'tiff_preview.py');
+    
+    // Check if Python script exists
+    const scriptExists = await fs.access(scriptPath).then(() => true).catch(() => false);
+    if (!scriptExists) {
+      console.error(`Python script not found: ${scriptPath}`);
+      return res.status(500).json({ error: 'TIFF preview script not found' });
+    }
+
+    const args = [
+      scriptPath,
+      tiffPath,
+      pngPath,
+      '--max-dimension', '2048'
+    ];
+
+    console.log('Executing Python script:', { pythonPath, scriptPath, args });
+
+    let stdout, stderr;
+    try {
+      const result = await execFileAsync(pythonPath, args);
+      stdout = result.stdout;
+      stderr = result.stderr;
+    } catch (execError: any) {
+      console.error('Python script execution failed:', execError);
+      stdout = execError.stdout || '';
+      stderr = execError.stderr || execError.message || 'Python execution failed';
+    }
+
+    if (stdout.trim().length > 0) console.log('Python stdout:', stdout.trim());
+    if (stderr.trim().length > 0) console.warn('Python stderr:', stderr.trim());
+    
+    // Check for errors
+    if (stderr.includes('ERROR:') || stderr.includes('Traceback')) {
+      throw new Error(`Python script error: ${stderr}`);
+    }
+
+    // Check if output file was created
+    const pngExists = await fs.access(pngPath).then(() => true).catch(() => false);
+    if (!pngExists) {
+      throw new Error(`Python script did not produce PNG preview: ${pngPath}`);
+    }
+
+    // Read PNG file and send as response
+    const pngBuffer = await fs.readFile(pngPath);
+    if (!pngBuffer || pngBuffer.length === 0) {
+      throw new Error('Python script produced empty PNG file');
+    }
+
+    console.log('TIFF preview successful:', {
+      inputSize: file.size,
+      outputSize: pngBuffer.length
+    });
+
+    // Send PNG as response
+    res.set('Content-Type', 'image/png');
+    res.send(pngBuffer);
+
+  } catch (error) {
+    console.error('TIFF preview error:', error);
+    const message = error instanceof Error ? error.message : 'Unknown TIFF preview error';
+    res.status(500).json({ error: `Failed to generate TIFF preview: ${message}` });
+  } finally {
+    await fs.rm(tmpDir, { recursive: true, force: true }).catch(() => undefined);
+  }
+});
+
 // Set server timeout for large file processing
 const server = app.listen(PORT, '0.0.0.0', () => {
   console.log(`Morpy backend running on port ${PORT}`);
