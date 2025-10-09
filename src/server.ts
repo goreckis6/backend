@@ -6831,6 +6831,95 @@ app.post('/api/preview/md', uploadDocument.single('file'), async (req, res) => {
   }
 });
 
+// CSV Preview endpoint - convert CSV to HTML for web viewing
+app.post('/api/preview/csv', uploadDocument.single('file'), async (req, res) => {
+  console.log('=== CSV PREVIEW REQUEST ===');
+  const tmpDir = path.join(os.tmpdir(), `csv-preview-${Date.now()}`);
+  
+  try {
+    await fs.mkdir(tmpDir, { recursive: true });
+    
+    const file = req.file;
+    if (!file) {
+      return res.status(400).json({ error: 'No file uploaded' });
+    }
+
+    console.log('CSV file received:', {
+      originalname: file.originalname,
+      mimetype: file.mimetype,
+      size: file.size
+    });
+
+    // Save CSV file to temp location
+    const csvPath = path.join(tmpDir, 'input.csv');
+    await fs.writeFile(csvPath, file.buffer);
+
+    // Use Python script to convert CSV to HTML
+    const pythonPath = process.env.PYTHON_PATH || 'python3';
+    const scriptPath = path.join(__dirname, '..', 'viewers', 'csv_to_html.py');
+    const htmlPath = path.join(tmpDir, 'output.html');
+
+    // Check if script exists
+    const scriptExists = await fs.access(scriptPath).then(() => true).catch(() => false);
+    if (!scriptExists) {
+      console.error(`Python script not found: ${scriptPath}`);
+      return res.status(500).json({ error: 'CSV preview script not found' });
+    }
+
+    const args = [
+      scriptPath,
+      csvPath,
+      htmlPath,
+      '--max-rows', '1000'
+    ];
+
+    console.log('Executing Python script:', { pythonPath, scriptPath, args });
+
+    let stdout, stderr;
+    try {
+      const result = await execFileAsync(pythonPath, args);
+      stdout = result.stdout;
+      stderr = result.stderr;
+    } catch (execError: any) {
+      console.error('Python script execution failed:', execError);
+      stdout = execError.stdout || '';
+      stderr = execError.stderr || execError.message || 'Python execution failed';
+    }
+
+    if (stdout.trim().length > 0) console.log('Python stdout:', stdout.trim());
+    if (stderr.trim().length > 0) console.warn('Python stderr:', stderr.trim());
+    
+    // Check for errors
+    if (stderr.includes('ERROR:') || stderr.includes('Traceback')) {
+      throw new Error(`Python script error: ${stderr}`);
+    }
+
+    // Check if output file was created
+    const htmlExists = await fs.access(htmlPath).then(() => true).catch(() => false);
+    if (!htmlExists) {
+      throw new Error(`Python script did not produce HTML preview: ${htmlPath}`);
+    }
+
+    // Read and send HTML file
+    const htmlContent = await fs.readFile(htmlPath, 'utf-8');
+
+    console.log('CSV preview successful:', {
+      inputSize: file.size,
+      outputLength: htmlContent.length
+    });
+
+    res.set('Content-Type', 'text/html');
+    res.send(htmlContent);
+
+  } catch (error) {
+    console.error('CSV preview error:', error);
+    const message = error instanceof Error ? error.message : 'Unknown CSV preview error';
+    res.status(500).json({ error: `Failed to generate CSV preview: ${message}` });
+  } finally {
+    await fs.rm(tmpDir, { recursive: true, force: true }).catch(() => undefined);
+  }
+});
+
 // Excel Preview endpoint - convert Excel to HTML for web viewing
 app.post('/api/preview/xlsx', uploadDocument.single('file'), async (req, res) => {
   console.log('=== EXCEL PREVIEW REQUEST ===');
