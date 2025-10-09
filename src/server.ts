@@ -56,13 +56,16 @@ const uploadDocument = multer({
     files: 1
   },
   fileFilter: (req, file, cb) => {
-    // Allow document formats
+    // Allow document and spreadsheet formats
     const allowedMimes = [
       'application/vnd.openxmlformats-officedocument.wordprocessingml.document', // DOCX
       'application/msword', // DOC
       'application/rtf', // RTF
       'text/rtf', // RTF alternative
       'application/vnd.oasis.opendocument.text', // ODT
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', // XLSX
+      'application/vnd.ms-excel', // XLS
+      'application/vnd.oasis.opendocument.spreadsheet', // ODS
       'text/plain', // TXT
       'text/markdown', // MD
       'text/x-markdown', // MD alternative
@@ -74,7 +77,7 @@ const uploadDocument = multer({
     ];
     
     const extension = file.originalname.split('.').pop()?.toLowerCase();
-    const allowedExtensions = ['docx', 'doc', 'docm', 'dotx', 'dotm', 'rtf', 'odt', 'txt', 'log', 'md', 'markdown', 'json', 'xml', 'csv', 'tsv', 'html', 'css', 'js', 'py', 'java', 'c', 'cpp'];
+    const allowedExtensions = ['docx', 'doc', 'docm', 'dotx', 'dotm', 'rtf', 'odt', 'xlsx', 'xls', 'xlsm', 'xlsb', 'ods', 'txt', 'log', 'md', 'markdown', 'json', 'xml', 'csv', 'tsv', 'html', 'css', 'js', 'py', 'java', 'c', 'cpp'];
     
     if (allowedMimes.includes(file.mimetype) || allowedExtensions.includes(extension || '')) {
       cb(null, true);
