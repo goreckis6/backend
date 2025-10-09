@@ -46,22 +46,85 @@ def convert_xlsx_to_html_pandas(xlsx_file, html_file, max_rows=1000):
         body {
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
             margin: 0;
-            padding: 20px;
+            padding: 0;
             background: #f5f5f5;
+        }
+        .header-bar {
+            background: linear-gradient(to right, #10b981, #059669);
+            color: white;
+            padding: 15px 30px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            position: sticky;
+            top: 0;
+            z-index: 100;
+        }
+        .header-title {
+            font-size: 20px;
+            font-weight: 600;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        .header-actions {
+            display: flex;
+            gap: 10px;
+        }
+        .btn {
+            padding: 8px 20px;
+            border: none;
+            border-radius: 6px;
+            font-size: 14px;
+            font-weight: 500;
+            cursor: pointer;
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            transition: all 0.2s;
+        }
+        .btn-print {
+            background: white;
+            color: #059669;
+        }
+        .btn-print:hover {
+            background: #f0fdf4;
+            transform: scale(1.05);
+        }
+        .btn-close {
+            background: rgba(255,255,255,0.2);
+            color: white;
+            border: 1px solid rgba(255,255,255,0.3);
+        }
+        .btn-close:hover {
+            background: rgba(255,255,255,0.3);
+            transform: scale(1.05);
         }
         .container {
             max-width: 1400px;
             margin: 0 auto;
             background: white;
             padding: 30px;
-            border-radius: 8px;
-            box-shadow: 0 2 px 10px rgba(0,0,0,0.1);
         }
         h1 {
             color: #333;
             border-bottom: 3px solid #10b981;
             padding-bottom: 10px;
             margin-bottom: 20px;
+            margin-top: 0;
+        }
+        @media print {
+            .header-bar {
+                display: none;
+            }
+            body {
+                background: white;
+            }
+            .container {
+                padding: 0;
+                box-shadow: none;
+            }
         }
         .sheet-nav {
             background: #f9fafb;
@@ -178,8 +241,21 @@ def convert_xlsx_to_html_pandas(xlsx_file, html_file, max_rows=1000):
     </style>
 </head>
 <body>
+    <div class="header-bar">
+        <div class="header-title">
+            <span>📊</span>
+            <span>Excel Spreadsheet Preview</span>
+        </div>
+        <div class="header-actions">
+            <button onclick="window.print()" class="btn btn-print">
+                🖨️ Print
+            </button>
+            <button onclick="window.close()" class="btn btn-close">
+                ✖️ Close
+            </button>
+        </div>
+    </div>
     <div class="container">
-        <h1>📊 Excel Spreadsheet Preview</h1>
 ''')
         
         # Add sheet navigation if multiple sheets
