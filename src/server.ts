@@ -6932,6 +6932,184 @@ app.post('/api/preview/md', uploadDocument.single('file'), async (req, res) => {
   }
 });
 
+// DCR Preview endpoint - convert DCR (Kodak RAW) to web-viewable image
+app.post('/api/preview/dcr', uploadDocument.single('file'), async (req, res) => {
+  console.log('=== DCR PREVIEW REQUEST ===');
+  const tmpDir = path.join(os.tmpdir(), `dcr-preview-${Date.now()}`);
+  
+  try {
+    await fs.mkdir(tmpDir, { recursive: true });
+    
+    const file = req.file;
+    if (!file) {
+      return res.status(400).json({ error: 'No file uploaded' });
+    }
+
+    console.log('DCR file received:', {
+      originalname: file.originalname,
+      mimetype: file.mimetype,
+      size: file.size
+    });
+
+    // Save DCR file to temp location
+    const dcrPath = path.join(tmpDir, 'input.dcr');
+    await fs.writeFile(dcrPath, file.buffer);
+
+    // Use Python script to convert DCR to JPEG
+    const pythonPath = process.env.PYTHON_PATH || 'python3';
+    const scriptPath = path.join(__dirname, '..', 'viewers', 'dcr_to_image.py');
+    const outputPath = path.join(tmpDir, 'output.jpg');
+
+    // Check if script exists
+    const scriptExists = await fs.access(scriptPath).then(() => true).catch(() => false);
+    if (!scriptExists) {
+      console.error(`DCR script not found: ${scriptPath}`);
+      return res.status(500).json({ error: 'DCR preview script not found' });
+    }
+
+    const args = [
+      scriptPath,
+      dcrPath,
+      outputPath,
+      '--max-dimension', '2048'
+    ];
+
+    console.log('Executing DCR script:', { pythonPath, scriptPath, args });
+
+    let stdout, stderr;
+    try {
+      const result = await execFileAsync(pythonPath, args, { timeout: 120000 }); // 2 min timeout for RAW processing
+      stdout = result.stdout;
+      stderr = result.stderr;
+    } catch (execError: any) {
+      console.error('DCR script execution failed:', execError);
+      stdout = execError.stdout || '';
+      stderr = execError.stderr || execError.message || 'DCR execution failed';
+    }
+
+    if (stdout.trim().length > 0) console.log('DCR stdout:', stdout.trim());
+    if (stderr.trim().length > 0) console.warn('DCR stderr:', stderr.trim());
+    
+    // Check for errors
+    if (stderr.includes('ERROR:') || stderr.includes('Traceback')) {
+      throw new Error(`DCR script error: ${stderr}`);
+    }
+
+    // Check if output file was created
+    const outputExists = await fs.access(outputPath).then(() => true).catch(() => false);
+    if (!outputExists) {
+      throw new Error(`DCR script did not produce preview: ${outputPath}`);
+    }
+
+    // Read and send image file
+    const imageBuffer = await fs.readFile(outputPath);
+
+    console.log('DCR preview successful:', {
+      inputSize: file.size,
+      outputSize: imageBuffer.length
+    });
+
+    res.set('Content-Type', 'image/jpeg');
+    res.send(imageBuffer);
+
+  } catch (error) {
+    console.error('DCR preview error:', error);
+    const message = error instanceof Error ? error.message : 'Unknown DCR preview error';
+    res.status(500).json({ error: `Failed to generate DCR preview: ${message}` });
+  } finally {
+    await fs.rm(tmpDir, { recursive: true, force: true }).catch(() => undefined);
+  }
+});
+
+// CR2 Preview endpoint - convert CR2 (Canon RAW) to web-viewable image
+app.post('/api/preview/cr2', uploadDocument.single('file'), async (req, res) => {
+  console.log('=== CR2 PREVIEW REQUEST ===');
+  const tmpDir = path.join(os.tmpdir(), `cr2-preview-${Date.now()}`);
+  
+  try {
+    await fs.mkdir(tmpDir, { recursive: true });
+    
+    const file = req.file;
+    if (!file) {
+      return res.status(400).json({ error: 'No file uploaded' });
+    }
+
+    console.log('CR2 file received:', {
+      originalname: file.originalname,
+      mimetype: file.mimetype,
+      size: file.size
+    });
+
+    // Save CR2 file to temp location
+    const cr2Path = path.join(tmpDir, 'input.cr2');
+    await fs.writeFile(cr2Path, file.buffer);
+
+    // Use Python script to convert CR2 to JPEG
+    const pythonPath = process.env.PYTHON_PATH || 'python3';
+    const scriptPath = path.join(__dirname, '..', 'viewers', 'cr2_to_image.py');
+    const outputPath = path.join(tmpDir, 'output.jpg');
+
+    // Check if script exists
+    const scriptExists = await fs.access(scriptPath).then(() => true).catch(() => false);
+    if (!scriptExists) {
+      console.error(`CR2 script not found: ${scriptPath}`);
+      return res.status(500).json({ error: 'CR2 preview script not found' });
+    }
+
+    const args = [
+      scriptPath,
+      cr2Path,
+      outputPath,
+      '--max-dimension', '2048'
+    ];
+
+    console.log('Executing CR2 script:', { pythonPath, scriptPath, args });
+
+    let stdout, stderr;
+    try {
+      const result = await execFileAsync(pythonPath, args, { timeout: 120000 }); // 2 min timeout for RAW processing
+      stdout = result.stdout;
+      stderr = result.stderr;
+    } catch (execError: any) {
+      console.error('CR2 script execution failed:', execError);
+      stdout = execError.stdout || '';
+      stderr = execError.stderr || execError.message || 'CR2 execution failed';
+    }
+
+    if (stdout.trim().length > 0) console.log('CR2 stdout:', stdout.trim());
+    if (stderr.trim().length > 0) console.warn('CR2 stderr:', stderr.trim());
+    
+    // Check for errors
+    if (stderr.includes('ERROR:') || stderr.includes('Traceback')) {
+      throw new Error(`CR2 script error: ${stderr}`);
+    }
+
+    // Check if output file was created
+    const outputExists = await fs.access(outputPath).then(() => true).catch(() => false);
+    if (!outputExists) {
+      throw new Error(`CR2 script did not produce preview: ${outputPath}`);
+    }
+
+    // Read and send image file
+    const imageBuffer = await fs.readFile(outputPath);
+
+    console.log('CR2 preview successful:', {
+      inputSize: file.size,
+      outputSize: imageBuffer.length
+    });
+
+    res.set('Content-Type', 'image/jpeg');
+    res.send(imageBuffer);
+
+  } catch (error) {
+    console.error('CR2 preview error:', error);
+    const message = error instanceof Error ? error.message : 'Unknown CR2 preview error';
+    res.status(500).json({ error: `Failed to generate CR2 preview: ${message}` });
+  } finally {
+    await fs.rm(tmpDir, { recursive: true, force: true }).catch(() => undefined);
+  }
+});
+
 // NEF Preview endpoint - convert NEF (Nikon RAW) to web-viewable image
 app.post('/api/preview/nef', uploadDocument.single('file'), async (req, res) => {
   console.log('=== NEF PREVIEW REQUEST ===');
