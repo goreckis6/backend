@@ -10,14 +10,14 @@ import sys
 import traceback
 import pandas as pd
 
-def convert_xlsx_to_html_pandas(xlsx_file, html_file, max_rows=1000):
+def convert_xlsx_to_html_pandas(xlsx_file, html_file, max_rows=2000):
     """
     Convert Excel to HTML using pandas with table styling.
     
     Args:
         xlsx_file (str): Path to input Excel file
         html_file (str): Path to output HTML file
-        max_rows (int): Maximum rows to display (default: 1000)
+        max_rows (int): Maximum rows to display (default: 2000)
     
     Returns:
         bool: True if conversion successful, False otherwise
@@ -357,8 +357,8 @@ def main():
     parser = argparse.ArgumentParser(description='Convert Excel to HTML for web preview')
     parser.add_argument('xlsx_file', help='Input Excel file path')
     parser.add_argument('html_file', help='Output HTML file path')
-    parser.add_argument('--max-rows', type=int, default=1000,
-                        help='Maximum rows to display per sheet (default: 1000)')
+    parser.add_argument('--max-rows', type=int, default=2000,
+                        help='Maximum rows to display per sheet (default: 2000)')
     
     args = parser.parse_args()
     

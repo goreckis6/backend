@@ -6388,6 +6388,94 @@ app.post('/api/preview/odt', uploadDocument.single('file'), async (req, res) => 
   }
 });
 
+// PDF Preview endpoint - convert PDF to HTML viewer with PDF.js
+app.post('/api/preview/pdf', uploadDocument.single('file'), async (req, res) => {
+  console.log('=== PDF PREVIEW REQUEST ===');
+  const tmpDir = path.join(os.tmpdir(), `pdf-preview-${Date.now()}`);
+  
+  try {
+    await fs.mkdir(tmpDir, { recursive: true });
+    
+    const file = req.file;
+    if (!file) {
+      return res.status(400).json({ error: 'No file uploaded' });
+    }
+
+    console.log('PDF file received:', {
+      originalname: file.originalname,
+      mimetype: file.mimetype,
+      size: file.size
+    });
+
+    // Save PDF file to temp location
+    const pdfPath = path.join(tmpDir, 'input.pdf');
+    await fs.writeFile(pdfPath, file.buffer);
+
+    // Use Python script to create HTML viewer
+    const pythonPath = process.env.PYTHON_PATH || 'python3';
+    const scriptPath = path.join(__dirname, '..', 'viewers', 'pdf_to_html.py');
+    const outputPath = path.join(tmpDir, 'output.html');
+
+    // Check if script exists
+    const scriptExists = await fs.access(scriptPath).then(() => true).catch(() => false);
+    if (!scriptExists) {
+      console.error(`PDF script not found: ${scriptPath}`);
+      return res.status(500).json({ error: 'PDF preview script not found' });
+    }
+
+    const args = [
+      scriptPath,
+      pdfPath,
+      outputPath
+    ];
+
+    console.log('Executing PDF script:', { pythonPath, scriptPath, args });
+
+    let stdout, stderr;
+    try {
+      const result = await execFileAsync(pythonPath, args);
+      stdout = result.stdout;
+      stderr = result.stderr;
+    } catch (execError: any) {
+      console.error('PDF script execution failed:', execError);
+      stdout = execError.stdout || '';
+      stderr = execError.stderr || execError.message || 'PDF execution failed';
+    }
+
+    if (stdout.trim().length > 0) console.log('PDF stdout:', stdout.trim());
+    if (stderr.trim().length > 0) console.warn('PDF stderr:', stderr.trim());
+    
+    // Check for errors
+    if (stderr.includes('ERROR:') || stderr.includes('Traceback')) {
+      throw new Error(`PDF script error: ${stderr}`);
+    }
+
+    // Check if output file was created
+    const outputExists = await fs.access(outputPath).then(() => true).catch(() => false);
+    if (!outputExists) {
+      throw new Error(`PDF script did not produce preview: ${outputPath}`);
+    }
+
+    // Read and send HTML file
+    const htmlContent = await fs.readFile(outputPath, 'utf-8');
+
+    console.log('PDF preview successful:', {
+      inputSize: file.size,
+      outputLength: htmlContent.length
+    });
+
+    res.set('Content-Type', 'text/html');
+    res.send(htmlContent);
+
+  } catch (error) {
+    console.error('PDF preview error:', error);
+    const message = error instanceof Error ? error.message : 'Unknown PDF preview error';
+    res.status(500).json({ error: `Failed to generate PDF preview: ${message}` });
+  } finally {
+    await fs.rm(tmpDir, { recursive: true, force: true }).catch(() => undefined);
+  }
+});
+
 // TXT Preview endpoint - convert TXT to HTML for web viewing
 app.post('/api/preview/txt', uploadDocument.single('file'), async (req, res) => {
   console.log('=== TXT PREVIEW REQUEST ===');
@@ -6826,6 +6914,95 @@ app.post('/api/preview/md', uploadDocument.single('file'), async (req, res) => {
     console.error('Markdown preview error:', error);
     const message = error instanceof Error ? error.message : 'Unknown Markdown preview error';
     res.status(500).json({ error: `Failed to generate Markdown preview: ${message}` });
+  } finally {
+    await fs.rm(tmpDir, { recursive: true, force: true }).catch(() => undefined);
+  }
+});
+
+// NEF Preview endpoint - convert NEF (Nikon RAW) to web-viewable image
+app.post('/api/preview/nef', uploadDocument.single('file'), async (req, res) => {
+  console.log('=== NEF PREVIEW REQUEST ===');
+  const tmpDir = path.join(os.tmpdir(), `nef-preview-${Date.now()}`);
+  
+  try {
+    await fs.mkdir(tmpDir, { recursive: true });
+    
+    const file = req.file;
+    if (!file) {
+      return res.status(400).json({ error: 'No file uploaded' });
+    }
+
+    console.log('NEF file received:', {
+      originalname: file.originalname,
+      mimetype: file.mimetype,
+      size: file.size
+    });
+
+    // Save NEF file to temp location
+    const nefPath = path.join(tmpDir, 'input.nef');
+    await fs.writeFile(nefPath, file.buffer);
+
+    // Use Python script to convert NEF to JPEG
+    const pythonPath = process.env.PYTHON_PATH || 'python3';
+    const scriptPath = path.join(__dirname, '..', 'viewers', 'nef_to_image.py');
+    const outputPath = path.join(tmpDir, 'output.jpg');
+
+    // Check if script exists
+    const scriptExists = await fs.access(scriptPath).then(() => true).catch(() => false);
+    if (!scriptExists) {
+      console.error(`NEF script not found: ${scriptPath}`);
+      return res.status(500).json({ error: 'NEF preview script not found' });
+    }
+
+    const args = [
+      scriptPath,
+      nefPath,
+      outputPath,
+      '--max-dimension', '2048'
+    ];
+
+    console.log('Executing NEF script:', { pythonPath, scriptPath, args });
+
+    let stdout, stderr;
+    try {
+      const result = await execFileAsync(pythonPath, args, { timeout: 120000 }); // 2 min timeout for RAW processing
+      stdout = result.stdout;
+      stderr = result.stderr;
+    } catch (execError: any) {
+      console.error('NEF script execution failed:', execError);
+      stdout = execError.stdout || '';
+      stderr = execError.stderr || execError.message || 'NEF execution failed';
+    }
+
+    if (stdout.trim().length > 0) console.log('NEF stdout:', stdout.trim());
+    if (stderr.trim().length > 0) console.warn('NEF stderr:', stderr.trim());
+    
+    // Check for errors
+    if (stderr.includes('ERROR:') || stderr.includes('Traceback')) {
+      throw new Error(`NEF script error: ${stderr}`);
+    }
+
+    // Check if output file was created
+    const outputExists = await fs.access(outputPath).then(() => true).catch(() => false);
+    if (!outputExists) {
+      throw new Error(`NEF script did not produce preview: ${outputPath}`);
+    }
+
+    // Read and send image file
+    const imageBuffer = await fs.readFile(outputPath);
+
+    console.log('NEF preview successful:', {
+      inputSize: file.size,
+      outputSize: imageBuffer.length
+    });
+
+    res.set('Content-Type', 'image/jpeg');
+    res.send(imageBuffer);
+
+  } catch (error) {
+    console.error('NEF preview error:', error);
+    const message = error instanceof Error ? error.message : 'Unknown NEF preview error';
+    res.status(500).json({ error: `Failed to generate NEF preview: ${message}` });
   } finally {
     await fs.rm(tmpDir, { recursive: true, force: true }).catch(() => undefined);
   }
@@ -7582,7 +7759,7 @@ app.post('/api/preview/xlsx', uploadDocument.single('file'), async (req, res) =>
       scriptPath,
       xlsxPath,
       htmlPath,
-      '--max-rows', '1000'
+      '--max-rows', '2000'
     ];
 
     console.log('Executing Python script:', { pythonPath, scriptPath, args });
