@@ -77,7 +77,20 @@ const uploadDocument = multer({
     ];
     
     const extension = file.originalname.split('.').pop()?.toLowerCase();
-    const allowedExtensions = ['docx', 'doc', 'docm', 'dotx', 'dotm', 'rtf', 'odt', 'xlsx', 'xls', 'xlsm', 'xlsb', 'ods', 'txt', 'log', 'md', 'markdown', 'json', 'xml', 'csv', 'tsv', 'html', 'css', 'js', 'py', 'java', 'c', 'cpp'];
+    const allowedExtensions = [
+      // Documents
+      'docx', 'doc', 'docm', 'dotx', 'dotm', 'rtf', 'odt', 
+      // Spreadsheets
+      'xlsx', 'xls', 'xlsm', 'xlsb', 'ods', 
+      // Text/Code
+      'txt', 'log', 'md', 'markdown', 'json', 'xml', 'csv', 'tsv', 'html', 'css', 'js', 'py', 'java', 'c', 'cpp',
+      // RAW Image Formats (for viewers)
+      'nef', 'cr2', 'dng', 'arw', 'orf', 'raf', 'rw2', 'pef', '3fr', 'dcr', 'kdc', 'mrw', 'nrw', 'sr2', 'srf', 'x3f',
+      // Standard Images (for viewers)
+      'jpg', 'jpeg', 'png', 'gif', 'webp', 'bmp', 'tiff', 'tif', 'svg', 'ico', 'heic', 'heif', 'avif',
+      // Documents (for viewers)
+      'pdf'
+    ];
     
     if (allowedMimes.includes(file.mimetype) || allowedExtensions.includes(extension || '')) {
       cb(null, true);
@@ -7581,7 +7594,7 @@ app.post('/api/preview/ods', uploadDocument.single('file'), async (req, res) => 
       scriptPath,
       odsPath,
       htmlPath,
-      '--max-rows', '1000'
+      '--max-rows', '2000'
     ];
 
     console.log('Executing Python script:', { pythonPath, scriptPath, args });
@@ -7670,7 +7683,7 @@ app.post('/api/preview/csv', uploadDocument.single('file'), async (req, res) => 
       scriptPath,
       csvPath,
       htmlPath,
-      '--max-rows', '1000'
+      '--max-rows', '2000'
     ];
 
     console.log('Executing Python script:', { pythonPath, scriptPath, args });
@@ -7739,8 +7752,12 @@ app.post('/api/preview/xlsx', uploadDocument.single('file'), async (req, res) =>
       size: file.size
     });
 
-    // Save Excel file to temp location
-    const xlsxPath = path.join(tmpDir, 'input.xlsx');
+    // Determine file extension from original filename
+    const fileExt = path.extname(file.originalname).toLowerCase() || '.xlsx';
+    console.log('File extension:', fileExt);
+
+    // Save Excel file to temp location with correct extension
+    const xlsxPath = path.join(tmpDir, `input${fileExt}`);
     await fs.writeFile(xlsxPath, file.buffer);
 
     // Use Python script to convert Excel to HTML

@@ -34,14 +34,14 @@ def detect_delimiter(csv_file, sample_size=5):
         print("Could not detect delimiter, using comma as default")
         return ','
 
-def convert_csv_to_html_pandas(csv_file, html_file, max_rows=1000):
+def convert_csv_to_html_pandas(csv_file, html_file, max_rows=2000):
     """
     Convert CSV to HTML using pandas with table styling.
     
     Args:
         csv_file (str): Path to input CSV file
         html_file (str): Path to output HTML file
-        max_rows (int): Maximum rows to display (default: 1000)
+        max_rows (int): Maximum rows to display (default: 2000)
     
     Returns:
         bool: True if conversion successful, False otherwise
@@ -287,8 +287,8 @@ def main():
     parser = argparse.ArgumentParser(description='Convert CSV to HTML for web preview')
     parser.add_argument('csv_file', help='Input CSV file path')
     parser.add_argument('html_file', help='Output HTML file path')
-    parser.add_argument('--max-rows', type=int, default=1000,
-                        help='Maximum rows to display (default: 1000)')
+    parser.add_argument('--max-rows', type=int, default=2000,
+                        help='Maximum rows to display (default: 2000)')
     
     args = parser.parse_args()
     

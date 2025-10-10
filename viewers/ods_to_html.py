@@ -10,14 +10,14 @@ import sys
 import traceback
 import pandas as pd
 
-def convert_ods_to_html_pandas(ods_file, html_file, max_rows=1000):
+def convert_ods_to_html_pandas(ods_file, html_file, max_rows=2000):
     """
     Convert ODS to HTML using pandas with table styling.
     
     Args:
         ods_file (str): Path to input ODS file
         html_file (str): Path to output HTML file
-        max_rows (int): Maximum rows to display per sheet (default: 1000)
+        max_rows (int): Maximum rows to display per sheet (default: 2000)
     
     Returns:
         bool: True if conversion successful, False otherwise
@@ -347,8 +347,8 @@ def main():
     parser = argparse.ArgumentParser(description='Convert ODS to HTML for web preview')
     parser.add_argument('ods_file', help='Input ODS file path')
     parser.add_argument('html_file', help='Output HTML file path')
-    parser.add_argument('--max-rows', type=int, default=1000,
-                        help='Maximum rows to display per sheet (default: 1000)')
+    parser.add_argument('--max-rows', type=int, default=2000,
+                        help='Maximum rows to display per sheet (default: 2000)')
     
     args = parser.parse_args()
     

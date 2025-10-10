@@ -31,8 +31,27 @@ def convert_xlsx_to_html_pandas(xlsx_file, html_file, max_rows=2000):
         # Read Excel file
         print("Reading Excel file with pandas...")
         
-        # Read all sheets
-        xl_file = pd.ExcelFile(xlsx_file)
+        # Determine file type and engine
+        file_extension = os.path.splitext(xlsx_file)[1].lower()
+        print(f"File extension: {file_extension}")
+        
+        # Read all sheets with appropriate engine
+        if file_extension == '.xls':
+            # Old Excel format - requires xlrd
+            print("Using xlrd engine for XLS format...")
+            try:
+                xl_file = pd.ExcelFile(xlsx_file, engine='xlrd')
+            except ImportError:
+                print("WARNING: xlrd not available, trying openpyxl (may fail for XLS)...")
+                xl_file = pd.ExcelFile(xlsx_file)
+            except Exception as e:
+                print(f"ERROR with xlrd: {e}, trying default engine...")
+                xl_file = pd.ExcelFile(xlsx_file)
+        else:
+            # Modern Excel format (XLSX) - use openpyxl
+            print("Using openpyxl engine for XLSX format...")
+            xl_file = pd.ExcelFile(xlsx_file, engine='openpyxl')
+        
         sheet_names = xl_file.sheet_names
         print(f"Found {len(sheet_names)} sheet(s): {sheet_names}")
         
@@ -378,8 +397,26 @@ def main():
         print(f"Pandas version: {pandas.__version__}")
     except ImportError as e:
         print(f"ERROR: Pandas not available: {e}")
-        print("Please install: pip install pandas openpyxl")
+        print("Please install: pip install pandas openpyxl xlrd")
         sys.exit(1)
+    
+    # Check file type and required engines
+    file_extension = os.path.splitext(args.xlsx_file)[1].lower()
+    if file_extension == '.xls':
+        try:
+            import xlrd
+            print(f"xlrd available: {xlrd.__VERSION__}")
+        except ImportError:
+            print(f"WARNING: xlrd not available for XLS files")
+            print("Please install: pip install xlrd")
+            print("Will attempt conversion but may fail...")
+    else:
+        try:
+            import openpyxl
+            print(f"openpyxl available: {openpyxl.__version__}")
+        except ImportError:
+            print(f"WARNING: openpyxl not available for XLSX files")
+            print("Please install: pip install openpyxl")
     
     # Create output directory if it doesn't exist
     output_dir = os.path.dirname(args.html_file)
