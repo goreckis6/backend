@@ -7144,6 +7144,112 @@ app.post('/api/preview/orf', uploadDocument.single('file'), async (req, res) => 
   }
 });
 
+// DNG Preview endpoint - convert DNG (Adobe Digital Negative) to web-viewable image
+app.post('/api/preview/dng', uploadDocument.single('file'), async (req, res) => {
+  console.log('=== DNG PREVIEW REQUEST ===');
+  const tmpDir = path.join(os.tmpdir(), `dng-preview-${Date.now()}`);
+  
+  try {
+    await fs.mkdir(tmpDir, { recursive: true });
+    
+    const file = req.file;
+    if (!file) {
+      return res.status(400).json({ error: 'No file uploaded' });
+    }
+
+    console.log('DNG file received:', {
+      originalname: file.originalname,
+      mimetype: file.mimetype,
+      size: file.size
+    });
+
+    // Save DNG file to temp location
+    const dngPath = path.join(tmpDir, 'input.dng');
+    await fs.writeFile(dngPath, file.buffer);
+
+    // Use Python script to convert DNG to JPEG
+    const pythonPath = process.env.PYTHON_PATH || 'python3';
+    const scriptPath = path.join(__dirname, '..', 'viewers', 'dng_to_image.py');
+    const outputPath = path.join(tmpDir, 'output.jpg');
+    const metadataPath = path.join(tmpDir, 'metadata.json');
+
+    // Check if script exists
+    const scriptExists = await fs.access(scriptPath).then(() => true).catch(() => false);
+    if (!scriptExists) {
+      console.error(`DNG script not found: ${scriptPath}`);
+      return res.status(500).json({ error: 'DNG preview script not found' });
+    }
+
+    const args = [
+      scriptPath,
+      dngPath,
+      outputPath,
+      metadataPath,
+      '--max-dimension', '2048'
+    ];
+
+    console.log('Executing DNG script:', { pythonPath, scriptPath, args });
+
+    let stdout, stderr;
+    try {
+      const result = await execFileAsync(pythonPath, args, { timeout: 120000 }); // 2 min timeout for RAW processing
+      stdout = result.stdout;
+      stderr = result.stderr;
+    } catch (execError: any) {
+      console.error('DNG script execution failed:', execError);
+      stdout = execError.stdout || '';
+      stderr = execError.stderr || execError.message || 'DNG execution failed';
+    }
+
+    if (stdout.trim().length > 0) console.log('DNG stdout:', stdout.trim());
+    if (stderr.trim().length > 0) console.warn('DNG stderr:', stderr.trim());
+    
+    // Check for errors
+    if (stderr.includes('ERROR:') || stderr.includes('Traceback')) {
+      throw new Error(`DNG script error: ${stderr}`);
+    }
+
+    // Check if output file was created
+    const outputExists = await fs.access(outputPath).then(() => true).catch(() => false);
+    if (!outputExists) {
+      throw new Error(`DNG script did not produce preview: ${outputPath}`);
+    }
+
+    // Read image file and metadata
+    const imageBuffer = await fs.readFile(outputPath);
+    let metadata = {};
+    
+    try {
+      const metadataContent = await fs.readFile(metadataPath, 'utf-8');
+      metadata = JSON.parse(metadataContent);
+    } catch (error) {
+      console.warn('Could not read metadata:', error);
+    }
+
+    console.log('DNG preview successful:', {
+      inputSize: file.size,
+      outputSize: imageBuffer.length,
+      metadata
+    });
+
+    // Convert image to base64 data URL
+    const base64Image = imageBuffer.toString('base64');
+    const imageDataUrl = `data:image/jpeg;base64,${base64Image}`;
+
+    res.json({
+      imageUrl: imageDataUrl,
+      metadata
+    });
+
+  } catch (error) {
+    console.error('DNG preview error:', error);
+    const message = error instanceof Error ? error.message : 'Unknown DNG preview error';
+    res.status(500).json({ error: `Failed to generate DNG preview: ${message}` });
+  } finally {
+    await fs.rm(tmpDir, { recursive: true, force: true }).catch(() => undefined);
+  }
+});
+
 // ARW Preview endpoint - convert ARW (Sony RAW) to web-viewable image
 app.post('/api/preview/arw', uploadDocument.single('file'), async (req, res) => {
   console.log('=== ARW PREVIEW REQUEST ===');
@@ -8474,6 +8580,112 @@ app.post('/api/preview/xlsx', uploadDocument.single('file'), async (req, res) =>
     console.error('Excel preview error:', error);
     const message = error instanceof Error ? error.message : 'Unknown Excel preview error';
     res.status(500).json({ error: `Failed to generate Excel preview: ${message}` });
+  } finally {
+    await fs.rm(tmpDir, { recursive: true, force: true }).catch(() => undefined);
+  }
+});
+
+// PEF Preview endpoint - convert PEF (Pentax RAW) to web-viewable image
+app.post('/api/preview/pef', uploadDocument.single('file'), async (req, res) => {
+  console.log('=== PEF PREVIEW REQUEST ===');
+  const tmpDir = path.join(os.tmpdir(), `pef-preview-${Date.now()}`);
+  
+  try {
+    await fs.mkdir(tmpDir, { recursive: true });
+    
+    const file = req.file;
+    if (!file) {
+      return res.status(400).json({ error: 'No file uploaded' });
+    }
+
+    console.log('PEF file received:', {
+      originalname: file.originalname,
+      mimetype: file.mimetype,
+      size: file.size
+    });
+
+    // Save PEF file to temp location
+    const pefPath = path.join(tmpDir, 'input.pef');
+    await fs.writeFile(pefPath, file.buffer);
+
+    // Use Python script to convert PEF to JPEG
+    const pythonPath = process.env.PYTHON_PATH || 'python3';
+    const scriptPath = path.join(__dirname, '..', 'viewers', 'pef_to_image.py');
+    const outputPath = path.join(tmpDir, 'output.jpg');
+    const metadataPath = path.join(tmpDir, 'metadata.json');
+
+    // Check if script exists
+    const scriptExists = await fs.access(scriptPath).then(() => true).catch(() => false);
+    if (!scriptExists) {
+      console.error(`PEF script not found: ${scriptPath}`);
+      return res.status(500).json({ error: 'PEF preview script not found' });
+    }
+
+    const args = [
+      scriptPath,
+      pefPath,
+      outputPath,
+      metadataPath,
+      '--max-dimension', '2048'
+    ];
+
+    console.log('Executing PEF script:', { pythonPath, scriptPath, args });
+
+    let stdout, stderr;
+    try {
+      const result = await execFileAsync(pythonPath, args, { timeout: 120000 }); // 2 min timeout for RAW processing
+      stdout = result.stdout;
+      stderr = result.stderr;
+    } catch (execError: any) {
+      console.error('PEF script execution failed:', execError);
+      stdout = execError.stdout || '';
+      stderr = execError.stderr || execError.message || 'PEF execution failed';
+    }
+
+    if (stdout.trim().length > 0) console.log('PEF stdout:', stdout.trim());
+    if (stderr.trim().length > 0) console.warn('PEF stderr:', stderr.trim());
+    
+    // Check for errors
+    if (stderr.includes('ERROR:') || stderr.includes('Traceback')) {
+      throw new Error(`PEF script error: ${stderr}`);
+    }
+
+    // Check if output file was created
+    const outputExists = await fs.access(outputPath).then(() => true).catch(() => false);
+    if (!outputExists) {
+      throw new Error(`PEF script did not produce preview: ${outputPath}`);
+    }
+
+    // Read image file and metadata
+    const imageBuffer = await fs.readFile(outputPath);
+    let metadata = {};
+    
+    try {
+      const metadataContent = await fs.readFile(metadataPath, 'utf-8');
+      metadata = JSON.parse(metadataContent);
+    } catch (error) {
+      console.warn('Could not read metadata:', error);
+    }
+
+    console.log('PEF preview successful:', {
+      inputSize: file.size,
+      outputSize: imageBuffer.length,
+      metadata
+    });
+
+    // Convert image to base64 data URL
+    const base64Image = imageBuffer.toString('base64');
+    const imageDataUrl = `data:image/jpeg;base64,${base64Image}`;
+
+    res.json({
+      imageUrl: imageDataUrl,
+      metadata
+    });
+
+  } catch (error) {
+    console.error('PEF preview error:', error);
+    const message = error instanceof Error ? error.message : 'Unknown PEF preview error';
+    res.status(500).json({ error: `Failed to generate PEF preview: ${message}` });
   } finally {
     await fs.rm(tmpDir, { recursive: true, force: true }).catch(() => undefined);
   }
