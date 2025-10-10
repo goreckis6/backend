@@ -6831,6 +6831,451 @@ app.post('/api/preview/md', uploadDocument.single('file'), async (req, res) => {
   }
 });
 
+// Python Preview endpoint - format Python for web viewing
+app.post('/api/preview/python', uploadDocument.single('file'), async (req, res) => {
+  console.log('=== PYTHON PREVIEW REQUEST ===');
+  const tmpDir = path.join(os.tmpdir(), `python-preview-${Date.now()}`);
+  
+  try {
+    await fs.mkdir(tmpDir, { recursive: true });
+    
+    const file = req.file;
+    if (!file) {
+      return res.status(400).json({ error: 'No file uploaded' });
+    }
+
+    console.log('Python file received:', {
+      originalname: file.originalname,
+      mimetype: file.mimetype,
+      size: file.size
+    });
+
+    // Save Python file to temp location
+    const pyPath = path.join(tmpDir, 'input.py');
+    await fs.writeFile(pyPath, file.buffer);
+
+    // Use Python script to format Python code
+    const pythonPath = process.env.PYTHON_PATH || 'python3';
+    const scriptPath = path.join(__dirname, '..', 'viewers', 'python_to_formatted.py');
+    const outputPath = path.join(tmpDir, 'output.html');
+
+    // Check if script exists
+    const scriptExists = await fs.access(scriptPath).then(() => true).catch(() => false);
+    if (!scriptExists) {
+      console.error(`Python script not found: ${scriptPath}`);
+      return res.status(500).json({ error: 'Python preview script not found' });
+    }
+
+    const args = [
+      scriptPath,
+      pyPath,
+      outputPath,
+      '--max-size-mb', '10'
+    ];
+
+    console.log('Executing Python script:', { pythonPath, scriptPath, args });
+
+    let stdout, stderr;
+    try {
+      const result = await execFileAsync(pythonPath, args);
+      stdout = result.stdout;
+      stderr = result.stderr;
+    } catch (execError: any) {
+      console.error('Python script execution failed:', execError);
+      stdout = execError.stdout || '';
+      stderr = execError.stderr || execError.message || 'Python execution failed';
+    }
+
+    if (stdout.trim().length > 0) console.log('Python stdout:', stdout.trim());
+    if (stderr.trim().length > 0) console.warn('Python stderr:', stderr.trim());
+    
+    // Check for errors
+    if (stderr.includes('ERROR:') || stderr.includes('Traceback')) {
+      throw new Error(`Python script error: ${stderr}`);
+    }
+
+    // Check if output file was created
+    const outputExists = await fs.access(outputPath).then(() => true).catch(() => false);
+    if (!outputExists) {
+      throw new Error(`Python script did not produce preview: ${outputPath}`);
+    }
+
+    // Read and send formatted HTML file
+    const htmlContent = await fs.readFile(outputPath, 'utf-8');
+
+    console.log('Python preview successful:', {
+      inputSize: file.size,
+      outputLength: htmlContent.length
+    });
+
+    res.set('Content-Type', 'text/html');
+    res.send(htmlContent);
+
+  } catch (error) {
+    console.error('Python preview error:', error);
+    const message = error instanceof Error ? error.message : 'Unknown Python preview error';
+    res.status(500).json({ error: `Failed to generate Python preview: ${message}` });
+  } finally {
+    await fs.rm(tmpDir, { recursive: true, force: true }).catch(() => undefined);
+  }
+});
+
+// JavaScript Preview endpoint - format JS for web viewing
+app.post('/api/preview/js', uploadDocument.single('file'), async (req, res) => {
+  console.log('=== JAVASCRIPT PREVIEW REQUEST ===');
+  const tmpDir = path.join(os.tmpdir(), `js-preview-${Date.now()}`);
+  
+  try {
+    await fs.mkdir(tmpDir, { recursive: true });
+    
+    const file = req.file;
+    if (!file) {
+      return res.status(400).json({ error: 'No file uploaded' });
+    }
+
+    console.log('JavaScript file received:', {
+      originalname: file.originalname,
+      mimetype: file.mimetype,
+      size: file.size
+    });
+
+    // Save JavaScript file to temp location
+    const jsPath = path.join(tmpDir, 'input.js');
+    await fs.writeFile(jsPath, file.buffer);
+
+    // Use Python script to format JavaScript
+    const pythonPath = process.env.PYTHON_PATH || 'python3';
+    const scriptPath = path.join(__dirname, '..', 'viewers', 'js_to_formatted.py');
+    const outputPath = path.join(tmpDir, 'output.html');
+
+    // Check if script exists
+    const scriptExists = await fs.access(scriptPath).then(() => true).catch(() => false);
+    if (!scriptExists) {
+      console.error(`Python script not found: ${scriptPath}`);
+      return res.status(500).json({ error: 'JavaScript preview script not found' });
+    }
+
+    const args = [
+      scriptPath,
+      jsPath,
+      outputPath,
+      '--max-size-mb', '10'
+    ];
+
+    console.log('Executing Python script:', { pythonPath, scriptPath, args });
+
+    let stdout, stderr;
+    try {
+      const result = await execFileAsync(pythonPath, args);
+      stdout = result.stdout;
+      stderr = result.stderr;
+    } catch (execError: any) {
+      console.error('Python script execution failed:', execError);
+      stdout = execError.stdout || '';
+      stderr = execError.stderr || execError.message || 'Python execution failed';
+    }
+
+    if (stdout.trim().length > 0) console.log('Python stdout:', stdout.trim());
+    if (stderr.trim().length > 0) console.warn('Python stderr:', stderr.trim());
+    
+    // Check for errors
+    if (stderr.includes('ERROR:') || stderr.includes('Traceback')) {
+      throw new Error(`Python script error: ${stderr}`);
+    }
+
+    // Check if output file was created
+    const outputExists = await fs.access(outputPath).then(() => true).catch(() => false);
+    if (!outputExists) {
+      throw new Error(`Python script did not produce JavaScript preview: ${outputPath}`);
+    }
+
+    // Read and send formatted HTML file
+    const htmlContent = await fs.readFile(outputPath, 'utf-8');
+
+    console.log('JavaScript preview successful:', {
+      inputSize: file.size,
+      outputLength: htmlContent.length
+    });
+
+    res.set('Content-Type', 'text/html');
+    res.send(htmlContent);
+
+  } catch (error) {
+    console.error('JavaScript preview error:', error);
+    const message = error instanceof Error ? error.message : 'Unknown JavaScript preview error';
+    res.status(500).json({ error: `Failed to generate JavaScript preview: ${message}` });
+  } finally {
+    await fs.rm(tmpDir, { recursive: true, force: true }).catch(() => undefined);
+  }
+});
+
+// CSS Preview endpoint - format CSS for web viewing
+app.post('/api/preview/css', uploadDocument.single('file'), async (req, res) => {
+  console.log('=== CSS PREVIEW REQUEST ===');
+  const tmpDir = path.join(os.tmpdir(), `css-preview-${Date.now()}`);
+  
+  try {
+    await fs.mkdir(tmpDir, { recursive: true });
+    
+    const file = req.file;
+    if (!file) {
+      return res.status(400).json({ error: 'No file uploaded' });
+    }
+
+    console.log('CSS file received:', {
+      originalname: file.originalname,
+      mimetype: file.mimetype,
+      size: file.size
+    });
+
+    // Save CSS file to temp location
+    const cssPath = path.join(tmpDir, 'input.css');
+    await fs.writeFile(cssPath, file.buffer);
+
+    // Use Python script to format CSS
+    const pythonPath = process.env.PYTHON_PATH || 'python3';
+    const scriptPath = path.join(__dirname, '..', 'viewers', 'css_to_formatted.py');
+    const outputPath = path.join(tmpDir, 'output.html');
+
+    // Check if script exists
+    const scriptExists = await fs.access(scriptPath).then(() => true).catch(() => false);
+    if (!scriptExists) {
+      console.error(`Python script not found: ${scriptPath}`);
+      return res.status(500).json({ error: 'CSS preview script not found' });
+    }
+
+    const args = [
+      scriptPath,
+      cssPath,
+      outputPath,
+      '--max-size-mb', '10'
+    ];
+
+    console.log('Executing Python script:', { pythonPath, scriptPath, args });
+
+    let stdout, stderr;
+    try {
+      const result = await execFileAsync(pythonPath, args);
+      stdout = result.stdout;
+      stderr = result.stderr;
+    } catch (execError: any) {
+      console.error('Python script execution failed:', execError);
+      stdout = execError.stdout || '';
+      stderr = execError.stderr || execError.message || 'Python execution failed';
+    }
+
+    if (stdout.trim().length > 0) console.log('Python stdout:', stdout.trim());
+    if (stderr.trim().length > 0) console.warn('Python stderr:', stderr.trim());
+    
+    // Check for errors
+    if (stderr.includes('ERROR:') || stderr.includes('Traceback')) {
+      throw new Error(`Python script error: ${stderr}`);
+    }
+
+    // Check if output file was created
+    const outputExists = await fs.access(outputPath).then(() => true).catch(() => false);
+    if (!outputExists) {
+      throw new Error(`Python script did not produce CSS preview: ${outputPath}`);
+    }
+
+    // Read and send formatted HTML file
+    const htmlContent = await fs.readFile(outputPath, 'utf-8');
+
+    console.log('CSS preview successful:', {
+      inputSize: file.size,
+      outputLength: htmlContent.length
+    });
+
+    res.set('Content-Type', 'text/html');
+    res.send(htmlContent);
+
+  } catch (error) {
+    console.error('CSS preview error:', error);
+    const message = error instanceof Error ? error.message : 'Unknown CSS preview error';
+    res.status(500).json({ error: `Failed to generate CSS preview: ${message}` });
+  } finally {
+    await fs.rm(tmpDir, { recursive: true, force: true }).catch(() => undefined);
+  }
+});
+
+// HTML Preview endpoint - format HTML for web viewing
+app.post('/api/preview/html', uploadDocument.single('file'), async (req, res) => {
+  console.log('=== HTML PREVIEW REQUEST ===');
+  const tmpDir = path.join(os.tmpdir(), `html-preview-${Date.now()}`);
+  
+  try {
+    await fs.mkdir(tmpDir, { recursive: true });
+    
+    const file = req.file;
+    if (!file) {
+      return res.status(400).json({ error: 'No file uploaded' });
+    }
+
+    console.log('HTML file received:', {
+      originalname: file.originalname,
+      mimetype: file.mimetype,
+      size: file.size
+    });
+
+    // Save HTML file to temp location
+    const htmlPath = path.join(tmpDir, 'input.html');
+    await fs.writeFile(htmlPath, file.buffer);
+
+    // Use Python script to format HTML
+    const pythonPath = process.env.PYTHON_PATH || 'python3';
+    const scriptPath = path.join(__dirname, '..', 'viewers', 'html_to_formatted.py');
+    const outputPath = path.join(tmpDir, 'output.html');
+
+    // Check if script exists
+    const scriptExists = await fs.access(scriptPath).then(() => true).catch(() => false);
+    if (!scriptExists) {
+      console.error(`Python script not found: ${scriptPath}`);
+      return res.status(500).json({ error: 'HTML preview script not found' });
+    }
+
+    const args = [
+      scriptPath,
+      htmlPath,
+      outputPath,
+      '--max-size-mb', '10'
+    ];
+
+    console.log('Executing Python script:', { pythonPath, scriptPath, args });
+
+    let stdout, stderr;
+    try {
+      const result = await execFileAsync(pythonPath, args);
+      stdout = result.stdout;
+      stderr = result.stderr;
+    } catch (execError: any) {
+      console.error('Python script execution failed:', execError);
+      stdout = execError.stdout || '';
+      stderr = execError.stderr || execError.message || 'Python execution failed';
+    }
+
+    if (stdout.trim().length > 0) console.log('Python stdout:', stdout.trim());
+    if (stderr.trim().length > 0) console.warn('Python stderr:', stderr.trim());
+    
+    // Check for errors
+    if (stderr.includes('ERROR:') || stderr.includes('Traceback')) {
+      throw new Error(`Python script error: ${stderr}`);
+    }
+
+    // Check if output file was created
+    const outputExists = await fs.access(outputPath).then(() => true).catch(() => false);
+    if (!outputExists) {
+      throw new Error(`Python script did not produce HTML preview: ${outputPath}`);
+    }
+
+    // Read and send formatted HTML file
+    const htmlContent = await fs.readFile(outputPath, 'utf-8');
+
+    console.log('HTML preview successful:', {
+      inputSize: file.size,
+      outputLength: htmlContent.length
+    });
+
+    res.set('Content-Type', 'text/html');
+    res.send(htmlContent);
+
+  } catch (error) {
+    console.error('HTML preview error:', error);
+    const message = error instanceof Error ? error.message : 'Unknown HTML preview error';
+    res.status(500).json({ error: `Failed to generate HTML preview: ${message}` });
+  } finally {
+    await fs.rm(tmpDir, { recursive: true, force: true }).catch(() => undefined);
+  }
+});
+
+// XML Preview endpoint - convert XML to HTML for web viewing
+app.post('/api/preview/xml', uploadDocument.single('file'), async (req, res) => {
+  console.log('=== XML PREVIEW REQUEST ===');
+  const tmpDir = path.join(os.tmpdir(), `xml-preview-${Date.now()}`);
+  
+  try {
+    await fs.mkdir(tmpDir, { recursive: true });
+    
+    const file = req.file;
+    if (!file) {
+      return res.status(400).json({ error: 'No file uploaded' });
+    }
+
+    console.log('XML file received:', {
+      originalname: file.originalname,
+      mimetype: file.mimetype,
+      size: file.size
+    });
+
+    // Save XML file to temp location
+    const xmlPath = path.join(tmpDir, 'input.xml');
+    await fs.writeFile(xmlPath, file.buffer);
+
+    // Use Python script to convert XML to HTML
+    const pythonPath = process.env.PYTHON_PATH || 'python3';
+    const scriptPath = path.join(__dirname, '..', 'viewers', 'xml_to_html.py');
+    const htmlPath = path.join(tmpDir, 'output.html');
+
+    // Check if script exists
+    const scriptExists = await fs.access(scriptPath).then(() => true).catch(() => false);
+    if (!scriptExists) {
+      console.error(`Python script not found: ${scriptPath}`);
+      return res.status(500).json({ error: 'XML preview script not found' });
+    }
+
+    const args = [
+      scriptPath,
+      xmlPath,
+      htmlPath,
+      '--max-size-mb', '10'
+    ];
+
+    console.log('Executing Python script:', { pythonPath, scriptPath, args });
+
+    let stdout, stderr;
+    try {
+      const result = await execFileAsync(pythonPath, args);
+      stdout = result.stdout;
+      stderr = result.stderr;
+    } catch (execError: any) {
+      console.error('Python script execution failed:', execError);
+      stdout = execError.stdout || '';
+      stderr = execError.stderr || execError.message || 'Python execution failed';
+    }
+
+    if (stdout.trim().length > 0) console.log('Python stdout:', stdout.trim());
+    if (stderr.trim().length > 0) console.warn('Python stderr:', stderr.trim());
+    
+    // Check for errors
+    if (stderr.includes('ERROR:') || stderr.includes('Traceback')) {
+      throw new Error(`Python script error: ${stderr}`);
+    }
+
+    // Check if output file was created
+    const htmlExists = await fs.access(htmlPath).then(() => true).catch(() => false);
+    if (!htmlExists) {
+      throw new Error(`Python script did not produce HTML preview: ${htmlPath}`);
+    }
+
+    // Read and send HTML file
+    const htmlContent = await fs.readFile(htmlPath, 'utf-8');
+
+    console.log('XML preview successful:', {
+      inputSize: file.size,
+      outputLength: htmlContent.length
+    });
+
+    res.set('Content-Type', 'text/html');
+    res.send(htmlContent);
+
+  } catch (error) {
+    console.error('XML preview error:', error);
+    const message = error instanceof Error ? error.message : 'Unknown XML preview error';
+    res.status(500).json({ error: `Failed to generate XML preview: ${message}` });
+  } finally {
+    await fs.rm(tmpDir, { recursive: true, force: true }).catch(() => undefined);
+  }
+});
+
 // JSON Preview endpoint - convert JSON to HTML for web viewing
 app.post('/api/preview/json', uploadDocument.single('file'), async (req, res) => {
   console.log('=== JSON PREVIEW REQUEST ===');
