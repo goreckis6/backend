@@ -11,6 +11,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libmagick++-dev \
     libreoffice \
     calibre \
+    exiftool \
     fonts-dejavu fonts-liberation locales \
     python3 \
     python3-pip \
