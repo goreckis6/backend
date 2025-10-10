@@ -6932,6 +6932,324 @@ app.post('/api/preview/md', uploadDocument.single('file'), async (req, res) => {
   }
 });
 
+// RAF Preview endpoint - convert RAF (Fujifilm RAW) to web-viewable image
+app.post('/api/preview/raf', uploadDocument.single('file'), async (req, res) => {
+  console.log('=== RAF PREVIEW REQUEST ===');
+  const tmpDir = path.join(os.tmpdir(), `raf-preview-${Date.now()}`);
+  
+  try {
+    await fs.mkdir(tmpDir, { recursive: true });
+    
+    const file = req.file;
+    if (!file) {
+      return res.status(400).json({ error: 'No file uploaded' });
+    }
+
+    console.log('RAF file received:', {
+      originalname: file.originalname,
+      mimetype: file.mimetype,
+      size: file.size
+    });
+
+    // Save RAF file to temp location
+    const rafPath = path.join(tmpDir, 'input.raf');
+    await fs.writeFile(rafPath, file.buffer);
+
+    // Use Python script to convert RAF to JPEG
+    const pythonPath = process.env.PYTHON_PATH || 'python3';
+    const scriptPath = path.join(__dirname, '..', 'viewers', 'raf_to_image.py');
+    const outputPath = path.join(tmpDir, 'output.jpg');
+    const metadataPath = path.join(tmpDir, 'metadata.json');
+
+    // Check if script exists
+    const scriptExists = await fs.access(scriptPath).then(() => true).catch(() => false);
+    if (!scriptExists) {
+      console.error(`RAF script not found: ${scriptPath}`);
+      return res.status(500).json({ error: 'RAF preview script not found' });
+    }
+
+    const args = [
+      scriptPath,
+      rafPath,
+      outputPath,
+      metadataPath,
+      '--max-dimension', '2048'
+    ];
+
+    console.log('Executing RAF script:', { pythonPath, scriptPath, args });
+
+    let stdout, stderr;
+    try {
+      const result = await execFileAsync(pythonPath, args, { timeout: 120000 }); // 2 min timeout for RAW processing
+      stdout = result.stdout;
+      stderr = result.stderr;
+    } catch (execError: any) {
+      console.error('RAF script execution failed:', execError);
+      stdout = execError.stdout || '';
+      stderr = execError.stderr || execError.message || 'RAF execution failed';
+    }
+
+    if (stdout.trim().length > 0) console.log('RAF stdout:', stdout.trim());
+    if (stderr.trim().length > 0) console.warn('RAF stderr:', stderr.trim());
+    
+    // Check for errors
+    if (stderr.includes('ERROR:') || stderr.includes('Traceback')) {
+      throw new Error(`RAF script error: ${stderr}`);
+    }
+
+    // Check if output file was created
+    const outputExists = await fs.access(outputPath).then(() => true).catch(() => false);
+    if (!outputExists) {
+      throw new Error(`RAF script did not produce preview: ${outputPath}`);
+    }
+
+    // Read image file and metadata
+    const imageBuffer = await fs.readFile(outputPath);
+    let metadata = {};
+    
+    try {
+      const metadataContent = await fs.readFile(metadataPath, 'utf-8');
+      metadata = JSON.parse(metadataContent);
+    } catch (error) {
+      console.warn('Could not read metadata:', error);
+    }
+
+    console.log('RAF preview successful:', {
+      inputSize: file.size,
+      outputSize: imageBuffer.length,
+      metadata
+    });
+
+    // Convert image to base64 data URL
+    const base64Image = imageBuffer.toString('base64');
+    const imageDataUrl = `data:image/jpeg;base64,${base64Image}`;
+
+    res.json({
+      imageUrl: imageDataUrl,
+      metadata
+    });
+
+  } catch (error) {
+    console.error('RAF preview error:', error);
+    const message = error instanceof Error ? error.message : 'Unknown RAF preview error';
+    res.status(500).json({ error: `Failed to generate RAF preview: ${message}` });
+  } finally {
+    await fs.rm(tmpDir, { recursive: true, force: true }).catch(() => undefined);
+  }
+});
+
+// ORF Preview endpoint - convert ORF (Olympus RAW) to web-viewable image
+app.post('/api/preview/orf', uploadDocument.single('file'), async (req, res) => {
+  console.log('=== ORF PREVIEW REQUEST ===');
+  const tmpDir = path.join(os.tmpdir(), `orf-preview-${Date.now()}`);
+  
+  try {
+    await fs.mkdir(tmpDir, { recursive: true });
+    
+    const file = req.file;
+    if (!file) {
+      return res.status(400).json({ error: 'No file uploaded' });
+    }
+
+    console.log('ORF file received:', {
+      originalname: file.originalname,
+      mimetype: file.mimetype,
+      size: file.size
+    });
+
+    // Save ORF file to temp location
+    const orfPath = path.join(tmpDir, 'input.orf');
+    await fs.writeFile(orfPath, file.buffer);
+
+    // Use Python script to convert ORF to JPEG
+    const pythonPath = process.env.PYTHON_PATH || 'python3';
+    const scriptPath = path.join(__dirname, '..', 'viewers', 'orf_to_image.py');
+    const outputPath = path.join(tmpDir, 'output.jpg');
+    const metadataPath = path.join(tmpDir, 'metadata.json');
+
+    // Check if script exists
+    const scriptExists = await fs.access(scriptPath).then(() => true).catch(() => false);
+    if (!scriptExists) {
+      console.error(`ORF script not found: ${scriptPath}`);
+      return res.status(500).json({ error: 'ORF preview script not found' });
+    }
+
+    const args = [
+      scriptPath,
+      orfPath,
+      outputPath,
+      metadataPath,
+      '--max-dimension', '2048'
+    ];
+
+    console.log('Executing ORF script:', { pythonPath, scriptPath, args });
+
+    let stdout, stderr;
+    try {
+      const result = await execFileAsync(pythonPath, args, { timeout: 120000 }); // 2 min timeout for RAW processing
+      stdout = result.stdout;
+      stderr = result.stderr;
+    } catch (execError: any) {
+      console.error('ORF script execution failed:', execError);
+      stdout = execError.stdout || '';
+      stderr = execError.stderr || execError.message || 'ORF execution failed';
+    }
+
+    if (stdout.trim().length > 0) console.log('ORF stdout:', stdout.trim());
+    if (stderr.trim().length > 0) console.warn('ORF stderr:', stderr.trim());
+    
+    // Check for errors
+    if (stderr.includes('ERROR:') || stderr.includes('Traceback')) {
+      throw new Error(`ORF script error: ${stderr}`);
+    }
+
+    // Check if output file was created
+    const outputExists = await fs.access(outputPath).then(() => true).catch(() => false);
+    if (!outputExists) {
+      throw new Error(`ORF script did not produce preview: ${outputPath}`);
+    }
+
+    // Read image file and metadata
+    const imageBuffer = await fs.readFile(outputPath);
+    let metadata = {};
+    
+    try {
+      const metadataContent = await fs.readFile(metadataPath, 'utf-8');
+      metadata = JSON.parse(metadataContent);
+    } catch (error) {
+      console.warn('Could not read metadata:', error);
+    }
+
+    console.log('ORF preview successful:', {
+      inputSize: file.size,
+      outputSize: imageBuffer.length,
+      metadata
+    });
+
+    // Convert image to base64 data URL
+    const base64Image = imageBuffer.toString('base64');
+    const imageDataUrl = `data:image/jpeg;base64,${base64Image}`;
+
+    res.json({
+      imageUrl: imageDataUrl,
+      metadata
+    });
+
+  } catch (error) {
+    console.error('ORF preview error:', error);
+    const message = error instanceof Error ? error.message : 'Unknown ORF preview error';
+    res.status(500).json({ error: `Failed to generate ORF preview: ${message}` });
+  } finally {
+    await fs.rm(tmpDir, { recursive: true, force: true }).catch(() => undefined);
+  }
+});
+
+// ARW Preview endpoint - convert ARW (Sony RAW) to web-viewable image
+app.post('/api/preview/arw', uploadDocument.single('file'), async (req, res) => {
+  console.log('=== ARW PREVIEW REQUEST ===');
+  const tmpDir = path.join(os.tmpdir(), `arw-preview-${Date.now()}`);
+  
+  try {
+    await fs.mkdir(tmpDir, { recursive: true });
+    
+    const file = req.file;
+    if (!file) {
+      return res.status(400).json({ error: 'No file uploaded' });
+    }
+
+    console.log('ARW file received:', {
+      originalname: file.originalname,
+      mimetype: file.mimetype,
+      size: file.size
+    });
+
+    // Save ARW file to temp location
+    const arwPath = path.join(tmpDir, 'input.arw');
+    await fs.writeFile(arwPath, file.buffer);
+
+    // Use Python script to convert ARW to JPEG
+    const pythonPath = process.env.PYTHON_PATH || 'python3';
+    const scriptPath = path.join(__dirname, '..', 'viewers', 'arw_to_image.py');
+    const outputPath = path.join(tmpDir, 'output.jpg');
+    const metadataPath = path.join(tmpDir, 'metadata.json');
+
+    // Check if script exists
+    const scriptExists = await fs.access(scriptPath).then(() => true).catch(() => false);
+    if (!scriptExists) {
+      console.error(`ARW script not found: ${scriptPath}`);
+      return res.status(500).json({ error: 'ARW preview script not found' });
+    }
+
+    const args = [
+      scriptPath,
+      arwPath,
+      outputPath,
+      metadataPath,
+      '--max-dimension', '2048'
+    ];
+
+    console.log('Executing ARW script:', { pythonPath, scriptPath, args });
+
+    let stdout, stderr;
+    try {
+      const result = await execFileAsync(pythonPath, args, { timeout: 120000 }); // 2 min timeout for RAW processing
+      stdout = result.stdout;
+      stderr = result.stderr;
+    } catch (execError: any) {
+      console.error('ARW script execution failed:', execError);
+      stdout = execError.stdout || '';
+      stderr = execError.stderr || execError.message || 'ARW execution failed';
+    }
+
+    if (stdout.trim().length > 0) console.log('ARW stdout:', stdout.trim());
+    if (stderr.trim().length > 0) console.warn('ARW stderr:', stderr.trim());
+    
+    // Check for errors
+    if (stderr.includes('ERROR:') || stderr.includes('Traceback')) {
+      throw new Error(`ARW script error: ${stderr}`);
+    }
+
+    // Check if output file was created
+    const outputExists = await fs.access(outputPath).then(() => true).catch(() => false);
+    if (!outputExists) {
+      throw new Error(`ARW script did not produce preview: ${outputPath}`);
+    }
+
+    // Read image file and metadata
+    const imageBuffer = await fs.readFile(outputPath);
+    let metadata = {};
+    
+    try {
+      const metadataContent = await fs.readFile(metadataPath, 'utf-8');
+      metadata = JSON.parse(metadataContent);
+    } catch (error) {
+      console.warn('Could not read metadata:', error);
+    }
+
+    console.log('ARW preview successful:', {
+      inputSize: file.size,
+      outputSize: imageBuffer.length,
+      metadata
+    });
+
+    // Convert image to base64 data URL
+    const base64Image = imageBuffer.toString('base64');
+    const imageDataUrl = `data:image/jpeg;base64,${base64Image}`;
+
+    res.json({
+      imageUrl: imageDataUrl,
+      metadata
+    });
+
+  } catch (error) {
+    console.error('ARW preview error:', error);
+    const message = error instanceof Error ? error.message : 'Unknown ARW preview error';
+    res.status(500).json({ error: `Failed to generate ARW preview: ${message}` });
+  } finally {
+    await fs.rm(tmpDir, { recursive: true, force: true }).catch(() => undefined);
+  }
+});
+
 // X3F Preview endpoint - convert X3F (Sigma RAW) to web-viewable image
 app.post('/api/preview/x3f', uploadDocument.single('file'), async (req, res) => {
   console.log('=== X3F PREVIEW REQUEST ===');
