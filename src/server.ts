@@ -1342,14 +1342,14 @@ const isDngFile = (file: Express.Multer.File) => {
   
   // Try to detect DNG by filename first
   if (file.originalname) {
-    const ext = path.extname(file.originalname).replace('.', '').toLowerCase();
-    const result = ext === 'dng';
+  const ext = path.extname(file.originalname).replace('.', '').toLowerCase();
+  const result = ext === 'dng';
     console.log('DNG file detection (by filename):', {
-      filename: file.originalname,
-      extension: ext,
-      isDNG: result
-    });
-    return result;
+    filename: file.originalname,
+    extension: ext,
+    isDNG: result
+  });
+  return result;
   }
   
   // Fallback: try to detect DNG by MIME type or file content
@@ -4839,7 +4839,7 @@ app.post('/api/convert', conversionTimeout(5 * 60 * 1000), upload.single('file')
       }
       
       if (!file) {
-        return res.status(400).json({ error: 'No file uploaded' });
+      return res.status(400).json({ error: 'No file uploaded' });
       }
     }
 
@@ -5126,12 +5126,12 @@ app.post('/api/convert', conversionTimeout(5 * 60 * 1000), upload.single('file')
     
     try {
       pipeline = sharp(inputBuffer, {
-        failOn: 'truncated',
-        unlimited: true
-      });
+      failOn: 'truncated',
+      unlimited: true
+    });
 
       metadata = await pipeline.metadata();
-      console.log(`Metadata => ${metadata.width}x${metadata.height}, format: ${metadata.format}`);
+    console.log(`Metadata => ${metadata.width}x${metadata.height}, format: ${metadata.format}`);
     } catch (sharpError) {
       console.error('Sharp cannot process this file format:', sharpError);
       
@@ -6826,6 +6826,184 @@ app.post('/api/preview/md', uploadDocument.single('file'), async (req, res) => {
     console.error('Markdown preview error:', error);
     const message = error instanceof Error ? error.message : 'Unknown Markdown preview error';
     res.status(500).json({ error: `Failed to generate Markdown preview: ${message}` });
+  } finally {
+    await fs.rm(tmpDir, { recursive: true, force: true }).catch(() => undefined);
+  }
+});
+
+// JSON Preview endpoint - convert JSON to HTML for web viewing
+app.post('/api/preview/json', uploadDocument.single('file'), async (req, res) => {
+  console.log('=== JSON PREVIEW REQUEST ===');
+  const tmpDir = path.join(os.tmpdir(), `json-preview-${Date.now()}`);
+  
+  try {
+    await fs.mkdir(tmpDir, { recursive: true });
+    
+    const file = req.file;
+    if (!file) {
+      return res.status(400).json({ error: 'No file uploaded' });
+    }
+
+    console.log('JSON file received:', {
+      originalname: file.originalname,
+      mimetype: file.mimetype,
+      size: file.size
+    });
+
+    // Save JSON file to temp location
+    const jsonPath = path.join(tmpDir, 'input.json');
+    await fs.writeFile(jsonPath, file.buffer);
+
+    // Use Python script to convert JSON to HTML
+    const pythonPath = process.env.PYTHON_PATH || 'python3';
+    const scriptPath = path.join(__dirname, '..', 'viewers', 'json_to_html.py');
+    const htmlPath = path.join(tmpDir, 'output.html');
+
+    // Check if script exists
+    const scriptExists = await fs.access(scriptPath).then(() => true).catch(() => false);
+    if (!scriptExists) {
+      console.error(`Python script not found: ${scriptPath}`);
+      return res.status(500).json({ error: 'JSON preview script not found' });
+    }
+
+    const args = [
+      scriptPath,
+      jsonPath,
+      htmlPath,
+      '--max-size-mb', '10'
+    ];
+
+    console.log('Executing Python script:', { pythonPath, scriptPath, args });
+
+    let stdout, stderr;
+    try {
+      const result = await execFileAsync(pythonPath, args);
+      stdout = result.stdout;
+      stderr = result.stderr;
+    } catch (execError: any) {
+      console.error('Python script execution failed:', execError);
+      stdout = execError.stdout || '';
+      stderr = execError.stderr || execError.message || 'Python execution failed';
+    }
+
+    if (stdout.trim().length > 0) console.log('Python stdout:', stdout.trim());
+    if (stderr.trim().length > 0) console.warn('Python stderr:', stderr.trim());
+    
+    // Check for errors
+    if (stderr.includes('ERROR:') || stderr.includes('Traceback')) {
+      throw new Error(`Python script error: ${stderr}`);
+    }
+
+    // Check if output file was created
+    const htmlExists = await fs.access(htmlPath).then(() => true).catch(() => false);
+    if (!htmlExists) {
+      throw new Error(`Python script did not produce HTML preview: ${htmlPath}`);
+    }
+
+    // Read and send HTML file
+    const htmlContent = await fs.readFile(htmlPath, 'utf-8');
+
+    console.log('JSON preview successful:', {
+      inputSize: file.size,
+      outputLength: htmlContent.length
+    });
+
+    res.set('Content-Type', 'text/html');
+    res.send(htmlContent);
+
+  } catch (error) {
+    console.error('JSON preview error:', error);
+    const message = error instanceof Error ? error.message : 'Unknown JSON preview error';
+    res.status(500).json({ error: `Failed to generate JSON preview: ${message}` });
+  } finally {
+    await fs.rm(tmpDir, { recursive: true, force: true }).catch(() => undefined);
+  }
+});
+
+// ODS Preview endpoint - convert ODS to HTML for web viewing
+app.post('/api/preview/ods', uploadDocument.single('file'), async (req, res) => {
+  console.log('=== ODS PREVIEW REQUEST ===');
+  const tmpDir = path.join(os.tmpdir(), `ods-preview-${Date.now()}`);
+  
+  try {
+    await fs.mkdir(tmpDir, { recursive: true });
+    
+    const file = req.file;
+    if (!file) {
+      return res.status(400).json({ error: 'No file uploaded' });
+    }
+
+    console.log('ODS file received:', {
+      originalname: file.originalname,
+      mimetype: file.mimetype,
+      size: file.size
+    });
+
+    // Save ODS file to temp location
+    const odsPath = path.join(tmpDir, 'input.ods');
+    await fs.writeFile(odsPath, file.buffer);
+
+    // Use Python script to convert ODS to HTML
+    const pythonPath = process.env.PYTHON_PATH || 'python3';
+    const scriptPath = path.join(__dirname, '..', 'viewers', 'ods_to_html.py');
+    const htmlPath = path.join(tmpDir, 'output.html');
+
+    // Check if script exists
+    const scriptExists = await fs.access(scriptPath).then(() => true).catch(() => false);
+    if (!scriptExists) {
+      console.error(`Python script not found: ${scriptPath}`);
+      return res.status(500).json({ error: 'ODS preview script not found' });
+    }
+
+    const args = [
+      scriptPath,
+      odsPath,
+      htmlPath,
+      '--max-rows', '1000'
+    ];
+
+    console.log('Executing Python script:', { pythonPath, scriptPath, args });
+
+    let stdout, stderr;
+    try {
+      const result = await execFileAsync(pythonPath, args);
+      stdout = result.stdout;
+      stderr = result.stderr;
+    } catch (execError: any) {
+      console.error('Python script execution failed:', execError);
+      stdout = execError.stdout || '';
+      stderr = execError.stderr || execError.message || 'Python execution failed';
+    }
+
+    if (stdout.trim().length > 0) console.log('Python stdout:', stdout.trim());
+    if (stderr.trim().length > 0) console.warn('Python stderr:', stderr.trim());
+    
+    // Check for errors
+    if (stderr.includes('ERROR:') || stderr.includes('Traceback')) {
+      throw new Error(`Python script error: ${stderr}`);
+    }
+
+    // Check if output file was created
+    const htmlExists = await fs.access(htmlPath).then(() => true).catch(() => false);
+    if (!htmlExists) {
+      throw new Error(`Python script did not produce HTML preview: ${htmlPath}`);
+    }
+
+    // Read and send HTML file
+    const htmlContent = await fs.readFile(htmlPath, 'utf-8');
+
+    console.log('ODS preview successful:', {
+      inputSize: file.size,
+      outputLength: htmlContent.length
+    });
+
+    res.set('Content-Type', 'text/html');
+    res.send(htmlContent);
+
+  } catch (error) {
+    console.error('ODS preview error:', error);
+    const message = error instanceof Error ? error.message : 'Unknown ODS preview error';
+    res.status(500).json({ error: `Failed to generate ODS preview: ${message}` });
   } finally {
     await fs.rm(tmpDir, { recursive: true, force: true }).catch(() => undefined);
   }
