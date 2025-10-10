@@ -9,8 +9,100 @@ import os
 import sys
 import subprocess
 import traceback
+import json
 from PIL import Image
 import io
+from datetime import datetime
+
+def extract_exif_metadata(cr2_file):
+    """
+    Extract EXIF metadata from CR2 file using exiftool.
+    
+    Args:
+        cr2_file (str): Path to CR2 file
+    
+    Returns:
+        dict: Metadata dictionary
+    """
+    metadata = {
+        'dateTaken': 'N/A',
+        'dimensions': 'N/A',
+        'fileSize': 'N/A',
+        'iso': 'N/A',
+        'camera': 'N/A',
+        'exposure': 'N/A'
+    }
+    
+    try:
+        # Get file size
+        file_size = os.path.getsize(cr2_file)
+        metadata['fileSize'] = f"{file_size / 1024 / 1024:.2f} MB"
+        
+        # Extract EXIF data with exiftool
+        cmd = [
+            'exiftool',
+            '-json',
+            '-DateTimeOriginal',
+            '-ImageWidth',
+            '-ImageHeight',
+            '-ISO',
+            '-Model',
+            '-Make',
+            '-ExposureTime',
+            '-FNumber',
+            '-FocalLength',
+            cr2_file
+        ]
+        
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=10)
+        
+        if result.returncode == 0:
+            data = json.loads(result.stdout)[0]
+            
+            # Date taken
+            if 'DateTimeOriginal' in data:
+                try:
+                    dt = datetime.strptime(data['DateTimeOriginal'], '%Y:%m:%d %H:%M:%S')
+                    metadata['dateTaken'] = dt.strftime('%Y-%m-%d %H:%M:%S')
+                except:
+                    metadata['dateTaken'] = data['DateTimeOriginal']
+            
+            # Dimensions
+            if 'ImageWidth' in data and 'ImageHeight' in data:
+                metadata['dimensions'] = f"{data['ImageWidth']} × {data['ImageHeight']} px"
+            
+            # ISO
+            if 'ISO' in data:
+                metadata['iso'] = str(data['ISO'])
+            
+            # Camera model
+            make = data.get('Make', '')
+            model = data.get('Model', '')
+            if make and model:
+                metadata['camera'] = f"{make} {model}"
+            elif model:
+                metadata['camera'] = model
+            
+            # Exposure info
+            exposure_parts = []
+            if 'ExposureTime' in data:
+                exposure_parts.append(f"{data['ExposureTime']}s")
+            if 'FNumber' in data:
+                exposure_parts.append(f"f/{data['FNumber']}")
+            if 'FocalLength' in data:
+                focal = data['FocalLength']
+                if 'mm' not in str(focal):
+                    focal = f"{focal}mm"
+                exposure_parts.append(str(focal))
+            if exposure_parts:
+                metadata['exposure'] = ' • '.join(exposure_parts)
+        
+        print(f"Extracted metadata: {metadata}")
+        
+    except Exception as e:
+        print(f"WARNING: Could not extract metadata: {e}")
+    
+    return metadata
 
 def extract_embedded_jpeg(cr2_file, output_file):
     """
@@ -184,6 +276,7 @@ def main():
     parser = argparse.ArgumentParser(description='Convert CR2 (Canon RAW) to web-viewable image')
     parser.add_argument('cr2_file', help='Input CR2 file path')
     parser.add_argument('output_file', help='Output image file path (JPEG)')
+    parser.add_argument('metadata_file', help='Output metadata file path (JSON)')
     parser.add_argument('--no-fast', action='store_true',
                         help='Skip fast preview, use full RAW processing')
     parser.add_argument('--max-dimension', type=int, default=2048,
@@ -222,6 +315,15 @@ def main():
     output_dir = os.path.dirname(args.output_file)
     if output_dir and not os.path.exists(output_dir):
         os.makedirs(output_dir)
+    
+    # Extract metadata
+    print("Extracting EXIF metadata...")
+    metadata = extract_exif_metadata(args.cr2_file)
+    
+    # Save metadata to JSON file
+    with open(args.metadata_file, 'w') as f:
+        json.dump(metadata, f, indent=2)
+    print(f"Metadata saved to: {args.metadata_file}")
     
     # Convert CR2
     success = convert_cr2_to_image(

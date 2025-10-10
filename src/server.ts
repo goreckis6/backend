@@ -6932,6 +6932,112 @@ app.post('/api/preview/md', uploadDocument.single('file'), async (req, res) => {
   }
 });
 
+// X3F Preview endpoint - convert X3F (Sigma RAW) to web-viewable image
+app.post('/api/preview/x3f', uploadDocument.single('file'), async (req, res) => {
+  console.log('=== X3F PREVIEW REQUEST ===');
+  const tmpDir = path.join(os.tmpdir(), `x3f-preview-${Date.now()}`);
+  
+  try {
+    await fs.mkdir(tmpDir, { recursive: true });
+    
+    const file = req.file;
+    if (!file) {
+      return res.status(400).json({ error: 'No file uploaded' });
+    }
+
+    console.log('X3F file received:', {
+      originalname: file.originalname,
+      mimetype: file.mimetype,
+      size: file.size
+    });
+
+    // Save X3F file to temp location
+    const x3fPath = path.join(tmpDir, 'input.x3f');
+    await fs.writeFile(x3fPath, file.buffer);
+
+    // Use Python script to convert X3F to JPEG
+    const pythonPath = process.env.PYTHON_PATH || 'python3';
+    const scriptPath = path.join(__dirname, '..', 'viewers', 'x3f_to_image.py');
+    const outputPath = path.join(tmpDir, 'output.jpg');
+    const metadataPath = path.join(tmpDir, 'metadata.json');
+
+    // Check if script exists
+    const scriptExists = await fs.access(scriptPath).then(() => true).catch(() => false);
+    if (!scriptExists) {
+      console.error(`X3F script not found: ${scriptPath}`);
+      return res.status(500).json({ error: 'X3F preview script not found' });
+    }
+
+    const args = [
+      scriptPath,
+      x3fPath,
+      outputPath,
+      metadataPath,
+      '--max-dimension', '2048'
+    ];
+
+    console.log('Executing X3F script:', { pythonPath, scriptPath, args });
+
+    let stdout, stderr;
+    try {
+      const result = await execFileAsync(pythonPath, args, { timeout: 120000 }); // 2 min timeout for RAW processing
+      stdout = result.stdout;
+      stderr = result.stderr;
+    } catch (execError: any) {
+      console.error('X3F script execution failed:', execError);
+      stdout = execError.stdout || '';
+      stderr = execError.stderr || execError.message || 'X3F execution failed';
+    }
+
+    if (stdout.trim().length > 0) console.log('X3F stdout:', stdout.trim());
+    if (stderr.trim().length > 0) console.warn('X3F stderr:', stderr.trim());
+    
+    // Check for errors
+    if (stderr.includes('ERROR:') || stderr.includes('Traceback')) {
+      throw new Error(`X3F script error: ${stderr}`);
+    }
+
+    // Check if output file was created
+    const outputExists = await fs.access(outputPath).then(() => true).catch(() => false);
+    if (!outputExists) {
+      throw new Error(`X3F script did not produce preview: ${outputPath}`);
+    }
+
+    // Read image file and metadata
+    const imageBuffer = await fs.readFile(outputPath);
+    let metadata = {};
+    
+    try {
+      const metadataContent = await fs.readFile(metadataPath, 'utf-8');
+      metadata = JSON.parse(metadataContent);
+    } catch (error) {
+      console.warn('Could not read metadata:', error);
+    }
+
+    console.log('X3F preview successful:', {
+      inputSize: file.size,
+      outputSize: imageBuffer.length,
+      metadata
+    });
+
+    // Convert image to base64 data URL
+    const base64Image = imageBuffer.toString('base64');
+    const imageDataUrl = `data:image/jpeg;base64,${base64Image}`;
+
+    res.json({
+      imageUrl: imageDataUrl,
+      metadata
+    });
+
+  } catch (error) {
+    console.error('X3F preview error:', error);
+    const message = error instanceof Error ? error.message : 'Unknown X3F preview error';
+    res.status(500).json({ error: `Failed to generate X3F preview: ${message}` });
+  } finally {
+    await fs.rm(tmpDir, { recursive: true, force: true }).catch(() => undefined);
+  }
+});
+
 // DCR Preview endpoint - convert DCR (Kodak RAW) to web-viewable image
 app.post('/api/preview/dcr', uploadDocument.single('file'), async (req, res) => {
   console.log('=== DCR PREVIEW REQUEST ===');
@@ -6959,6 +7065,7 @@ app.post('/api/preview/dcr', uploadDocument.single('file'), async (req, res) => 
     const pythonPath = process.env.PYTHON_PATH || 'python3';
     const scriptPath = path.join(__dirname, '..', 'viewers', 'dcr_to_image.py');
     const outputPath = path.join(tmpDir, 'output.jpg');
+    const metadataPath = path.join(tmpDir, 'metadata.json');
 
     // Check if script exists
     const scriptExists = await fs.access(scriptPath).then(() => true).catch(() => false);
@@ -6971,6 +7078,7 @@ app.post('/api/preview/dcr', uploadDocument.single('file'), async (req, res) => 
       scriptPath,
       dcrPath,
       outputPath,
+      metadataPath,
       '--max-dimension', '2048'
     ];
 
@@ -7001,16 +7109,31 @@ app.post('/api/preview/dcr', uploadDocument.single('file'), async (req, res) => 
       throw new Error(`DCR script did not produce preview: ${outputPath}`);
     }
 
-    // Read and send image file
+    // Read image file and metadata
     const imageBuffer = await fs.readFile(outputPath);
+    let metadata = {};
+    
+    try {
+      const metadataContent = await fs.readFile(metadataPath, 'utf-8');
+      metadata = JSON.parse(metadataContent);
+    } catch (error) {
+      console.warn('Could not read metadata:', error);
+    }
 
     console.log('DCR preview successful:', {
       inputSize: file.size,
-      outputSize: imageBuffer.length
+      outputSize: imageBuffer.length,
+      metadata
     });
 
-    res.set('Content-Type', 'image/jpeg');
-    res.send(imageBuffer);
+    // Convert image to base64 data URL
+    const base64Image = imageBuffer.toString('base64');
+    const imageDataUrl = `data:image/jpeg;base64,${base64Image}`;
+
+    res.json({
+      imageUrl: imageDataUrl,
+      metadata
+    });
 
   } catch (error) {
     console.error('DCR preview error:', error);
@@ -7048,6 +7171,7 @@ app.post('/api/preview/cr2', uploadDocument.single('file'), async (req, res) => 
     const pythonPath = process.env.PYTHON_PATH || 'python3';
     const scriptPath = path.join(__dirname, '..', 'viewers', 'cr2_to_image.py');
     const outputPath = path.join(tmpDir, 'output.jpg');
+    const metadataPath = path.join(tmpDir, 'metadata.json');
 
     // Check if script exists
     const scriptExists = await fs.access(scriptPath).then(() => true).catch(() => false);
@@ -7060,6 +7184,7 @@ app.post('/api/preview/cr2', uploadDocument.single('file'), async (req, res) => 
       scriptPath,
       cr2Path,
       outputPath,
+      metadataPath,
       '--max-dimension', '2048'
     ];
 
@@ -7090,16 +7215,31 @@ app.post('/api/preview/cr2', uploadDocument.single('file'), async (req, res) => 
       throw new Error(`CR2 script did not produce preview: ${outputPath}`);
     }
 
-    // Read and send image file
+    // Read image file and metadata
     const imageBuffer = await fs.readFile(outputPath);
+    let metadata = {};
+    
+    try {
+      const metadataContent = await fs.readFile(metadataPath, 'utf-8');
+      metadata = JSON.parse(metadataContent);
+    } catch (error) {
+      console.warn('Could not read metadata:', error);
+    }
 
     console.log('CR2 preview successful:', {
       inputSize: file.size,
-      outputSize: imageBuffer.length
+      outputSize: imageBuffer.length,
+      metadata
     });
 
-    res.set('Content-Type', 'image/jpeg');
-    res.send(imageBuffer);
+    // Convert image to base64 data URL
+    const base64Image = imageBuffer.toString('base64');
+    const imageDataUrl = `data:image/jpeg;base64,${base64Image}`;
+
+    res.json({
+      imageUrl: imageDataUrl,
+      metadata
+    });
 
   } catch (error) {
     console.error('CR2 preview error:', error);
@@ -7137,6 +7277,7 @@ app.post('/api/preview/nef', uploadDocument.single('file'), async (req, res) => 
     const pythonPath = process.env.PYTHON_PATH || 'python3';
     const scriptPath = path.join(__dirname, '..', 'viewers', 'nef_to_image.py');
     const outputPath = path.join(tmpDir, 'output.jpg');
+    const metadataPath = path.join(tmpDir, 'metadata.json');
 
     // Check if script exists
     const scriptExists = await fs.access(scriptPath).then(() => true).catch(() => false);
@@ -7149,6 +7290,7 @@ app.post('/api/preview/nef', uploadDocument.single('file'), async (req, res) => 
       scriptPath,
       nefPath,
       outputPath,
+      metadataPath,
       '--max-dimension', '2048'
     ];
 
@@ -7179,16 +7321,31 @@ app.post('/api/preview/nef', uploadDocument.single('file'), async (req, res) => 
       throw new Error(`NEF script did not produce preview: ${outputPath}`);
     }
 
-    // Read and send image file
+    // Read image file and metadata
     const imageBuffer = await fs.readFile(outputPath);
+    let metadata = {};
+    
+    try {
+      const metadataContent = await fs.readFile(metadataPath, 'utf-8');
+      metadata = JSON.parse(metadataContent);
+    } catch (error) {
+      console.warn('Could not read metadata:', error);
+    }
 
     console.log('NEF preview successful:', {
       inputSize: file.size,
-      outputSize: imageBuffer.length
+      outputSize: imageBuffer.length,
+      metadata
     });
 
-    res.set('Content-Type', 'image/jpeg');
-    res.send(imageBuffer);
+    // Convert image to base64 data URL
+    const base64Image = imageBuffer.toString('base64');
+    const imageDataUrl = `data:image/jpeg;base64,${base64Image}`;
+
+    res.json({
+      imageUrl: imageDataUrl,
+      metadata
+    });
 
   } catch (error) {
     console.error('NEF preview error:', error);

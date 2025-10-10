@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-NEF (Nikon RAW) to Image converter for web preview.
+X3F (Sigma RAW) to Image converter for web preview.
 Uses rawpy (LibRaw), Pillow for rendering, and exiftool for fast embedded JPEG extraction.
 """
 
@@ -14,76 +14,38 @@ from PIL import Image
 import io
 from datetime import datetime
 
-def extract_exif_metadata(nef_file):
-    """
-    Extract EXIF metadata from NEF file using exiftool.
-    
-    Args:
-        nef_file (str): Path to NEF file
-    
-    Returns:
-        dict: Metadata dictionary
-    """
+def extract_exif_metadata(x3f_file):
+    """Extract EXIF metadata from X3F file using exiftool."""
     metadata = {
-        'dateTaken': 'N/A',
-        'dimensions': 'N/A',
-        'fileSize': 'N/A',
-        'iso': 'N/A',
-        'camera': 'N/A',
-        'exposure': 'N/A'
+        'dateTaken': 'N/A', 'dimensions': 'N/A', 'fileSize': 'N/A',
+        'iso': 'N/A', 'camera': 'N/A', 'exposure': 'N/A'
     }
-    
     try:
-        # Get file size
-        file_size = os.path.getsize(nef_file)
+        file_size = os.path.getsize(x3f_file)
         metadata['fileSize'] = f"{file_size / 1024 / 1024:.2f} MB"
         
-        # Extract EXIF data with exiftool
-        cmd = [
-            'exiftool',
-            '-json',
-            '-DateTimeOriginal',
-            '-ImageWidth',
-            '-ImageHeight',
-            '-ISO',
-            '-Model',
-            '-Make',
-            '-ExposureTime',
-            '-FNumber',
-            '-FocalLength',
-            nef_file
-        ]
-        
+        cmd = ['exiftool', '-json', '-DateTimeOriginal', '-ImageWidth', '-ImageHeight',
+               '-ISO', '-Model', '-Make', '-ExposureTime', '-FNumber', '-FocalLength', x3f_file]
         result = subprocess.run(cmd, capture_output=True, text=True, timeout=10)
         
         if result.returncode == 0:
             data = json.loads(result.stdout)[0]
-            
-            # Date taken
             if 'DateTimeOriginal' in data:
                 try:
                     dt = datetime.strptime(data['DateTimeOriginal'], '%Y:%m:%d %H:%M:%S')
                     metadata['dateTaken'] = dt.strftime('%Y-%m-%d %H:%M:%S')
                 except:
                     metadata['dateTaken'] = data['DateTimeOriginal']
-            
-            # Dimensions
             if 'ImageWidth' in data and 'ImageHeight' in data:
                 metadata['dimensions'] = f"{data['ImageWidth']} × {data['ImageHeight']} px"
-            
-            # ISO
             if 'ISO' in data:
                 metadata['iso'] = str(data['ISO'])
-            
-            # Camera model
             make = data.get('Make', '')
             model = data.get('Model', '')
             if make and model:
                 metadata['camera'] = f"{make} {model}"
             elif model:
                 metadata['camera'] = model
-            
-            # Exposure info
             exposure_parts = []
             if 'ExposureTime' in data:
                 exposure_parts.append(f"{data['ExposureTime']}s")
@@ -96,20 +58,17 @@ def extract_exif_metadata(nef_file):
                 exposure_parts.append(str(focal))
             if exposure_parts:
                 metadata['exposure'] = ' • '.join(exposure_parts)
-        
         print(f"Extracted metadata: {metadata}")
-        
     except Exception as e:
         print(f"WARNING: Could not extract metadata: {e}")
-    
     return metadata
 
-def extract_embedded_jpeg(nef_file, output_file):
+def extract_embedded_jpeg(x3f_file, output_file):
     """
     Fast preview using exiftool to extract embedded JPEG (no demosaic).
     
     Args:
-        nef_file (str): Path to input NEF file
+        x3f_file (str): Path to input X3F file
         output_file (str): Path to output image file
     
     Returns:
@@ -123,7 +82,7 @@ def extract_embedded_jpeg(nef_file, output_file):
             'exiftool',
             '-b',
             '-PreviewImage',
-            nef_file
+            x3f_file
         ]
         
         result = subprocess.run(
@@ -164,32 +123,34 @@ def extract_embedded_jpeg(nef_file, output_file):
         print(f"WARNING: exiftool extraction failed: {e}")
         return False
 
-def convert_nef_with_rawpy(nef_file, output_file, max_dimension=2048):
+def convert_x3f_with_rawpy(x3f_file, output_file, max_dimension=2048):
     """
     Full RAW processing with rawpy (LibRaw) and Pillow.
+    Handles Foveon X3 sensor data.
     
     Args:
-        nef_file (str): Path to input NEF file
+        x3f_file (str): Path to input X3F file
         output_file (str): Path to output image file
         max_dimension (int): Maximum width or height for output (default: 2048)
     
     Returns:
         bool: True if conversion successful, False otherwise
     """
-    print(f"Processing NEF with rawpy (LibRaw)...")
+    print(f"Processing X3F with rawpy (LibRaw)...")
     
     try:
         import rawpy
         
-        # Open NEF file
-        print("Opening NEF file with rawpy...")
-        with rawpy.imread(nef_file) as raw:
+        # Open X3F file
+        print("Opening X3F file with rawpy...")
+        with rawpy.imread(x3f_file) as raw:
             # Get RAW parameters
             print(f"RAW size: {raw.sizes.raw_width}x{raw.sizes.raw_height}")
             print(f"Output size: {raw.sizes.width}x{raw.sizes.height}")
             
             # Process RAW with default settings (high quality)
-            print("Processing RAW data (demosaic, white balance, color correction)...")
+            # Note: Foveon X3 sensors have unique architecture (3 layers)
+            print("Processing Foveon X3 RAW data (color correction, gamma)...")
             rgb = raw.postprocess(
                 use_camera_wb=True,          # Use camera white balance
                 half_size=False,              # Full resolution
@@ -219,7 +180,7 @@ def convert_nef_with_rawpy(nef_file, output_file, max_dimension=2048):
             # Verify output
             if os.path.exists(output_file):
                 file_size = os.path.getsize(output_file)
-                print(f"RAW processed image created: {file_size} bytes")
+                print(f"Foveon processed image created: {file_size} bytes")
                 return True
             else:
                 print("ERROR: Output file was not created")
@@ -234,12 +195,12 @@ def convert_nef_with_rawpy(nef_file, output_file, max_dimension=2048):
         traceback.print_exc()
         return False
 
-def convert_nef_to_image(nef_file, output_file, fast=True, max_dimension=2048):
+def convert_x3f_to_image(x3f_file, output_file, fast=True, max_dimension=2048):
     """
-    Convert NEF to web-viewable image.
+    Convert X3F to web-viewable image.
     
     Args:
-        nef_file (str): Path to input NEF file
+        x3f_file (str): Path to input X3F file
         output_file (str): Path to output image file
         fast (bool): Try fast preview first (embedded JPEG)
         max_dimension (int): Maximum dimension for output
@@ -247,34 +208,34 @@ def convert_nef_to_image(nef_file, output_file, fast=True, max_dimension=2048):
     Returns:
         bool: True if conversion successful, False otherwise
     """
-    print(f"Starting NEF to Image conversion...")
-    print(f"Input: {nef_file}")
+    print(f"Starting X3F to Image conversion...")
+    print(f"Input: {x3f_file}")
     print(f"Output: {output_file}")
     print(f"Fast mode: {fast}")
     print(f"Max dimension: {max_dimension}")
     
     # Check if input file exists
-    if not os.path.exists(nef_file):
-        print(f"ERROR: Input NEF file not found: {nef_file}")
+    if not os.path.exists(x3f_file):
+        print(f"ERROR: Input X3F file not found: {x3f_file}")
         return False
     
-    file_size = os.path.getsize(nef_file)
-    print(f"NEF file size: {file_size:,} bytes ({file_size / 1024 / 1024:.2f} MB)")
+    file_size = os.path.getsize(x3f_file)
+    print(f"X3F file size: {file_size:,} bytes ({file_size / 1024 / 1024:.2f} MB)")
     
     # Try fast preview first if enabled
     if fast:
-        if extract_embedded_jpeg(nef_file, output_file):
+        if extract_embedded_jpeg(x3f_file, output_file):
             print("Fast preview successful!")
             return True
         else:
             print("Fast preview not available, falling back to full RAW processing...")
     
     # Fall back to full RAW processing
-    return convert_nef_with_rawpy(nef_file, output_file, max_dimension)
+    return convert_x3f_with_rawpy(x3f_file, output_file, max_dimension)
 
 def main():
-    parser = argparse.ArgumentParser(description='Convert NEF (Nikon RAW) to web-viewable image')
-    parser.add_argument('nef_file', help='Input NEF file path')
+    parser = argparse.ArgumentParser(description='Convert X3F (Sigma RAW) to web-viewable image')
+    parser.add_argument('x3f_file', help='Input X3F file path')
     parser.add_argument('output_file', help='Output image file path (JPEG)')
     parser.add_argument('metadata_file', help='Output metadata file path (JSON)')
     parser.add_argument('--no-fast', action='store_true',
@@ -284,7 +245,7 @@ def main():
     
     args = parser.parse_args()
     
-    print("=== NEF to Image Converter ===")
+    print("=== X3F to Image Converter ===")
     print(f"Python version: {sys.version}")
     print(f"Working directory: {os.getcwd()}")
     print(f"Arguments: {vars(args)}")
@@ -318,16 +279,16 @@ def main():
     
     # Extract metadata
     print("Extracting EXIF metadata...")
-    metadata = extract_exif_metadata(args.nef_file)
+    metadata = extract_exif_metadata(args.x3f_file)
     
     # Save metadata to JSON file
     with open(args.metadata_file, 'w') as f:
         json.dump(metadata, f, indent=2)
     print(f"Metadata saved to: {args.metadata_file}")
     
-    # Convert NEF
-    success = convert_nef_to_image(
-        args.nef_file,
+    # Convert X3F
+    success = convert_x3f_to_image(
+        args.x3f_file,
         args.output_file,
         fast=not args.no_fast,
         max_dimension=args.max_dimension

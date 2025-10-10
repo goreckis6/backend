@@ -9,8 +9,59 @@ import os
 import sys
 import subprocess
 import traceback
+import json
 from PIL import Image
 import io
+from datetime import datetime
+
+def extract_exif_metadata(dcr_file):
+    """Extract EXIF metadata from DCR file using exiftool."""
+    metadata = {
+        'dateTaken': 'N/A', 'dimensions': 'N/A', 'fileSize': 'N/A',
+        'iso': 'N/A', 'camera': 'N/A', 'exposure': 'N/A'
+    }
+    try:
+        file_size = os.path.getsize(dcr_file)
+        metadata['fileSize'] = f"{file_size / 1024 / 1024:.2f} MB"
+        
+        cmd = ['exiftool', '-json', '-DateTimeOriginal', '-ImageWidth', '-ImageHeight',
+               '-ISO', '-Model', '-Make', '-ExposureTime', '-FNumber', '-FocalLength', dcr_file]
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=10)
+        
+        if result.returncode == 0:
+            data = json.loads(result.stdout)[0]
+            if 'DateTimeOriginal' in data:
+                try:
+                    dt = datetime.strptime(data['DateTimeOriginal'], '%Y:%m:%d %H:%M:%S')
+                    metadata['dateTaken'] = dt.strftime('%Y-%m-%d %H:%M:%S')
+                except:
+                    metadata['dateTaken'] = data['DateTimeOriginal']
+            if 'ImageWidth' in data and 'ImageHeight' in data:
+                metadata['dimensions'] = f"{data['ImageWidth']} × {data['ImageHeight']} px"
+            if 'ISO' in data:
+                metadata['iso'] = str(data['ISO'])
+            make = data.get('Make', '')
+            model = data.get('Model', '')
+            if make and model:
+                metadata['camera'] = f"{make} {model}"
+            elif model:
+                metadata['camera'] = model
+            exposure_parts = []
+            if 'ExposureTime' in data:
+                exposure_parts.append(f"{data['ExposureTime']}s")
+            if 'FNumber' in data:
+                exposure_parts.append(f"f/{data['FNumber']}")
+            if 'FocalLength' in data:
+                focal = data['FocalLength']
+                if 'mm' not in str(focal):
+                    focal = f"{focal}mm"
+                exposure_parts.append(str(focal))
+            if exposure_parts:
+                metadata['exposure'] = ' • '.join(exposure_parts)
+        print(f"Extracted metadata: {metadata}")
+    except Exception as e:
+        print(f"WARNING: Could not extract metadata: {e}")
+    return metadata
 
 def extract_embedded_jpeg(dcr_file, output_file):
     """
@@ -184,6 +235,7 @@ def main():
     parser = argparse.ArgumentParser(description='Convert DCR (Kodak RAW) to web-viewable image')
     parser.add_argument('dcr_file', help='Input DCR file path')
     parser.add_argument('output_file', help='Output image file path (JPEG)')
+    parser.add_argument('metadata_file', help='Output metadata file path (JSON)')
     parser.add_argument('--no-fast', action='store_true',
                         help='Skip fast preview, use full RAW processing')
     parser.add_argument('--max-dimension', type=int, default=2048,
@@ -222,6 +274,15 @@ def main():
     output_dir = os.path.dirname(args.output_file)
     if output_dir and not os.path.exists(output_dir):
         os.makedirs(output_dir)
+    
+    # Extract metadata
+    print("Extracting EXIF metadata...")
+    metadata = extract_exif_metadata(args.dcr_file)
+    
+    # Save metadata to JSON file
+    with open(args.metadata_file, 'w') as f:
+        json.dump(metadata, f, indent=2)
+    print(f"Metadata saved to: {args.metadata_file}")
     
     # Convert DCR
     success = convert_dcr_to_image(
