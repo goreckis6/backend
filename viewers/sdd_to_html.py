@@ -32,15 +32,22 @@ def convert_sdd_to_html_libreoffice(sdd_file, html_file):
         cmd = [
             'libreoffice',
             '--headless',
-            '--convert-to', 'html',
+            '--invisible',
+            '--nodefault',
+            '--nofirststartwizard',
+            '--nolockcheck',
+            '--nologo',
+            '--norestore',
+            '--convert-to', 'html:HTML:EmbedImages',
             '--outdir', output_dir,
             sdd_file
         ]
         
         print(f"Executing LibreOffice command: {' '.join(cmd)}")
-        result = subprocess.run(cmd, capture_output=True, text=True, check=True, timeout=120)
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
         print("LibreOffice stdout:", result.stdout)
         print("LibreOffice stderr:", result.stderr)
+        print("LibreOffice return code:", result.returncode)
         
         # LibreOffice creates output with the input filename + .html extension
         base_name = os.path.splitext(os.path.basename(sdd_file))[0]

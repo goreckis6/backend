@@ -32,15 +32,22 @@ def convert_odp_to_html_libreoffice(odp_file, html_file):
         cmd = [
             'libreoffice',
             '--headless',
-            '--convert-to', 'html',
+            '--invisible',
+            '--nodefault',
+            '--nofirststartwizard',
+            '--nolockcheck',
+            '--nologo',
+            '--norestore',
+            '--convert-to', 'html:HTML:EmbedImages',
             '--outdir', output_dir,
             odp_file
         ]
         
         print(f"Executing LibreOffice command: {' '.join(cmd)}")
-        result = subprocess.run(cmd, capture_output=True, text=True, check=True, timeout=120)
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
         print("LibreOffice stdout:", result.stdout)
         print("LibreOffice stderr:", result.stderr)
+        print("LibreOffice return code:", result.returncode)
         
         # LibreOffice creates output with the input filename + .html extension
         html_output_file = os.path.join(output_dir, os.path.basename(odp_file).replace('.odp', '.html'))
