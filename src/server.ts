@@ -8948,6 +8948,15 @@ app.post('/api/preview/ppt', uploadDocument.single('file'), async (req, res) => 
     // Save PPT/PPTX file to temp location
     const pptPath = path.join(tmpDir, inputFileName);
     await fs.writeFile(pptPath, file.buffer);
+    
+    // Set file permissions to ensure LibreOffice can read it
+    await fs.chmod(pptPath, 0o644);
+    
+    console.log('PPT/PPTX file saved:', {
+      path: pptPath,
+      size: (await fs.stat(pptPath)).size,
+      exists: await fs.access(pptPath).then(() => true).catch(() => false)
+    });
 
     // Use Python script to convert PPT/PPTX to HTML
     const pythonPath = process.env.PYTHON_PATH || 'python3';
@@ -8976,18 +8985,29 @@ app.post('/api/preview/ppt', uploadDocument.single('file'), async (req, res) => 
       stderr = execError.stderr || execError.message || 'PPT/PPTX execution failed';
     }
 
-    if (stdout.trim().length > 0) console.log('PPT/PPTX stdout:', stdout.trim());
-    if (stderr.trim().length > 0) console.warn('PPT/PPTX stderr:', stderr.trim());
+    console.log('=== PPT/PPTX PYTHON SCRIPT OUTPUT ===');
+    if (stdout && stdout.trim().length > 0) {
+      console.log('STDOUT:');
+      console.log(stdout);
+    }
+    if (stderr && stderr.trim().length > 0) {
+      console.log('STDERR:');
+      console.log(stderr);
+    }
+    console.log('=== END SCRIPT OUTPUT ===');
     
-    // Check for errors
-    if (stderr.includes('ERROR:') || stderr.includes('Traceback')) {
-      throw new Error(`PPT/PPTX script error: ${stderr}`);
+    // Check for errors - be more lenient with warnings
+    if (stderr.includes('ERROR:') || stderr.includes('Traceback') || stderr.includes('CONVERSION FAILED')) {
+      throw new Error(`PPT/PPTX conversion failed: ${stderr.substring(0, 500)}`);
     }
 
     // Check if output file was created
     const outputExists = await fs.access(outputPath).then(() => true).catch(() => false);
     if (!outputExists) {
-      throw new Error(`PPT/PPTX script did not produce preview: ${outputPath}`);
+      // List directory contents for debugging
+      const dirContents = await fs.readdir(tmpDir);
+      console.error('Output file not found. Directory contents:', dirContents);
+      throw new Error(`PPT/PPTX script did not produce preview. Check logs for details.`);
     }
 
     // Read HTML content
@@ -9004,7 +9024,7 @@ app.post('/api/preview/ppt', uploadDocument.single('file'), async (req, res) => 
   } catch (error) {
     console.error('PPT/PPTX preview error:', error);
     const message = error instanceof Error ? error.message : 'Unknown PPT/PPTX preview error';
-    res.status(500).json({ error: `Failed to generate PPT/PPTX preview: ${message}` });
+    res.status(500).json({ error: `Failed to generate PowerPoint preview: ${message}` });
   } finally {
     await fs.rm(tmpDir, { recursive: true, force: true }).catch(() => undefined);
   }

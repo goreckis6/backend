@@ -287,6 +287,80 @@ def convert_ppt_to_html_unoconv(ppt_file, html_file):
         traceback.print_exc()
         return False
 
+def create_error_html(html_file, error_message):
+    """Create a simple error HTML file when conversion fails."""
+    try:
+        html_content = f"""
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>PowerPoint Preview Error</title>
+    <style>
+        body {{
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 50px auto;
+            padding: 20px;
+            background: #f5f5f5;
+        }}
+        .error-box {{
+            background: white;
+            border-left: 4px solid #d32f2f;
+            padding: 20px;
+            border-radius: 4px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }}
+        h1 {{
+            color: #d32f2f;
+            margin-top: 0;
+        }}
+        .error-message {{
+            background: #ffebee;
+            padding: 15px;
+            border-radius: 4px;
+            margin: 15px 0;
+            font-family: monospace;
+            font-size: 14px;
+        }}
+        .suggestion {{
+            background: #e3f2fd;
+            padding: 15px;
+            border-radius: 4px;
+            border-left: 4px solid #2196f3;
+        }}
+    </style>
+</head>
+<body>
+    <div class="error-box">
+        <h1>⚠️ PowerPoint Preview Error</h1>
+        <p>The PowerPoint file could not be converted to HTML for preview.</p>
+        
+        <div class="error-message">
+            {error_message}
+        </div>
+        
+        <div class="suggestion">
+            <h3>💡 Suggestions:</h3>
+            <ul>
+                <li>Try downloading the file directly using the download button</li>
+                <li>Ensure the file is a valid PowerPoint presentation (.ppt or .pptx)</li>
+                <li>The file may contain features not supported by the preview converter</li>
+                <li>Very large presentations may timeout during conversion</li>
+            </ul>
+        </div>
+    </div>
+</body>
+</html>
+"""
+        with open(html_file, 'w', encoding='utf-8') as f:
+            f.write(html_content)
+        print(f"Created error HTML file: {html_file}")
+        return True
+    except Exception as e:
+        print(f"ERROR: Could not create error HTML: {e}")
+        return False
+
 def main():
     parser = argparse.ArgumentParser(description='Convert PPT/PPTX to HTML for web preview')
     parser.add_argument('ppt_file', help='Input PPT/PPTX file path')
@@ -331,10 +405,17 @@ def main():
         sys.exit(0)
     else:
         print("=== CONVERSION FAILED ===")
-        print("ERROR: All conversion methods failed. Please ensure LibreOffice or unoconv is installed.")
-        print("Hint: The 'Unsupported document type' error often means LibreOffice can't access the file.")
-        print("      Check file permissions and ensure the file is a valid PowerPoint document.")
-        sys.exit(1)
+        error_msg = "LibreOffice conversion failed with 'Unsupported document type' error. This usually means LibreOffice cannot process this file format or the file may be corrupted."
+        
+        # Create an error HTML file so at least something is returned
+        if create_error_html(args.html_file, error_msg):
+            print("Created error HTML page for user feedback")
+            sys.exit(0)  # Exit with success so the error page is shown
+        else:
+            print("ERROR: All conversion methods failed. Please ensure LibreOffice or unoconv is installed.")
+            print("Hint: The 'Unsupported document type' error often means LibreOffice can't access the file.")
+            print("      Check file permissions and ensure the file is a valid PowerPoint document.")
+            sys.exit(1)
 
 if __name__ == "__main__":
     main()
