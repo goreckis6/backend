@@ -29,22 +29,29 @@ def convert_sdd_to_html_libreoffice(sdd_file, html_file):
         output_dir = os.path.dirname(html_file)
         os.makedirs(output_dir, exist_ok=True)
         
+        # Set environment variables for LibreOffice
+        env = os.environ.copy()
+        env['SAL_USE_VCLPLUGIN'] = 'svp'
+        env['HOME'] = os.path.expanduser('~')
+        
         cmd = [
             'libreoffice',
             '--headless',
             '--invisible',
+            '--nocrashreport',
             '--nodefault',
             '--nofirststartwizard',
             '--nolockcheck',
             '--nologo',
             '--norestore',
-            '--convert-to', 'html:HTML:EmbedImages',
+            '-env:UserInstallation=file:///tmp/libreoffice_user_profile',
+            '--convert-to', 'html:impress_html_Export',
             '--outdir', output_dir,
             sdd_file
         ]
         
         print(f"Executing LibreOffice command: {' '.join(cmd)}")
-        result = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=120, env=env)
         print("LibreOffice stdout:", result.stdout)
         print("LibreOffice stderr:", result.stderr)
         print("LibreOffice return code:", result.returncode)

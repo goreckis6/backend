@@ -14,6 +14,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     unoconv \
     calibre \
     exiftool \
+    psmisc \
     fonts-dejavu fonts-liberation locales \
     python3 \
     python3-pip \
@@ -68,7 +69,8 @@ ENV SAL_USE_VCLPLUGIN=svp
 # Initialize LibreOffice user profile as root before switching to appuser
 RUN libreoffice --headless --invisible --nocrashreport --nodefault --nofirststartwizard --nologo --norestore --accept='socket,host=localhost,port=2002;urp;' & \
     sleep 5 && \
-    killall -9 soffice.bin || true
+    pkill -9 soffice || true && \
+    pkill -9 oosplash || true
 
 USER appuser
 
