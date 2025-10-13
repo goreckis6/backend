@@ -9943,6 +9943,155 @@ const convertCsvToXmlPython = async (
   }
 };
 
+// Route: CSV to YAML (Single)
+app.post('/convert/csv-to-yaml/single', upload.single('file'), async (req, res) => {
+  console.log('CSV->YAML single conversion request');
+  
+  try {
+    const file = req.file;
+    if (!file) {
+      return res.status(400).json({ error: 'No file provided' });
+    }
+
+    const options = req.body || {};
+    const result = await convertCsvToYamlPython(file, options, false);
+    
+    res.set({
+      'Content-Type': result.mime,
+      'Content-Disposition': `attachment; filename="${result.filename}"`,
+      'Content-Length': result.buffer.length
+    });
+    
+    res.send(result.buffer);
+  } catch (error) {
+    console.error('CSV->YAML single error:', error);
+    const message = error instanceof Error ? error.message : 'Unknown error';
+    res.status(500).json({ error: message });
+  }
+});
+
+// Route: CSV to YAML (Batch)
+app.post('/convert/csv-to-yaml/batch', uploadBatch.array('files', 20), async (req, res) => {
+  console.log('CSV->YAML batch conversion request');
+  
+  try {
+    const files = req.files as Express.Multer.File[];
+    if (!files || files.length === 0) {
+      return res.status(400).json({ error: 'No files provided' });
+    }
+
+    const options = req.body || {};
+    const results = [];
+
+    for (const file of files) {
+      try {
+        const result = await convertCsvToYamlPython(file, options, true);
+        results.push({
+          success: true,
+          filename: result.filename,
+          downloadUrl: result.downloadUrl,
+          size: result.size
+        });
+      } catch (error) {
+        results.push({
+          success: false,
+          filename: file.originalname,
+          error: error instanceof Error ? error.message : 'Conversion failed'
+        });
+      }
+    }
+
+    res.json({ results });
+  } catch (error) {
+    console.error('CSV->YAML batch error:', error);
+    const message = error instanceof Error ? error.message : 'Unknown error';
+    res.status(500).json({ error: message });
+  }
+});
+
+// CSV to YAML converter using Python
+const convertCsvToYamlPython = async (
+  file: Express.Multer.File,
+  options: Record<string, string | undefined> = {},
+  persistToDisk = false
+): Promise<ConversionResult> => {
+  console.log(`=== CSV TO YAML (Python) START ===`);
+  const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'morphy-csv-yaml-'));
+  const originalBase = path.basename(file.originalname, path.extname(file.originalname));
+  const sanitizedBase = sanitizeFilename(originalBase);
+  const safeBase = `${sanitizedBase}_${randomUUID()}`;
+
+  try {
+    // Write CSV file to temp directory
+    const csvPath = path.join(tmpDir, `${safeBase}.csv`);
+    await fs.writeFile(csvPath, file.buffer);
+
+    // Prepare output file
+    const outputPath = path.join(tmpDir, `${safeBase}.yaml`);
+    
+    // Use Python script for YAML
+    const pythonPath = 'python3';
+    const scriptPath = path.join(__dirname, '..', 'scripts', 'csv_to_yaml.py');
+    
+    console.log('Python execution details:', {
+      pythonPath,
+      scriptPath,
+      csvPath,
+      outputPath,
+      structure: options.structure || 'list',
+      rootKey: options.rootKey || 'data',
+      fileSize: file.buffer.length
+    });
+
+    const args = [
+      scriptPath,
+      csvPath,
+      outputPath,
+      '--structure', options.structure || 'list',
+      '--root-key', options.rootKey || 'data'
+    ];
+
+    const { stdout, stderr } = await execFileAsync(pythonPath, args);
+
+    if (stdout.trim().length > 0) console.log('Python stdout:', stdout.trim());
+    if (stderr.trim().length > 0) console.warn('Python stderr:', stderr.trim());
+
+    // Check if output file was created
+    const outputExists = await fs.access(outputPath).then(() => true).catch(() => false);
+    if (!outputExists) {
+      throw new Error(`Python YAML script did not produce output file: ${outputPath}`);
+    }
+
+    // Read output file
+    const outputBuffer = await fs.readFile(outputPath);
+    if (!outputBuffer || outputBuffer.length === 0) {
+      throw new Error('Python YAML script produced empty output file');
+    }
+
+    const downloadName = `${sanitizedBase}.yaml`;
+    console.log(`CSV->YAML conversion successful:`, { 
+      filename: downloadName, 
+      size: outputBuffer.length 
+    });
+
+    if (persistToDisk) {
+      return await persistOutputBuffer(outputBuffer, downloadName, 'application/x-yaml');
+    }
+
+    return {
+      buffer: outputBuffer,
+      filename: downloadName,
+      mime: 'application/x-yaml'
+    };
+  } catch (error) {
+    console.error(`CSV->YAML conversion error:`, error);
+    const message = error instanceof Error ? error.message : `Unknown CSV->YAML error`;
+    throw new Error(`Failed to convert CSV to YAML: ${message}`);
+  } finally {
+    await fs.rm(tmpDir, { recursive: true, force: true }).catch(() => undefined);
+  }
+};
+
 // CSV to SQL converter using Python
 const convertCsvToSqlPython = async (
   file: Express.Multer.File,
