@@ -29,10 +29,23 @@ def convert_odt_to_html_libreoffice(odt_file, html_file):
         # Get output directory
         output_dir = os.path.dirname(html_file)
         
+        # Set environment variables for LibreOffice
+        env = os.environ.copy()
+        env['SAL_USE_VCLPLUGIN'] = 'svp'
+        env['HOME'] = os.path.expanduser('~')
+        
         # LibreOffice conversion command
         cmd = [
             'libreoffice',
             '--headless',
+            '--invisible',
+            '--nocrashreport',
+            '--nodefault',
+            '--nofirststartwizard',
+            '--nolockcheck',
+            '--nologo',
+            '--norestore',
+            '-env:UserInstallation=file:///tmp/libreoffice_user_profile',
             '--convert-to', 'html',
             '--outdir', output_dir,
             odt_file
@@ -43,7 +56,8 @@ def convert_odt_to_html_libreoffice(odt_file, html_file):
             cmd,
             capture_output=True,
             text=True,
-            timeout=60
+            timeout=60,
+            env=env
         )
         
         if result.stdout:

@@ -29,10 +29,23 @@ def convert_docx_to_html_libreoffice(docx_file, html_file):
         # Get output directory
         output_dir = os.path.dirname(html_file)
         
+        # Set environment variables for LibreOffice
+        env = os.environ.copy()
+        env['SAL_USE_VCLPLUGIN'] = 'svp'
+        env['HOME'] = os.path.expanduser('~')
+        
         # LibreOffice conversion command
         cmd = [
             'libreoffice',
             '--headless',
+            '--invisible',
+            '--nocrashreport',
+            '--nodefault',
+            '--nofirststartwizard',
+            '--nolockcheck',
+            '--nologo',
+            '--norestore',
+            '-env:UserInstallation=file:///tmp/libreoffice_user_profile',
             '--convert-to', 'html',
             '--outdir', output_dir,
             docx_file
@@ -43,7 +56,8 @@ def convert_docx_to_html_libreoffice(docx_file, html_file):
             cmd,
             capture_output=True,
             text=True,
-            timeout=120  # 2 minutes for large files
+            timeout=120,  # 2 minutes for large files
+            env=env
         )
         
         if result.stdout:
