@@ -10,6 +10,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     imagemagick \
     libmagick++-dev \
     libreoffice \
+    libreoffice-impress \
+    unoconv \
     calibre \
     exiftool \
     fonts-dejavu fonts-liberation locales \

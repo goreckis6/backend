@@ -29,8 +29,31 @@ def convert_ppt_to_html_libreoffice(ppt_file, html_file):
         output_dir = os.path.dirname(html_file)
         os.makedirs(output_dir, exist_ok=True)
         
+        # Verify input file exists and check its properties
+        if not os.path.exists(ppt_file):
+            raise FileNotFoundError(f"Input file not found: {ppt_file}")
+        
+        file_size = os.path.getsize(ppt_file)
+        print(f"Input file size: {file_size} bytes ({file_size / 1024 / 1024:.2f} MB)")
+        
+        # Read first few bytes to verify file signature
+        with open(ppt_file, 'rb') as f:
+            magic = f.read(8)
+            print(f"File signature (hex): {magic.hex()}")
+        
+        # Detect file type from extension and signature
+        file_ext = os.path.splitext(ppt_file)[1].lower()
+        print(f"File extension: {file_ext}")
+        
+        # PPTX files should start with PK (ZIP signature: 50 4B)
+        # PPT files should start with D0 CF 11 E0 (OLE2 signature)
+        is_pptx = magic[:2] == b'PK'
+        is_ppt = magic[:4] == b'\xD0\xCF\x11\xE0'
+        
+        print(f"File type detection: PPTX={is_pptx}, PPT={is_ppt}")
+        
         # Try multiple LibreOffice command variations
-        # Method 1: Direct conversion with filter
+        # Method 1: Direct conversion with impress filter
         cmd = [
             'libreoffice',
             '--headless',
@@ -40,7 +63,7 @@ def convert_ppt_to_html_libreoffice(ppt_file, html_file):
             '--nolockcheck',
             '--nologo',
             '--norestore',
-            '--convert-to', 'html:HTML:EmbedImages',
+            '--convert-to', 'html:impress_html_Export',
             '--outdir', output_dir,
             ppt_file
         ]
@@ -50,6 +73,28 @@ def convert_ppt_to_html_libreoffice(ppt_file, html_file):
         print("LibreOffice stdout:", result.stdout)
         print("LibreOffice stderr:", result.stderr)
         print("LibreOffice return code:", result.returncode)
+        
+        # If first method failed, try without filter specification
+        if result.returncode != 0:
+            print("First method failed, trying without filter...")
+            cmd = [
+                'libreoffice',
+                '--headless',
+                '--invisible',
+                '--nodefault',
+                '--nofirststartwizard',
+                '--nolockcheck',
+                '--nologo',
+                '--norestore',
+                '--convert-to', 'html',
+                '--outdir', output_dir,
+                ppt_file
+            ]
+            print(f"Executing LibreOffice command (fallback): {' '.join(cmd)}")
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
+            print("LibreOffice stdout:", result.stdout)
+            print("LibreOffice stderr:", result.stderr)
+            print("LibreOffice return code:", result.returncode)
         
         # LibreOffice creates output with the input filename + .html extension
         base_name = os.path.splitext(os.path.basename(ppt_file))[0]
@@ -186,6 +231,52 @@ def enhance_html_with_header(html_file):
     except Exception as e:
         print(f"Warning: Could not enhance HTML: {e}")
 
+def convert_ppt_to_html_unoconv(ppt_file, html_file):
+    """
+    Convert PPT/PPTX to HTML using unoconv (alternative method).
+    
+    Args:
+        ppt_file (str): Path to input PPT/PPTX file
+        html_file (str): Path to output HTML file
+    
+    Returns:
+        bool: True if conversion successful, False otherwise
+    """
+    print(f"Attempting PPT/PPTX to HTML conversion with unoconv...")
+    
+    try:
+        output_dir = os.path.dirname(html_file)
+        os.makedirs(output_dir, exist_ok=True)
+        
+        cmd = [
+            'unoconv',
+            '-f', 'html',
+            '-o', html_file,
+            ppt_file
+        ]
+        
+        print(f"Executing unoconv command: {' '.join(cmd)}")
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
+        print("unoconv stdout:", result.stdout)
+        print("unoconv stderr:", result.stderr)
+        print("unoconv return code:", result.returncode)
+        
+        if result.returncode == 0 and os.path.exists(html_file):
+            print(f"HTML file created successfully: {os.path.getsize(html_file)} bytes")
+            enhance_html_with_header(html_file)
+            return True
+        else:
+            print("ERROR: unoconv conversion failed")
+            return False
+            
+    except FileNotFoundError:
+        print("ERROR: unoconv not found")
+        return False
+    except Exception as e:
+        print(f"ERROR: unoconv conversion error: {e}")
+        traceback.print_exc()
+        return False
+
 def main():
     parser = argparse.ArgumentParser(description='Convert PPT/PPTX to HTML for web preview')
     parser.add_argument('ppt_file', help='Input PPT/PPTX file path')
@@ -217,15 +308,22 @@ def main():
     if output_dir and not os.path.exists(output_dir):
         os.makedirs(output_dir)
     
-    # Try LibreOffice conversion
+    # Try LibreOffice conversion first
     success = convert_ppt_to_html_libreoffice(args.ppt_file, args.html_file)
+    
+    # If LibreOffice failed, try unoconv
+    if not success:
+        print("\nLibreOffice method failed, trying unoconv...")
+        success = convert_ppt_to_html_unoconv(args.ppt_file, args.html_file)
     
     if success:
         print("=== CONVERSION SUCCESSFUL ===")
         sys.exit(0)
     else:
         print("=== CONVERSION FAILED ===")
-        print("ERROR: LibreOffice conversion failed. Please ensure LibreOffice is installed.")
+        print("ERROR: All conversion methods failed. Please ensure LibreOffice or unoconv is installed.")
+        print("Hint: The 'Unsupported document type' error often means LibreOffice can't access the file.")
+        print("      Check file permissions and ensure the file is a valid PowerPoint document.")
         sys.exit(1)
 
 if __name__ == "__main__":
