@@ -9490,6 +9490,153 @@ app.post('/api/preview/pef', uploadDocument.single('file'), async (req, res) => 
   }
 });
 
+// Route: CSV to Parquet (Single)
+app.post('/convert/csv-to-parquet/single', uploadSingle.single('file'), async (req, res) => {
+  console.log('CSV->Parquet single conversion request');
+  
+  try {
+    const file = req.file;
+    if (!file) {
+      return res.status(400).json({ error: 'No file provided' });
+    }
+
+    const options = req.body || {};
+    const result = await convertCsvToParquetPython(file, options, false);
+    
+    res.set({
+      'Content-Type': result.mime,
+      'Content-Disposition': `attachment; filename="${result.filename}"`,
+      'Content-Length': result.buffer.length
+    });
+    
+    res.send(result.buffer);
+  } catch (error) {
+    console.error('CSV->Parquet single error:', error);
+    const message = error instanceof Error ? error.message : 'Unknown error';
+    res.status(500).json({ error: message });
+  }
+});
+
+// Route: CSV to Parquet (Batch)
+app.post('/convert/csv-to-parquet/batch', uploadBatch.array('files', 20), async (req, res) => {
+  console.log('CSV->Parquet batch conversion request');
+  
+  try {
+    const files = req.files as Express.Multer.File[];
+    if (!files || files.length === 0) {
+      return res.status(400).json({ error: 'No files provided' });
+    }
+
+    const options = req.body || {};
+    const results = [];
+
+    for (const file of files) {
+      try {
+        const result = await convertCsvToParquetPython(file, options, true);
+        results.push({
+          success: true,
+          filename: result.filename,
+          downloadUrl: result.downloadUrl,
+          size: result.size
+        });
+      } catch (error) {
+        results.push({
+          success: false,
+          filename: file.originalname,
+          error: error instanceof Error ? error.message : 'Conversion failed'
+        });
+      }
+    }
+
+    res.json({ results });
+  } catch (error) {
+    console.error('CSV->Parquet batch error:', error);
+    const message = error instanceof Error ? error.message : 'Unknown error';
+    res.status(500).json({ error: message });
+  }
+});
+
+// CSV to Parquet converter using Python
+const convertCsvToParquetPython = async (
+  file: Express.Multer.File,
+  options: Record<string, string | undefined> = {},
+  persistToDisk = false
+): Promise<ConversionResult> => {
+  console.log(`=== CSV TO PARQUET (Python) START ===`);
+  const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'morphy-csv-parquet-'));
+  const originalBase = path.basename(file.originalname, path.extname(file.originalname));
+  const sanitizedBase = sanitizeFilename(originalBase);
+  const safeBase = `${sanitizedBase}_${randomUUID()}`;
+
+  try {
+    // Write CSV file to temp directory
+    const csvPath = path.join(tmpDir, `${safeBase}.csv`);
+    await fs.writeFile(csvPath, file.buffer);
+
+    // Prepare output file
+    const outputPath = path.join(tmpDir, `${safeBase}.parquet`);
+    
+    // Use Python script for Parquet
+    const pythonPath = 'python3';
+    const scriptPath = path.join(__dirname, '..', 'scripts', 'csv_to_parquet.py');
+    
+    console.log('Python execution details:', {
+      pythonPath,
+      scriptPath,
+      csvPath,
+      outputPath,
+      compression: options.compression || 'snappy',
+      fileSize: file.buffer.length
+    });
+
+    const args = [
+      scriptPath,
+      csvPath,
+      outputPath,
+      '--compression', options.compression || 'snappy'
+    ];
+
+    const { stdout, stderr } = await execFileAsync(pythonPath, args);
+
+    if (stdout.trim().length > 0) console.log('Python stdout:', stdout.trim());
+    if (stderr.trim().length > 0) console.warn('Python stderr:', stderr.trim());
+
+    // Check if output file was created
+    const outputExists = await fs.access(outputPath).then(() => true).catch(() => false);
+    if (!outputExists) {
+      throw new Error(`Python Parquet script did not produce output file: ${outputPath}`);
+    }
+
+    // Read output file
+    const outputBuffer = await fs.readFile(outputPath);
+    if (!outputBuffer || outputBuffer.length === 0) {
+      throw new Error('Python Parquet script produced empty output file');
+    }
+
+    const downloadName = `${sanitizedBase}.parquet`;
+    console.log(`CSV->Parquet conversion successful:`, { 
+      filename: downloadName, 
+      size: outputBuffer.length 
+    });
+
+    if (persistToDisk) {
+      return await persistOutputBuffer(outputBuffer, downloadName, 'application/octet-stream');
+    }
+
+    return {
+      buffer: outputBuffer,
+      filename: downloadName,
+      mime: 'application/octet-stream'
+    };
+  } catch (error) {
+    console.error(`CSV->Parquet conversion error:`, error);
+    const message = error instanceof Error ? error.message : `Unknown CSV->Parquet error`;
+    throw new Error(`Failed to convert CSV to Parquet: ${message}`);
+  } finally {
+    await fs.rm(tmpDir, { recursive: true, force: true }).catch(() => undefined);
+  }
+};
+
 // Set server timeout for large file processing
 const server = app.listen(PORT, '0.0.0.0', () => {
   console.log(`Morpy backend running on port ${PORT}`);
