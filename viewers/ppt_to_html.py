@@ -52,24 +52,32 @@ def convert_ppt_to_html_libreoffice(ppt_file, html_file):
         
         print(f"File type detection: PPTX={is_pptx}, PPT={is_ppt}")
         
+        # Set environment variables for LibreOffice
+        env = os.environ.copy()
+        env['SAL_USE_VCLPLUGIN'] = 'svp'
+        env['HOME'] = os.path.expanduser('~')
+        
         # Try multiple LibreOffice command variations
         # Method 1: Direct conversion with impress filter
         cmd = [
             'libreoffice',
             '--headless',
             '--invisible',
+            '--nocrashreport',
             '--nodefault',
             '--nofirststartwizard',
             '--nolockcheck',
             '--nologo',
             '--norestore',
+            '-env:UserInstallation=file:///tmp/libreoffice_user_profile',
             '--convert-to', 'html:impress_html_Export',
             '--outdir', output_dir,
             ppt_file
         ]
         
         print(f"Executing LibreOffice command: {' '.join(cmd)}")
-        result = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
+        print(f"Environment: SAL_USE_VCLPLUGIN={env.get('SAL_USE_VCLPLUGIN')}, HOME={env.get('HOME')}")
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=120, env=env)
         print("LibreOffice stdout:", result.stdout)
         print("LibreOffice stderr:", result.stderr)
         print("LibreOffice return code:", result.returncode)
@@ -81,17 +89,19 @@ def convert_ppt_to_html_libreoffice(ppt_file, html_file):
                 'libreoffice',
                 '--headless',
                 '--invisible',
+                '--nocrashreport',
                 '--nodefault',
                 '--nofirststartwizard',
                 '--nolockcheck',
                 '--nologo',
                 '--norestore',
+                '-env:UserInstallation=file:///tmp/libreoffice_user_profile',
                 '--convert-to', 'html',
                 '--outdir', output_dir,
                 ppt_file
             ]
             print(f"Executing LibreOffice command (fallback): {' '.join(cmd)}")
-            result = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=120, env=env)
             print("LibreOffice stdout:", result.stdout)
             print("LibreOffice stderr:", result.stderr)
             print("LibreOffice return code:", result.returncode)
