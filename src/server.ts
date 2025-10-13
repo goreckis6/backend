@@ -110,24 +110,6 @@ const uploadDocument = multer({
   }
 });
 
-// Configure multer for single file uploads (for specific conversion routes)
-const uploadSingle = multer({
-  storage: multer.memoryStorage(),
-  limits: {
-    fileSize: 100 * 1024 * 1024, // 100MB limit
-    files: 1
-  }
-});
-
-// Configure multer for batch file uploads
-const uploadBatch = multer({
-  storage: multer.memoryStorage(),
-  limits: {
-    fileSize: 100 * 1024 * 1024, // 100MB per file
-    files: 20 // Max 20 files per batch
-  }
-});
-
 // TypeScript interface for conversion results
 interface ConversionResult {
   buffer: Buffer;
@@ -9526,7 +9508,7 @@ app.post('/api/preview/pef', uploadDocument.single('file'), async (req, res) => 
 });
 
 // Route: CSV to Parquet (Single)
-app.post('/convert/csv-to-parquet/single', uploadSingle.single('file'), async (req, res) => {
+app.post('/convert/csv-to-parquet/single', upload.single('file'), async (req, res) => {
   console.log('CSV->Parquet single conversion request');
   
   try {
