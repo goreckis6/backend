@@ -8585,6 +8585,763 @@ app.post('/api/preview/xlsx', uploadDocument.single('file'), async (req, res) =>
   }
 });
 
+// ODP Preview endpoint - convert ODP (OpenDocument Presentation) to HTML
+app.post('/api/preview/odp', uploadDocument.single('file'), async (req, res) => {
+  console.log('=== ODP PREVIEW REQUEST ===');
+  const tmpDir = path.join(os.tmpdir(), `odp-preview-${Date.now()}`);
+  
+  try {
+    await fs.mkdir(tmpDir, { recursive: true });
+    
+    const file = req.file;
+    if (!file) {
+      return res.status(400).json({ error: 'No file uploaded' });
+    }
+
+    console.log('ODP file received:', {
+      originalname: file.originalname,
+      mimetype: file.mimetype,
+      size: file.size
+    });
+
+    // Save ODP file to temp location
+    const odpPath = path.join(tmpDir, 'input.odp');
+    await fs.writeFile(odpPath, file.buffer);
+
+    // Use Python script to convert ODP to HTML
+    const pythonPath = process.env.PYTHON_PATH || 'python3';
+    const scriptPath = path.join(__dirname, '..', 'viewers', 'odp_to_html.py');
+    const outputPath = path.join(tmpDir, 'output.html');
+
+    // Check if script exists
+    const scriptExists = await fs.access(scriptPath).then(() => true).catch(() => false);
+    if (!scriptExists) {
+      console.error(`ODP script not found: ${scriptPath}`);
+      return res.status(500).json({ error: 'ODP preview script not found' });
+    }
+
+    const args = [scriptPath, odpPath, outputPath];
+
+    console.log('Executing ODP script:', { pythonPath, scriptPath, args });
+
+    let stdout, stderr;
+    try {
+      const result = await execFileAsync(pythonPath, args, { timeout: 120000 }); // 2 min timeout
+      stdout = result.stdout;
+      stderr = result.stderr;
+    } catch (execError: any) {
+      console.error('ODP script execution failed:', execError);
+      stdout = execError.stdout || '';
+      stderr = execError.stderr || execError.message || 'ODP execution failed';
+    }
+
+    if (stdout.trim().length > 0) console.log('ODP stdout:', stdout.trim());
+    if (stderr.trim().length > 0) console.warn('ODP stderr:', stderr.trim());
+    
+    // Check for errors
+    if (stderr.includes('ERROR:') || stderr.includes('Traceback')) {
+      throw new Error(`ODP script error: ${stderr}`);
+    }
+
+    // Check if output file was created
+    const outputExists = await fs.access(outputPath).then(() => true).catch(() => false);
+    if (!outputExists) {
+      throw new Error(`ODP script did not produce preview: ${outputPath}`);
+    }
+
+    // Read HTML content
+    const htmlContent = await fs.readFile(outputPath, 'utf-8');
+
+    console.log('ODP preview successful:', {
+      inputSize: file.size,
+      outputSize: htmlContent.length
+    });
+
+    res.json({ htmlContent });
+
+  } catch (error) {
+    console.error('ODP preview error:', error);
+    const message = error instanceof Error ? error.message : 'Unknown ODP preview error';
+    res.status(500).json({ error: `Failed to generate ODP preview: ${message}` });
+  } finally {
+    await fs.rm(tmpDir, { recursive: true, force: true }).catch(() => undefined);
+  }
+});
+
+// OTP Preview endpoint - convert OTP (OpenDocument Presentation Template) to HTML
+app.post('/api/preview/otp', uploadDocument.single('file'), async (req, res) => {
+  console.log('=== OTP PREVIEW REQUEST ===');
+  const tmpDir = path.join(os.tmpdir(), `otp-preview-${Date.now()}`);
+  
+  try {
+    await fs.mkdir(tmpDir, { recursive: true });
+    
+    const file = req.file;
+    if (!file) {
+      return res.status(400).json({ error: 'No file uploaded' });
+    }
+
+    console.log('OTP file received:', {
+      originalname: file.originalname,
+      mimetype: file.mimetype,
+      size: file.size
+    });
+
+    // Save OTP file to temp location
+    const otpPath = path.join(tmpDir, 'input.otp');
+    await fs.writeFile(otpPath, file.buffer);
+
+    // Use Python script to convert OTP to HTML
+    const pythonPath = process.env.PYTHON_PATH || 'python3';
+    const scriptPath = path.join(__dirname, '..', 'viewers', 'otp_to_html.py');
+    const outputPath = path.join(tmpDir, 'output.html');
+
+    // Check if script exists
+    const scriptExists = await fs.access(scriptPath).then(() => true).catch(() => false);
+    if (!scriptExists) {
+      console.error(`OTP script not found: ${scriptPath}`);
+      return res.status(500).json({ error: 'OTP preview script not found' });
+    }
+
+    const args = [scriptPath, otpPath, outputPath];
+
+    console.log('Executing OTP script:', { pythonPath, scriptPath, args });
+
+    let stdout, stderr;
+    try {
+      const result = await execFileAsync(pythonPath, args, { timeout: 120000 }); // 2 min timeout
+      stdout = result.stdout;
+      stderr = result.stderr;
+    } catch (execError: any) {
+      console.error('OTP script execution failed:', execError);
+      stdout = execError.stdout || '';
+      stderr = execError.stderr || execError.message || 'OTP execution failed';
+    }
+
+    if (stdout.trim().length > 0) console.log('OTP stdout:', stdout.trim());
+    if (stderr.trim().length > 0) console.warn('OTP stderr:', stderr.trim());
+    
+    // Check for errors
+    if (stderr.includes('ERROR:') || stderr.includes('Traceback')) {
+      throw new Error(`OTP script error: ${stderr}`);
+    }
+
+    // Check if output file was created
+    const outputExists = await fs.access(outputPath).then(() => true).catch(() => false);
+    if (!outputExists) {
+      throw new Error(`OTP script did not produce preview: ${outputPath}`);
+    }
+
+    // Read HTML content
+    const htmlContent = await fs.readFile(outputPath, 'utf-8');
+
+    console.log('OTP preview successful:', {
+      inputSize: file.size,
+      outputSize: htmlContent.length
+    });
+
+    res.json({ htmlContent });
+
+  } catch (error) {
+    console.error('OTP preview error:', error);
+    const message = error instanceof Error ? error.message : 'Unknown OTP preview error';
+    res.status(500).json({ error: `Failed to generate OTP preview: ${message}` });
+  } finally {
+    await fs.rm(tmpDir, { recursive: true, force: true }).catch(() => undefined);
+  }
+});
+
+// POT Preview endpoint - convert POT (PowerPoint Template) to HTML
+app.post('/api/preview/pot', uploadDocument.single('file'), async (req, res) => {
+  console.log('=== POT PREVIEW REQUEST ===');
+  const tmpDir = path.join(os.tmpdir(), `pot-preview-${Date.now()}`);
+  
+  try {
+    await fs.mkdir(tmpDir, { recursive: true });
+    
+    const file = req.file;
+    if (!file) {
+      return res.status(400).json({ error: 'No file uploaded' });
+    }
+
+    console.log('POT file received:', {
+      originalname: file.originalname,
+      mimetype: file.mimetype,
+      size: file.size
+    });
+
+    // Save POT file to temp location
+    const potPath = path.join(tmpDir, 'input.pot');
+    await fs.writeFile(potPath, file.buffer);
+
+    // Use Python script to convert POT to HTML
+    const pythonPath = process.env.PYTHON_PATH || 'python3';
+    const scriptPath = path.join(__dirname, '..', 'viewers', 'pot_to_html.py');
+    const outputPath = path.join(tmpDir, 'output.html');
+
+    // Check if script exists
+    const scriptExists = await fs.access(scriptPath).then(() => true).catch(() => false);
+    if (!scriptExists) {
+      console.error(`POT script not found: ${scriptPath}`);
+      return res.status(500).json({ error: 'POT preview script not found' });
+    }
+
+    const args = [scriptPath, potPath, outputPath];
+
+    console.log('Executing POT script:', { pythonPath, scriptPath, args });
+
+    let stdout, stderr;
+    try {
+      const result = await execFileAsync(pythonPath, args, { timeout: 120000 }); // 2 min timeout
+      stdout = result.stdout;
+      stderr = result.stderr;
+    } catch (execError: any) {
+      console.error('POT script execution failed:', execError);
+      stdout = execError.stdout || '';
+      stderr = execError.stderr || execError.message || 'POT execution failed';
+    }
+
+    if (stdout.trim().length > 0) console.log('POT stdout:', stdout.trim());
+    if (stderr.trim().length > 0) console.warn('POT stderr:', stderr.trim());
+    
+    // Check for errors
+    if (stderr.includes('ERROR:') || stderr.includes('Traceback')) {
+      throw new Error(`POT script error: ${stderr}`);
+    }
+
+    // Check if output file was created
+    const outputExists = await fs.access(outputPath).then(() => true).catch(() => false);
+    if (!outputExists) {
+      throw new Error(`POT script did not produce preview: ${outputPath}`);
+    }
+
+    // Read HTML content
+    const htmlContent = await fs.readFile(outputPath, 'utf-8');
+
+    console.log('POT preview successful:', {
+      inputSize: file.size,
+      outputSize: htmlContent.length
+    });
+
+    res.json({ htmlContent });
+
+  } catch (error) {
+    console.error('POT preview error:', error);
+    const message = error instanceof Error ? error.message : 'Unknown POT preview error';
+    res.status(500).json({ error: `Failed to generate POT preview: ${message}` });
+  } finally {
+    await fs.rm(tmpDir, { recursive: true, force: true }).catch(() => undefined);
+  }
+});
+
+// PPS/PPSX Preview endpoint - convert PPS/PPSX (PowerPoint Slide Show) to HTML
+app.post('/api/preview/pps', uploadDocument.single('file'), async (req, res) => {
+  console.log('=== PPS/PPSX PREVIEW REQUEST ===');
+  const tmpDir = path.join(os.tmpdir(), `pps-preview-${Date.now()}`);
+  
+  try {
+    await fs.mkdir(tmpDir, { recursive: true });
+    
+    const file = req.file;
+    if (!file) {
+      return res.status(400).json({ error: 'No file uploaded' });
+    }
+
+    console.log('PPS/PPSX file received:', {
+      originalname: file.originalname,
+      mimetype: file.mimetype,
+      size: file.size
+    });
+
+    // Determine file extension
+    const fileExt = file.originalname.split('.').pop()?.toLowerCase() || 'pps';
+    const inputFileName = `input.${fileExt}`;
+
+    // Save PPS/PPSX file to temp location
+    const ppsPath = path.join(tmpDir, inputFileName);
+    await fs.writeFile(ppsPath, file.buffer);
+
+    // Use Python script to convert PPS/PPSX to HTML
+    const pythonPath = process.env.PYTHON_PATH || 'python3';
+    const scriptPath = path.join(__dirname, '..', 'viewers', 'pps_to_html.py');
+    const outputPath = path.join(tmpDir, 'output.html');
+
+    // Check if script exists
+    const scriptExists = await fs.access(scriptPath).then(() => true).catch(() => false);
+    if (!scriptExists) {
+      console.error(`PPS/PPSX script not found: ${scriptPath}`);
+      return res.status(500).json({ error: 'PPS/PPSX preview script not found' });
+    }
+
+    const args = [scriptPath, ppsPath, outputPath];
+
+    console.log('Executing PPS/PPSX script:', { pythonPath, scriptPath, args });
+
+    let stdout, stderr;
+    try {
+      const result = await execFileAsync(pythonPath, args, { timeout: 120000 }); // 2 min timeout
+      stdout = result.stdout;
+      stderr = result.stderr;
+    } catch (execError: any) {
+      console.error('PPS/PPSX script execution failed:', execError);
+      stdout = execError.stdout || '';
+      stderr = execError.stderr || execError.message || 'PPS/PPSX execution failed';
+    }
+
+    if (stdout.trim().length > 0) console.log('PPS/PPSX stdout:', stdout.trim());
+    if (stderr.trim().length > 0) console.warn('PPS/PPSX stderr:', stderr.trim());
+    
+    // Check for errors
+    if (stderr.includes('ERROR:') || stderr.includes('Traceback')) {
+      throw new Error(`PPS/PPSX script error: ${stderr}`);
+    }
+
+    // Check if output file was created
+    const outputExists = await fs.access(outputPath).then(() => true).catch(() => false);
+    if (!outputExists) {
+      throw new Error(`PPS/PPSX script did not produce preview: ${outputPath}`);
+    }
+
+    // Read HTML content
+    const htmlContent = await fs.readFile(outputPath, 'utf-8');
+
+    console.log('PPS/PPSX preview successful:', {
+      inputSize: file.size,
+      outputSize: htmlContent.length,
+      format: fileExt.toUpperCase()
+    });
+
+    res.json({ htmlContent });
+
+  } catch (error) {
+    console.error('PPS/PPSX preview error:', error);
+    const message = error instanceof Error ? error.message : 'Unknown PPS/PPSX preview error';
+    res.status(500).json({ error: `Failed to generate PPS/PPSX preview: ${message}` });
+  } finally {
+    await fs.rm(tmpDir, { recursive: true, force: true }).catch(() => undefined);
+  }
+});
+
+// PPT/PPTX Preview endpoint - convert PPT/PPTX (PowerPoint Presentation) to HTML
+app.post('/api/preview/ppt', uploadDocument.single('file'), async (req, res) => {
+  console.log('=== PPT/PPTX PREVIEW REQUEST ===');
+  const tmpDir = path.join(os.tmpdir(), `ppt-preview-${Date.now()}`);
+  
+  try {
+    await fs.mkdir(tmpDir, { recursive: true });
+    
+    const file = req.file;
+    if (!file) {
+      return res.status(400).json({ error: 'No file uploaded' });
+    }
+
+    console.log('PPT/PPTX file received:', {
+      originalname: file.originalname,
+      mimetype: file.mimetype,
+      size: file.size
+    });
+
+    // Determine file extension
+    const fileExt = file.originalname.split('.').pop()?.toLowerCase() || 'ppt';
+    const inputFileName = `input.${fileExt}`;
+
+    // Save PPT/PPTX file to temp location
+    const pptPath = path.join(tmpDir, inputFileName);
+    await fs.writeFile(pptPath, file.buffer);
+
+    // Use Python script to convert PPT/PPTX to HTML
+    const pythonPath = process.env.PYTHON_PATH || 'python3';
+    const scriptPath = path.join(__dirname, '..', 'viewers', 'ppt_to_html.py');
+    const outputPath = path.join(tmpDir, 'output.html');
+
+    // Check if script exists
+    const scriptExists = await fs.access(scriptPath).then(() => true).catch(() => false);
+    if (!scriptExists) {
+      console.error(`PPT/PPTX script not found: ${scriptPath}`);
+      return res.status(500).json({ error: 'PPT/PPTX preview script not found' });
+    }
+
+    const args = [scriptPath, pptPath, outputPath];
+
+    console.log('Executing PPT/PPTX script:', { pythonPath, scriptPath, args });
+
+    let stdout, stderr;
+    try {
+      const result = await execFileAsync(pythonPath, args, { timeout: 120000 }); // 2 min timeout
+      stdout = result.stdout;
+      stderr = result.stderr;
+    } catch (execError: any) {
+      console.error('PPT/PPTX script execution failed:', execError);
+      stdout = execError.stdout || '';
+      stderr = execError.stderr || execError.message || 'PPT/PPTX execution failed';
+    }
+
+    if (stdout.trim().length > 0) console.log('PPT/PPTX stdout:', stdout.trim());
+    if (stderr.trim().length > 0) console.warn('PPT/PPTX stderr:', stderr.trim());
+    
+    // Check for errors
+    if (stderr.includes('ERROR:') || stderr.includes('Traceback')) {
+      throw new Error(`PPT/PPTX script error: ${stderr}`);
+    }
+
+    // Check if output file was created
+    const outputExists = await fs.access(outputPath).then(() => true).catch(() => false);
+    if (!outputExists) {
+      throw new Error(`PPT/PPTX script did not produce preview: ${outputPath}`);
+    }
+
+    // Read HTML content
+    const htmlContent = await fs.readFile(outputPath, 'utf-8');
+
+    console.log('PPT/PPTX preview successful:', {
+      inputSize: file.size,
+      outputSize: htmlContent.length,
+      format: fileExt.toUpperCase()
+    });
+
+    res.json({ htmlContent });
+
+  } catch (error) {
+    console.error('PPT/PPTX preview error:', error);
+    const message = error instanceof Error ? error.message : 'Unknown PPT/PPTX preview error';
+    res.status(500).json({ error: `Failed to generate PPT/PPTX preview: ${message}` });
+  } finally {
+    await fs.rm(tmpDir, { recursive: true, force: true }).catch(() => undefined);
+  }
+});
+
+// SDD Preview endpoint - convert SDD (StarOffice Presentation) to HTML
+app.post('/api/preview/sdd', uploadDocument.single('file'), async (req, res) => {
+  console.log('=== SDD PREVIEW REQUEST ===');
+  const tmpDir = path.join(os.tmpdir(), `sdd-preview-${Date.now()}`);
+  
+  try {
+    await fs.mkdir(tmpDir, { recursive: true });
+    
+    const file = req.file;
+    if (!file) {
+      return res.status(400).json({ error: 'No file uploaded' });
+    }
+
+    console.log('SDD file received:', {
+      originalname: file.originalname,
+      mimetype: file.mimetype,
+      size: file.size
+    });
+
+    // Save SDD file to temp location
+    const sddPath = path.join(tmpDir, 'input.sdd');
+    await fs.writeFile(sddPath, file.buffer);
+
+    // Use Python script to convert SDD to HTML
+    const pythonPath = process.env.PYTHON_PATH || 'python3';
+    const scriptPath = path.join(__dirname, '..', 'viewers', 'sdd_to_html.py');
+    const outputPath = path.join(tmpDir, 'output.html');
+
+    // Check if script exists
+    const scriptExists = await fs.access(scriptPath).then(() => true).catch(() => false);
+    if (!scriptExists) {
+      console.error(`SDD script not found: ${scriptPath}`);
+      return res.status(500).json({ error: 'SDD preview script not found' });
+    }
+
+    const args = [scriptPath, sddPath, outputPath];
+
+    console.log('Executing SDD script:', { pythonPath, scriptPath, args });
+
+    let stdout, stderr;
+    try {
+      const result = await execFileAsync(pythonPath, args, { timeout: 120000 }); // 2 min timeout
+      stdout = result.stdout;
+      stderr = result.stderr;
+    } catch (execError: any) {
+      console.error('SDD script execution failed:', execError);
+      stdout = execError.stdout || '';
+      stderr = execError.stderr || execError.message || 'SDD execution failed';
+    }
+
+    if (stdout.trim().length > 0) console.log('SDD stdout:', stdout.trim());
+    if (stderr.trim().length > 0) console.warn('SDD stderr:', stderr.trim());
+    
+    // Check for errors
+    if (stderr.includes('ERROR:') || stderr.includes('Traceback')) {
+      throw new Error(`SDD script error: ${stderr}`);
+    }
+
+    // Check if output file was created
+    const outputExists = await fs.access(outputPath).then(() => true).catch(() => false);
+    if (!outputExists) {
+      throw new Error(`SDD script did not produce preview: ${outputPath}`);
+    }
+
+    // Read HTML content
+    const htmlContent = await fs.readFile(outputPath, 'utf-8');
+
+    console.log('SDD preview successful:', {
+      inputSize: file.size,
+      outputSize: htmlContent.length
+    });
+
+    res.json({ htmlContent });
+
+  } catch (error) {
+    console.error('SDD preview error:', error);
+    const message = error instanceof Error ? error.message : 'Unknown SDD preview error';
+    res.status(500).json({ error: `Failed to generate SDD preview: ${message}` });
+  } finally {
+    await fs.rm(tmpDir, { recursive: true, force: true }).catch(() => undefined);
+  }
+});
+
+// STI Preview endpoint - convert STI (StarOffice Presentation Template) to HTML
+app.post('/api/preview/sti', uploadDocument.single('file'), async (req, res) => {
+  console.log('=== STI PREVIEW REQUEST ===');
+  const tmpDir = path.join(os.tmpdir(), `sti-preview-${Date.now()}`);
+  
+  try {
+    await fs.mkdir(tmpDir, { recursive: true });
+    
+    const file = req.file;
+    if (!file) {
+      return res.status(400).json({ error: 'No file uploaded' });
+    }
+
+    console.log('STI file received:', {
+      originalname: file.originalname,
+      mimetype: file.mimetype,
+      size: file.size
+    });
+
+    // Save STI file to temp location
+    const stiPath = path.join(tmpDir, 'input.sti');
+    await fs.writeFile(stiPath, file.buffer);
+
+    // Use Python script to convert STI to HTML
+    const pythonPath = process.env.PYTHON_PATH || 'python3';
+    const scriptPath = path.join(__dirname, '..', 'viewers', 'sti_to_html.py');
+    const outputPath = path.join(tmpDir, 'output.html');
+
+    // Check if script exists
+    const scriptExists = await fs.access(scriptPath).then(() => true).catch(() => false);
+    if (!scriptExists) {
+      console.error(`STI script not found: ${scriptPath}`);
+      return res.status(500).json({ error: 'STI preview script not found' });
+    }
+
+    const args = [scriptPath, stiPath, outputPath];
+
+    console.log('Executing STI script:', { pythonPath, scriptPath, args });
+
+    let stdout, stderr;
+    try {
+      const result = await execFileAsync(pythonPath, args, { timeout: 120000 }); // 2 min timeout
+      stdout = result.stdout;
+      stderr = result.stderr;
+    } catch (execError: any) {
+      console.error('STI script execution failed:', execError);
+      stdout = execError.stdout || '';
+      stderr = execError.stderr || execError.message || 'STI execution failed';
+    }
+
+    if (stdout.trim().length > 0) console.log('STI stdout:', stdout.trim());
+    if (stderr.trim().length > 0) console.warn('STI stderr:', stderr.trim());
+    
+    // Check for errors
+    if (stderr.includes('ERROR:') || stderr.includes('Traceback')) {
+      throw new Error(`STI script error: ${stderr}`);
+    }
+
+    // Check if output file was created
+    const outputExists = await fs.access(outputPath).then(() => true).catch(() => false);
+    if (!outputExists) {
+      throw new Error(`STI script did not produce preview: ${outputPath}`);
+    }
+
+    // Read HTML content
+    const htmlContent = await fs.readFile(outputPath, 'utf-8');
+
+    console.log('STI preview successful:', {
+      inputSize: file.size,
+      outputSize: htmlContent.length
+    });
+
+    res.json({ htmlContent });
+
+  } catch (error) {
+    console.error('STI preview error:', error);
+    const message = error instanceof Error ? error.message : 'Unknown STI preview error';
+    res.status(500).json({ error: `Failed to generate STI preview: ${message}` });
+  } finally {
+    await fs.rm(tmpDir, { recursive: true, force: true }).catch(() => undefined);
+  }
+});
+
+// SX Preview endpoint - convert SX (Stat Studio Program) to HTML
+app.post('/api/preview/sx', uploadDocument.single('file'), async (req, res) => {
+  console.log('=== SX PREVIEW REQUEST ===');
+  const tmpDir = path.join(os.tmpdir(), `sx-preview-${Date.now()}`);
+  
+  try {
+    await fs.mkdir(tmpDir, { recursive: true });
+    
+    const file = req.file;
+    if (!file) {
+      return res.status(400).json({ error: 'No file uploaded' });
+    }
+
+    console.log('SX file received:', {
+      originalname: file.originalname,
+      mimetype: file.mimetype,
+      size: file.size
+    });
+
+    // Save SX file to temp location
+    const sxPath = path.join(tmpDir, 'input.sx');
+    await fs.writeFile(sxPath, file.buffer);
+
+    // Use Python script to convert SX to HTML
+    const pythonPath = process.env.PYTHON_PATH || 'python3';
+    const scriptPath = path.join(__dirname, '..', 'viewers', 'sx_to_formatted.py');
+    const outputPath = path.join(tmpDir, 'output.html');
+
+    // Check if script exists
+    const scriptExists = await fs.access(scriptPath).then(() => true).catch(() => false);
+    if (!scriptExists) {
+      console.error(`SX script not found: ${scriptPath}`);
+      return res.status(500).json({ error: 'SX preview script not found' });
+    }
+
+    const args = [scriptPath, sxPath, outputPath, '--max-lines', '50000'];
+
+    console.log('Executing SX script:', { pythonPath, scriptPath, args });
+
+    let stdout, stderr;
+    try {
+      const result = await execFileAsync(pythonPath, args, { timeout: 120000 }); // 2 min timeout
+      stdout = result.stdout;
+      stderr = result.stderr;
+    } catch (execError: any) {
+      console.error('SX script execution failed:', execError);
+      stdout = execError.stdout || '';
+      stderr = execError.stderr || execError.message || 'SX execution failed';
+    }
+
+    if (stdout.trim().length > 0) console.log('SX stdout:', stdout.trim());
+    if (stderr.trim().length > 0) console.warn('SX stderr:', stderr.trim());
+    
+    // Check for errors
+    if (stderr.includes('ERROR:') || stderr.includes('Traceback')) {
+      throw new Error(`SX script error: ${stderr}`);
+    }
+
+    // Check if output file was created
+    const outputExists = await fs.access(outputPath).then(() => true).catch(() => false);
+    if (!outputExists) {
+      throw new Error(`SX script did not produce preview: ${outputPath}`);
+    }
+
+    // Read HTML content
+    const htmlContent = await fs.readFile(outputPath, 'utf-8');
+
+    console.log('SX preview successful:', {
+      inputSize: file.size,
+      outputSize: htmlContent.length
+    });
+
+    res.json({ htmlContent });
+
+  } catch (error) {
+    console.error('SX preview error:', error);
+    const message = error instanceof Error ? error.message : 'Unknown SX preview error';
+    res.status(500).json({ error: `Failed to generate SX preview: ${message}` });
+  } finally {
+    await fs.rm(tmpDir, { recursive: true, force: true }).catch(() => undefined);
+  }
+});
+
+// UOP Preview endpoint - convert UOP (Uniform Office Presentation) to HTML
+app.post('/api/preview/uop', uploadDocument.single('file'), async (req, res) => {
+  console.log('=== UOP PREVIEW REQUEST ===');
+  const tmpDir = path.join(os.tmpdir(), `uop-preview-${Date.now()}`);
+  
+  try {
+    await fs.mkdir(tmpDir, { recursive: true });
+    
+    const file = req.file;
+    if (!file) {
+      return res.status(400).json({ error: 'No file uploaded' });
+    }
+
+    console.log('UOP file received:', {
+      originalname: file.originalname,
+      mimetype: file.mimetype,
+      size: file.size
+    });
+
+    // Save UOP file to temp location
+    const uopPath = path.join(tmpDir, 'input.uop');
+    await fs.writeFile(uopPath, file.buffer);
+
+    // Use Python script to convert UOP to HTML
+    const pythonPath = process.env.PYTHON_PATH || 'python3';
+    const scriptPath = path.join(__dirname, '..', 'viewers', 'uop_to_html.py');
+    const outputPath = path.join(tmpDir, 'output.html');
+
+    // Check if script exists
+    const scriptExists = await fs.access(scriptPath).then(() => true).catch(() => false);
+    if (!scriptExists) {
+      console.error(`UOP script not found: ${scriptPath}`);
+      return res.status(500).json({ error: 'UOP preview script not found' });
+    }
+
+    const args = [scriptPath, uopPath, outputPath];
+
+    console.log('Executing UOP script:', { pythonPath, scriptPath, args });
+
+    let stdout, stderr;
+    try {
+      const result = await execFileAsync(pythonPath, args, { timeout: 120000 }); // 2 min timeout
+      stdout = result.stdout;
+      stderr = result.stderr;
+    } catch (execError: any) {
+      console.error('UOP script execution failed:', execError);
+      stdout = execError.stdout || '';
+      stderr = execError.stderr || execError.message || 'UOP execution failed';
+    }
+
+    if (stdout.trim().length > 0) console.log('UOP stdout:', stdout.trim());
+    if (stderr.trim().length > 0) console.warn('UOP stderr:', stderr.trim());
+    
+    // Check for errors
+    if (stderr.includes('ERROR:') || stderr.includes('Traceback')) {
+      throw new Error(`UOP script error: ${stderr}`);
+    }
+
+    // Check if output file was created
+    const outputExists = await fs.access(outputPath).then(() => true).catch(() => false);
+    if (!outputExists) {
+      throw new Error(`UOP script did not produce preview: ${outputPath}`);
+    }
+
+    // Read HTML content
+    const htmlContent = await fs.readFile(outputPath, 'utf-8');
+
+    console.log('UOP preview successful:', {
+      inputSize: file.size,
+      outputSize: htmlContent.length
+    });
+
+    res.json({ htmlContent });
+
+  } catch (error) {
+    console.error('UOP preview error:', error);
+    const message = error instanceof Error ? error.message : 'Unknown UOP preview error';
+    res.status(500).json({ error: `Failed to generate UOP preview: ${message}` });
+  } finally {
+    await fs.rm(tmpDir, { recursive: true, force: true }).catch(() => undefined);
+  }
+});
+
 // PEF Preview endpoint - convert PEF (Pentax RAW) to web-viewable image
 app.post('/api/preview/pef', uploadDocument.single('file'), async (req, res) => {
   console.log('=== PEF PREVIEW REQUEST ===');
