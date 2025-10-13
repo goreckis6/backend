@@ -33,18 +33,20 @@ def convert_pptx_to_html_direct(pptx_file, html_file):
         bool: True if conversion successful, False otherwise
     """
     if not PPTX_AVAILABLE:
-        print("ERROR: python-pptx not available")
+        print("ERROR: python-pptx not available", flush=True)
         return False
     
-    print(f"Attempting PPTX to HTML conversion with python-pptx...")
+    print(f"Attempting PPTX to HTML conversion with python-pptx...", flush=True)
     
     try:
         # Load presentation
+        print(f"Loading PPTX file: {pptx_file}", flush=True)
         prs = Presentation(pptx_file)
+        print(f"PPTX file loaded successfully", flush=True)
         
         # Get presentation info
         slide_count = len(prs.slides)
-        print(f"Loaded presentation: {slide_count} slides")
+        print(f"Loaded presentation: {slide_count} slides", flush=True)
         
         # Build HTML
         html_parts = []
@@ -195,16 +197,20 @@ def convert_pptx_to_html_direct(pptx_file, html_file):
 """)
         
         # Write HTML file
+        print(f"Generating HTML content...", flush=True)
         html_content = ''.join(html_parts)
+        print(f"Writing HTML file: {html_file}", flush=True)
         with open(html_file, 'w', encoding='utf-8') as f:
             f.write(html_content)
         
-        print(f"HTML file created successfully: {len(html_content)} bytes")
+        print(f"HTML file created successfully: {len(html_content)} bytes", flush=True)
         return True
         
     except Exception as e:
-        print(f"ERROR: python-pptx conversion failed: {e}")
+        print(f"ERROR: python-pptx conversion failed: {e}", flush=True)
         traceback.print_exc()
+        sys.stdout.flush()
+        sys.stderr.flush()
         return False
 
 def _escape_html(text):
@@ -575,10 +581,10 @@ def main():
     
     args = parser.parse_args()
     
-    print("=== PPT/PPTX to HTML Converter ===")
-    print(f"Python version: {sys.version}")
-    print(f"Working directory: {os.getcwd()}")
-    print(f"Arguments: {vars(args)}")
+    print("=== PPT/PPTX to HTML Converter ===", flush=True)
+    print(f"Python version: {sys.version}", flush=True)
+    print(f"Working directory: {os.getcwd()}", flush=True)
+    print(f"Arguments: {vars(args)}", flush=True)
     
     # Check if input file exists
     if not os.path.exists(args.ppt_file):
@@ -603,21 +609,23 @@ def main():
     
     # For PPTX files, try python-pptx first (fastest and most reliable)
     if file_ext == '.pptx' and PPTX_AVAILABLE:
-        print("\n=== Trying Method 1: python-pptx (Direct Parsing) ===")
+        print("\n=== Trying Method 1: python-pptx (Direct Parsing) ===", flush=True)
         success = convert_pptx_to_html_direct(args.ppt_file, args.html_file)
     
     # If python-pptx failed or not available, try LibreOffice
     if not success:
-        print("\n=== Trying Method 2: LibreOffice ===")
+        print("\n=== Trying Method 2: LibreOffice ===", flush=True)
         success = convert_ppt_to_html_libreoffice(args.ppt_file, args.html_file)
     
     # If LibreOffice failed, try unoconv
     if not success:
-        print("\n=== Trying Method 3: unoconv ===")
+        print("\n=== Trying Method 3: unoconv ===", flush=True)
         success = convert_ppt_to_html_unoconv(args.ppt_file, args.html_file)
     
     if success:
-        print("=== CONVERSION SUCCESSFUL ===")
+        print("=== CONVERSION SUCCESSFUL ===", flush=True)
+        sys.stdout.flush()
+        sys.stderr.flush()
         sys.exit(0)
     else:
         print("=== CONVERSION FAILED ===")

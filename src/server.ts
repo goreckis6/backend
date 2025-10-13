@@ -8985,12 +8985,20 @@ app.post('/api/preview/ppt', uploadDocument.single('file'), async (req, res) => 
     console.log('Executing PPT/PPTX script:', { pythonPath, scriptPath, args });
 
     let stdout, stderr;
+    let timedOut = false;
     try {
-      const result = await execFileAsync(pythonPath, args, { timeout: 120000 }); // 2 min timeout
+      const result = await execFileAsync(pythonPath, args, { 
+        timeout: 60000,  // Reduced to 1 minute for faster feedback
+        maxBuffer: 10 * 1024 * 1024  // 10MB buffer for large outputs
+      });
       stdout = result.stdout;
       stderr = result.stderr;
     } catch (execError: any) {
       console.error('PPT/PPTX script execution failed:', execError);
+      if (execError.killed && execError.signal === 'SIGTERM') {
+        timedOut = true;
+        console.error('Script timed out after 60 seconds');
+      }
       stdout = execError.stdout || '';
       stderr = execError.stderr || execError.message || 'PPT/PPTX execution failed';
     }
@@ -8998,13 +9006,17 @@ app.post('/api/preview/ppt', uploadDocument.single('file'), async (req, res) => 
     console.log('=== PPT/PPTX PYTHON SCRIPT OUTPUT ===');
     if (stdout && stdout.trim().length > 0) {
       console.log('STDOUT:');
-      console.log(stdout);
+      console.log(stdout.substring(0, 5000)); // Limit output to prevent flooding logs
     }
     if (stderr && stderr.trim().length > 0) {
       console.log('STDERR:');
-      console.log(stderr);
+      console.log(stderr.substring(0, 5000)); // Limit output to prevent flooding logs
     }
     console.log('=== END SCRIPT OUTPUT ===');
+    
+    if (timedOut) {
+      throw new Error('PowerPoint conversion timed out. The file may be too large or complex.');
+    }
     
     // Check for errors - be more lenient with warnings
     if (stderr.includes('ERROR:') || stderr.includes('Traceback') || stderr.includes('CONVERSION FAILED')) {

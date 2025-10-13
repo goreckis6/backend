@@ -92,6 +92,98 @@ def convert_sdd_to_html_libreoffice(sdd_file, html_file):
         traceback.print_exc()
         return False
 
+def create_legacy_format_error_html(html_file, format_name="StarOffice Presentation"):
+    """Create an informative error page for legacy formats."""
+    try:
+        html_content = f"""
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>{format_name} Preview - Legacy Format</title>
+    <style>
+        body {{
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 50px auto;
+            padding: 20px;
+            background: #f5f5f5;
+        }}
+        .info-box {{
+            background: white;
+            border-left: 4px solid #ff9800;
+            padding: 20px;
+            border-radius: 4px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }}
+        h1 {{
+            color: #ff9800;
+            margin-top: 0;
+        }}
+        .legacy-notice {{
+            background: #fff3e0;
+            padding: 15px;
+            border-radius: 4px;
+            margin: 15px 0;
+        }}
+        .suggestion {{
+            background: #e3f2fd;
+            padding: 15px;
+            border-radius: 4px;
+            border-left: 4px solid #2196f3;
+        }}
+        .download-section {{
+            background: #e8f5e9;
+            padding: 15px;
+            border-radius: 4px;
+            margin: 15px 0;
+            border-left: 4px solid #4caf50;
+        }}
+    </style>
+</head>
+<body>
+    <div class="info-box">
+        <h1>📁 {format_name} Preview</h1>
+        <p>This is a legacy file format that requires special handling.</p>
+        
+        <div class="legacy-notice">
+            <h3>⚠️ Legacy Format Notice</h3>
+            <p>StarOffice/StarImpress files (.sdd) are legacy presentation formats from the 1990s-2000s. 
+            These files require LibreOffice for conversion, which may not be fully supported in the current environment.</p>
+        </div>
+        
+        <div class="download-section">
+            <h3>✅ Recommended Action</h3>
+            <p><strong>Download the file</strong> and open it with:</p>
+            <ul>
+                <li><strong>LibreOffice Impress</strong> (Free, open-source)</li>
+                <li><strong>Apache OpenOffice</strong> (Free, open-source)</li>
+                <li>Convert to modern formats (.pptx, .odp) for better compatibility</li>
+            </ul>
+        </div>
+        
+        <div class="suggestion">
+            <h3>💡 About This Format</h3>
+            <p><strong>StarOffice Presentation (.sdd)</strong> was used by Sun Microsystems' StarOffice suite 
+            (1996-2005) before it evolved into OpenOffice and later LibreOffice.</p>
+            <p>For modern usage, we recommend converting these files to:</p>
+            <ul>
+                <li>OpenDocument Presentation (.odp) - Open standard</li>
+                <li>Microsoft PowerPoint (.pptx) - Widely supported</li>
+            </ul>
+        </div>
+    </div>
+</body>
+</html>
+"""
+        with open(html_file, 'w', encoding='utf-8') as f:
+            f.write(html_content)
+        print(f"Created legacy format info page: {html_file}")
+        return True
+    except Exception as e:
+        print(f"ERROR: Could not create info page: {e}")
+        return False
+
 def main():
     parser = argparse.ArgumentParser(description='Convert SDD to HTML for web preview')
     parser.add_argument('sdd_file', help='Input SDD file path')
@@ -124,8 +216,15 @@ def main():
         sys.exit(0)
     else:
         print("=== CONVERSION FAILED ===")
-        print("ERROR: LibreOffice conversion failed. Please ensure LibreOffice is installed.")
-        sys.exit(1)
+        print("LibreOffice conversion failed. Creating informative legacy format page...")
+        
+        # Create an informative error page instead of failing completely
+        if create_legacy_format_error_html(args.html_file, "StarOffice Presentation (.sdd)"):
+            print("Created legacy format info page for user")
+            sys.exit(0)  # Exit successfully so the info page is shown
+        else:
+            print("ERROR: Could not create info page")
+            sys.exit(1)
 
 if __name__ == "__main__":
     main()
