@@ -66,6 +66,14 @@ const uploadDocument = multer({
       'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', // XLSX
       'application/vnd.ms-excel', // XLS
       'application/vnd.oasis.opendocument.spreadsheet', // ODS
+      // PowerPoint formats
+      'application/vnd.openxmlformats-officedocument.presentationml.presentation', // PPTX
+      'application/vnd.ms-powerpoint', // PPT
+      'application/vnd.openxmlformats-officedocument.presentationml.slideshow', // PPSX
+      'application/vnd.ms-powerpoint.presentation.macroEnabled.12', // PPTM
+      'application/vnd.ms-powerpoint.slideshow.macroEnabled.12', // PPSM
+      'application/vnd.oasis.opendocument.presentation', // ODP
+      'application/vnd.oasis.opendocument.presentation-template', // OTP
       'text/plain', // TXT
       'text/markdown', // MD
       'text/x-markdown', // MD alternative
@@ -82,6 +90,8 @@ const uploadDocument = multer({
       'docx', 'doc', 'docm', 'dotx', 'dotm', 'rtf', 'odt', 
       // Spreadsheets
       'xlsx', 'xls', 'xlsm', 'xlsb', 'ods', 
+      // Presentations
+      'pptx', 'ppt', 'pptm', 'ppsx', 'ppsm', 'potx', 'potm', 'pot', 'pps', 'odp', 'otp', 'sdd', 'sti', 'uop',
       // Text/Code
       'txt', 'log', 'md', 'markdown', 'json', 'xml', 'csv', 'tsv', 'html', 'css', 'js', 'py', 'java', 'c', 'cpp',
       // RAW Image Formats (for viewers)
