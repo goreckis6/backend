@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """
 PPT/PPTX (PowerPoint Presentation) to HTML converter for web preview.
-Uses LibreOffice for conversion. Supports both legacy PPT and modern PPTX formats.
+Uses python-pptx for direct PPTX parsing, LibreOffice as fallback.
+Supports both legacy PPT and modern PPTX formats.
 """
 
 import argparse
@@ -10,6 +11,212 @@ import sys
 import subprocess
 import shutil
 import traceback
+
+try:
+    from pptx import Presentation
+    from pptx.util import Inches, Pt
+    PPTX_AVAILABLE = True
+except ImportError:
+    PPTX_AVAILABLE = False
+    print("WARNING: python-pptx not available")
+
+def convert_pptx_to_html_direct(pptx_file, html_file):
+    """
+    Convert PPTX to HTML using python-pptx library (direct parsing).
+    Only works for PPTX format (not legacy PPT).
+    
+    Args:
+        pptx_file (str): Path to input PPTX file
+        html_file (str): Path to output HTML file
+    
+    Returns:
+        bool: True if conversion successful, False otherwise
+    """
+    if not PPTX_AVAILABLE:
+        print("ERROR: python-pptx not available")
+        return False
+    
+    print(f"Attempting PPTX to HTML conversion with python-pptx...")
+    
+    try:
+        # Load presentation
+        prs = Presentation(pptx_file)
+        
+        # Get presentation info
+        slide_count = len(prs.slides)
+        print(f"Loaded presentation: {slide_count} slides")
+        
+        # Build HTML
+        html_parts = []
+        html_parts.append("""
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PowerPoint Preview</title>
+    <style>
+        body { 
+            margin: 0; 
+            padding: 0; 
+            font-family: Arial, sans-serif;
+            background: #f5f5f5;
+        }
+        #header-bar {
+            position: sticky;
+            top: 0;
+            background: linear-gradient(135deg, #0078d4 0%, #00a4ef 100%);
+            color: white;
+            padding: 12px 20px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+            z-index: 1000;
+        }
+        #header-bar h1 {
+            margin: 0;
+            font-size: 18px;
+            font-weight: 600;
+        }
+        .header-actions {
+            display: flex;
+            gap: 10px;
+        }
+        .header-btn {
+            background: rgba(255,255,255,0.2);
+            border: 1px solid rgba(255,255,255,0.3);
+            color: white;
+            padding: 8px 16px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: 500;
+            transition: all 0.2s;
+        }
+        .header-btn:hover {
+            background: rgba(255,255,255,0.3);
+            transform: translateY(-1px);
+        }
+        .container {
+            max-width: 1200px;
+            margin: 20px auto;
+            padding: 20px;
+        }
+        .slide {
+            background: white;
+            border-radius: 8px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+            margin-bottom: 30px;
+            padding: 30px;
+            page-break-after: always;
+        }
+        .slide-header {
+            border-bottom: 2px solid #0078d4;
+            padding-bottom: 10px;
+            margin-bottom: 20px;
+        }
+        .slide-number {
+            color: #0078d4;
+            font-weight: bold;
+            font-size: 14px;
+        }
+        .slide-title {
+            font-size: 28px;
+            font-weight: bold;
+            color: #333;
+            margin: 10px 0;
+        }
+        .slide-content {
+            line-height: 1.6;
+            color: #555;
+        }
+        .text-box {
+            margin-bottom: 15px;
+        }
+        .shape-list {
+            list-style-position: inside;
+            margin: 10px 0;
+        }
+        @media print {
+            #header-bar { display: none; }
+            .container { margin: 0; padding: 0; max-width: none; }
+            .slide { box-shadow: none; margin: 0; page-break-after: always; }
+        }
+    </style>
+</head>
+<body>
+    <div id="header-bar">
+        <h1>📊 PowerPoint Preview ({} slides)</h1>
+        <div class="header-actions">
+            <button class="header-btn" onclick="window.print()">🖨️ Print</button>
+            <button class="header-btn" onclick="window.close()">✖️ Close</button>
+        </div>
+    </div>
+    <div class="container">
+""".format(slide_count))
+        
+        # Process each slide
+        for slide_num, slide in enumerate(prs.slides, start=1):
+            html_parts.append(f'<div class="slide">')
+            html_parts.append(f'<div class="slide-header">')
+            html_parts.append(f'<div class="slide-number">Slide {slide_num} of {slide_count}</div>')
+            
+            # Try to get slide title
+            title_text = ""
+            if slide.shapes.title:
+                title_text = slide.shapes.title.text
+                html_parts.append(f'<div class="slide-title">{_escape_html(title_text)}</div>')
+            
+            html_parts.append(f'</div>')
+            html_parts.append(f'<div class="slide-content">')
+            
+            # Process all shapes
+            for shape in slide.shapes:
+                if shape.has_text_frame:
+                    text = shape.text_frame.text
+                    if text and text != title_text:  # Don't duplicate title
+                        html_parts.append(f'<div class="text-box">')
+                        # Handle paragraphs
+                        for paragraph in shape.text_frame.paragraphs:
+                            if paragraph.text.strip():
+                                level = paragraph.level
+                                indent = level * 20
+                                html_parts.append(f'<p style="margin-left: {indent}px;">{_escape_html(paragraph.text)}</p>')
+                        html_parts.append(f'</div>')
+            
+            html_parts.append(f'</div>')
+            html_parts.append(f'</div>')
+        
+        html_parts.append("""
+    </div>
+</body>
+</html>
+""")
+        
+        # Write HTML file
+        html_content = ''.join(html_parts)
+        with open(html_file, 'w', encoding='utf-8') as f:
+            f.write(html_content)
+        
+        print(f"HTML file created successfully: {len(html_content)} bytes")
+        return True
+        
+    except Exception as e:
+        print(f"ERROR: python-pptx conversion failed: {e}")
+        traceback.print_exc()
+        return False
+
+def _escape_html(text):
+    """Escape HTML special characters."""
+    if not text:
+        return ""
+    return (text
+        .replace('&', '&amp;')
+        .replace('<', '&lt;')
+        .replace('>', '&gt;')
+        .replace('"', '&quot;')
+        .replace("'", '&#39;'))
 
 def convert_ppt_to_html_libreoffice(ppt_file, html_file):
     """
@@ -392,12 +599,21 @@ def main():
     if output_dir and not os.path.exists(output_dir):
         os.makedirs(output_dir)
     
-    # Try LibreOffice conversion first
-    success = convert_ppt_to_html_libreoffice(args.ppt_file, args.html_file)
+    success = False
+    
+    # For PPTX files, try python-pptx first (fastest and most reliable)
+    if file_ext == '.pptx' and PPTX_AVAILABLE:
+        print("\n=== Trying Method 1: python-pptx (Direct Parsing) ===")
+        success = convert_pptx_to_html_direct(args.ppt_file, args.html_file)
+    
+    # If python-pptx failed or not available, try LibreOffice
+    if not success:
+        print("\n=== Trying Method 2: LibreOffice ===")
+        success = convert_ppt_to_html_libreoffice(args.ppt_file, args.html_file)
     
     # If LibreOffice failed, try unoconv
     if not success:
-        print("\nLibreOffice method failed, trying unoconv...")
+        print("\n=== Trying Method 3: unoconv ===")
         success = convert_ppt_to_html_unoconv(args.ppt_file, args.html_file)
     
     if success:
