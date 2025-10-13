@@ -110,6 +110,34 @@ const uploadDocument = multer({
   }
 });
 
+// Configure multer for single file uploads (for specific conversion routes)
+const uploadSingle = multer({
+  storage: multer.memoryStorage(),
+  limits: {
+    fileSize: 100 * 1024 * 1024, // 100MB limit
+    files: 1
+  }
+});
+
+// Configure multer for batch file uploads
+const uploadBatch = multer({
+  storage: multer.memoryStorage(),
+  limits: {
+    fileSize: 100 * 1024 * 1024, // 100MB per file
+    files: 20 // Max 20 files per batch
+  }
+});
+
+// TypeScript interface for conversion results
+interface ConversionResult {
+  buffer: Buffer;
+  filename: string;
+  mime: string;
+  storedFilename?: string;
+  downloadUrl?: string;
+  size?: number;
+}
+
 // Utility function to create a basic ICO file
 const createBasicICO = (width: number, height: number): Buffer => {
   // Create a simple 32x32 ICO file with a basic structure
@@ -158,7 +186,14 @@ const persistOutputBuffer = async (
     mime
   });
   scheduleBatchFileCleanup(storedFilename);
-  return { buffer, filename: downloadName, mime, storedFilename };
+  return { 
+    buffer, 
+    filename: downloadName, 
+    mime, 
+    storedFilename,
+    downloadUrl: `/batch-download/${storedFilename}`,
+    size: buffer.length
+  };
 };
 
 const convertEpsFile = async (
