@@ -4760,13 +4760,15 @@ const upload = multer({
 
 const uploadSingle = upload.single('file');
 
-const uploadBatch = multer({
+const uploadBatchMulter = multer({
   storage: multer.memoryStorage(),
   limits: {
     fileSize: 100 * 1024 * 1024,
     files: 20
   }
-}).array('files', 20);
+});
+
+const uploadBatch = uploadBatchMulter.array('files', 20);
 
 // Handle preflight OPTIONS requests
 app.options('*', (req, res) => {
