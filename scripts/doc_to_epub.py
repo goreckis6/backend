@@ -14,7 +14,7 @@ from pathlib import Path
 def convert_doc_to_epub(doc_file, epub_file):
     """
     Convert DOC to EPUB using LibreOffice and Calibre.
-    Strategy: DOC → ODT (LibreOffice) → EPUB (ebook-convert)
+    Strategy: DOC → HTML (LibreOffice) → EPUB (ebook-convert)
     
     Args:
         doc_file (str): Path to input DOC file
@@ -39,10 +39,11 @@ def convert_doc_to_epub(doc_file, epub_file):
         
         # Create temporary directory for intermediate files
         with tempfile.TemporaryDirectory() as tmpdir:
-            # Step 1: Convert DOC to ODT using LibreOffice
-            print("Step 1/2: Converting DOC to ODT with LibreOffice...", flush=True)
+            # Step 1: Convert DOC to HTML using LibreOffice
+            print("Step 1/2: Converting DOC to HTML with LibreOffice...", flush=True)
             
-            odt_file = os.path.join(tmpdir, 'temp.odt')
+            base_name = os.path.splitext(os.path.basename(doc_file))[0]
+            html_file = os.path.join(tmpdir, f'{base_name}.html')
             
             cmd = [
                 'libreoffice',
@@ -54,7 +55,7 @@ def convert_doc_to_epub(doc_file, epub_file):
                 '--nolockcheck',
                 '--nologo',
                 '--norestore',
-                '--convert-to', 'odt',
+                '--convert-to', 'html',
                 '--outdir', tmpdir,
                 doc_file
             ]
@@ -83,24 +84,18 @@ def convert_doc_to_epub(doc_file, epub_file):
             if result.stderr:
                 print(f"LibreOffice stderr: {result.stderr}", flush=True)
             
-            # Find the created ODT file
-            base_name = os.path.splitext(os.path.basename(doc_file))[0]
-            actual_odt = os.path.join(tmpdir, f"{base_name}.odt")
+            # Check if HTML file was created
+            if not os.path.exists(html_file):
+                print(f"ERROR: HTML file not created at: {html_file}", flush=True)
+                print(f"Directory contents: {os.listdir(tmpdir)}", flush=True)
+                raise Exception("Failed to convert DOC to HTML with LibreOffice")
             
-            if not os.path.exists(actual_odt):
-                # Try without extension
-                actual_odt = os.path.join(tmpdir, "temp.odt")
-                if not os.path.exists(actual_odt):
-                    print(f"ERROR: ODT file not created", flush=True)
-                    print(f"Directory contents: {os.listdir(tmpdir)}", flush=True)
-                    raise Exception("Failed to convert DOC to ODT with LibreOffice")
+            print(f"HTML file created: {html_file}", flush=True)
+            html_size = os.path.getsize(html_file)
+            print(f"HTML size: {html_size:,} bytes ({html_size / 1024 / 1024:.2f} MB)", flush=True)
             
-            print(f"ODT file created: {actual_odt}", flush=True)
-            odt_size = os.path.getsize(actual_odt)
-            print(f"ODT size: {odt_size:,} bytes ({odt_size / 1024 / 1024:.2f} MB)", flush=True)
-            
-            # Step 2: Convert ODT to EPUB using ebook-convert (Calibre)
-            print("Step 2/2: Converting ODT to EPUB with Calibre...", flush=True)
+            # Step 2: Convert HTML to EPUB using ebook-convert (Calibre)
+            print("Step 2/2: Converting HTML to EPUB with Calibre...", flush=True)
             
             # Create output directory if needed
             output_dir = os.path.dirname(epub_file)
@@ -109,9 +104,10 @@ def convert_doc_to_epub(doc_file, epub_file):
             
             cmd = [
                 'ebook-convert',
-                actual_odt,
+                html_file,
                 epub_file,
-                '--enable-heuristics'
+                '--enable-heuristics',
+                '--chapter', '/'
             ]
             
             print(f"Executing: {' '.join(cmd)}", flush=True)
