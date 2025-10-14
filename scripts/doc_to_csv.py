@@ -106,8 +106,27 @@ def extract_tables_from_html(html_file):
     try:
         import pandas as pd
         
-        # Read all tables from HTML
-        tables = pd.read_html(html_file, encoding='utf-8')
+        # Try different parsers in order of preference
+        parsers = ['lxml', 'html5lib', 'html.parser']
+        tables = None
+        
+        for parser in parsers:
+            try:
+                print(f"Trying parser: {parser}", flush=True)
+                # Read HTML file content
+                with open(html_file, 'r', encoding='utf-8') as f:
+                    html_content = f.read()
+                
+                # Read all tables from HTML (without encoding parameter to avoid warning)
+                tables = pd.read_html(html_content, flavor=parser)
+                print(f"Successfully parsed with {parser}", flush=True)
+                break
+            except (ImportError, ValueError) as e:
+                print(f"Parser {parser} failed: {e}", flush=True)
+                continue
+        
+        if tables is None or len(tables) == 0:
+            raise ValueError("No tables found in HTML")
         
         print(f"Found {len(tables)} table(s)", flush=True)
         
@@ -116,8 +135,9 @@ def extract_tables_from_html(html_file):
         
         return tables
         
-    except ImportError:
-        print("ERROR: pandas not installed. Install with: pip install pandas", flush=True)
+    except ImportError as e:
+        print(f"ERROR: Required library not installed: {e}", flush=True)
+        print("Make sure pandas and lxml are installed: pip install pandas lxml", flush=True)
         return []
     except ValueError as e:
         print(f"ERROR: No tables found in HTML: {e}", flush=True)
