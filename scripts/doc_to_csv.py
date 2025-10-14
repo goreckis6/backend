@@ -32,7 +32,7 @@ def convert_doc_to_html(doc_file, html_file):
         if not os.path.exists(output_dir):
             os.makedirs(output_dir, exist_ok=True)
         
-        # LibreOffice command for headless conversion
+        # LibreOffice command for headless conversion with UTF-8 encoding
         cmd = [
             'libreoffice',
             '--headless',
@@ -48,10 +48,12 @@ def convert_doc_to_html(doc_file, html_file):
             doc_file
         ]
         
-        # Set LibreOffice environment
+        # Set LibreOffice environment with UTF-8 locale
         env = os.environ.copy()
         env['SAL_USE_VCLPLUGIN'] = 'svp'
         env['HOME'] = '/tmp'
+        env['LANG'] = 'en_US.UTF-8'
+        env['LC_ALL'] = 'en_US.UTF-8'
         
         print(f"Executing: {' '.join(cmd)}", flush=True)
         
@@ -60,7 +62,9 @@ def convert_doc_to_html(doc_file, html_file):
             capture_output=True,
             text=True,
             timeout=120,
-            env=env
+            env=env,
+            encoding='utf-8',
+            errors='replace'
         )
         
         if result.stdout:
@@ -213,8 +217,8 @@ def convert_doc_to_csv(doc_file, csv_file, delimiter=',', include_headers=True, 
                 import pandas as pd
                 from bs4 import BeautifulSoup
                 
-                with open(html_file, 'r', encoding='utf-8') as f:
-                    soup = BeautifulSoup(f, 'html.parser')
+                with open(html_file, 'r', encoding='utf-8', errors='replace') as f:
+                    soup = BeautifulSoup(f, 'html.parser', from_encoding='utf-8')
                     # Get all text, split by lines
                     text = soup.get_text()
                     lines = [line.strip() for line in text.split('\n') if line.strip()]
@@ -244,11 +248,17 @@ def convert_doc_to_csv(doc_file, csv_file, delimiter=',', include_headers=True, 
             # Determine quoting style for CSV
             quoting = csv.QUOTE_MINIMAL
             
+            # Use UTF-8 with BOM for better compatibility with Excel and other tools
+            if encoding.lower() == 'utf-8':
+                actual_encoding = 'utf-8-sig'  # UTF-8 with BOM
+            else:
+                actual_encoding = encoding
+            
             # Write to CSV
             table_df.to_csv(
                 csv_file,
                 sep=delimiter,
-                encoding=encoding,
+                encoding=actual_encoding,
                 index=False,
                 header=include_headers,
                 quoting=quoting
