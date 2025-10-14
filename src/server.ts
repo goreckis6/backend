@@ -178,46 +178,6 @@ const persistOutputBuffer = async (
   };
 };
 
-// Route: Batch Download
-app.get('/batch-download/:filename', async (req, res) => {
-  const { filename } = req.params;
-  console.log(`Batch download request for: ${filename}`);
-  
-  try {
-    const filePath = path.join(BATCH_OUTPUT_DIR, filename);
-    const metadata = batchFileMetadata.get(filename);
-    
-    if (!metadata) {
-      console.error(`Metadata not found for: ${filename}`);
-      return res.status(404).json({ error: 'File not found or expired' });
-    }
-    
-    // Check if file exists
-    const fileExists = await fs.access(filePath).then(() => true).catch(() => false);
-    if (!fileExists) {
-      console.error(`File not found on disk: ${filePath}`);
-      batchFileMetadata.delete(filename);
-      return res.status(404).json({ error: 'File not found or expired' });
-    }
-    
-    // Read and send file
-    const fileBuffer = await fs.readFile(filePath);
-    
-    res.set({
-      'Content-Type': metadata.mime,
-      'Content-Disposition': `attachment; filename="${metadata.downloadName}"`,
-      'Content-Length': fileBuffer.length
-    });
-    
-    res.send(fileBuffer);
-    console.log(`Successfully sent file: ${metadata.downloadName}`);
-  } catch (error) {
-    console.error('Batch download error:', error);
-    const message = error instanceof Error ? error.message : 'Unknown error';
-    res.status(500).json({ error: `Download failed: ${message}` });
-  }
-});
-
 const convertEpsFile = async (
   file: Express.Multer.File,
   targetFormat: string,
@@ -4818,6 +4778,46 @@ app.options('*', (req, res) => {
 
 app.get('/health', (_req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });
+});
+
+// Route: Batch Download
+app.get('/batch-download/:filename', async (req, res) => {
+  const { filename } = req.params;
+  console.log(`Batch download request for: ${filename}`);
+  
+  try {
+    const filePath = path.join(BATCH_OUTPUT_DIR, filename);
+    const metadata = batchFileMetadata.get(filename);
+    
+    if (!metadata) {
+      console.error(`Metadata not found for: ${filename}`);
+      return res.status(404).json({ error: 'File not found or expired' });
+    }
+    
+    // Check if file exists
+    const fileExists = await fs.access(filePath).then(() => true).catch(() => false);
+    if (!fileExists) {
+      console.error(`File not found on disk: ${filePath}`);
+      batchFileMetadata.delete(filename);
+      return res.status(404).json({ error: 'File not found or expired' });
+    }
+    
+    // Read and send file
+    const fileBuffer = await fs.readFile(filePath);
+    
+    res.set({
+      'Content-Type': metadata.mime,
+      'Content-Disposition': `attachment; filename="${metadata.downloadName}"`,
+      'Content-Length': fileBuffer.length
+    });
+    
+    res.send(fileBuffer);
+    console.log(`Successfully sent file: ${metadata.downloadName}`);
+  } catch (error) {
+    console.error('Batch download error:', error);
+    const message = error instanceof Error ? error.message : 'Unknown error';
+    res.status(500).json({ error: `Download failed: ${message}` });
+  }
 });
 
 // Test endpoint for debugging large file uploads
