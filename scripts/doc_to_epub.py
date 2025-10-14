@@ -13,8 +13,8 @@ from pathlib import Path
 
 def convert_doc_to_epub(doc_file, epub_file):
     """
-    Convert DOC to EPUB using LibreOffice and Calibre.
-    Strategy: DOC → HTML (LibreOffice) → EPUB (ebook-convert)
+    Convert DOC to EPUB using Pandoc (primary) or LibreOffice+Calibre (fallback).
+    Strategy: Try Pandoc first (DOC → EPUB), then LibreOffice+Calibre if needed
     
     Args:
         doc_file (str): Path to input DOC file
@@ -28,14 +28,60 @@ def convert_doc_to_epub(doc_file, epub_file):
     print(f"Output: {epub_file}", flush=True)
     
     try:
-        import tempfile
-        
         # Check if input file exists
         if not os.path.exists(doc_file):
             raise FileNotFoundError(f"DOC file not found: {doc_file}")
         
         file_size = os.path.getsize(doc_file)
         print(f"DOC file size: {file_size:,} bytes ({file_size / 1024 / 1024:.2f} MB)", flush=True)
+        
+        # Create output directory if needed
+        output_dir = os.path.dirname(epub_file)
+        if output_dir and not os.path.exists(output_dir):
+            os.makedirs(output_dir, exist_ok=True)
+        
+        # METHOD 1: Try Calibre ebook-convert direct conversion (DOC → EPUB)
+        print("Method 1: Attempting direct conversion with Calibre...", flush=True)
+        
+        cmd_calibre = [
+            'ebook-convert',
+            doc_file,
+            epub_file,
+            '--enable-heuristics',
+            '--chapter', '/',
+            '--chapter-mark', 'pagebreak'
+        ]
+        
+        print(f"Executing: {' '.join(cmd_calibre)}", flush=True)
+        
+        result = subprocess.run(
+            cmd_calibre,
+            capture_output=True,
+            text=True,
+            timeout=180,
+            encoding='utf-8',
+            errors='replace'
+        )
+        
+        if result.stdout:
+            print(f"Calibre stdout: {result.stdout}", flush=True)
+        if result.stderr:
+            print(f"Calibre stderr: {result.stderr}", flush=True)
+        
+        # Check if Calibre succeeded
+        if os.path.exists(epub_file) and os.path.getsize(epub_file) > 0:
+            output_size = os.path.getsize(epub_file)
+            print(f"=== CONVERSION SUCCESSFUL (Calibre direct) ===", flush=True)
+            print(f"EPUB file created: {epub_file}", flush=True)
+            print(f"EPUB size: {output_size:,} bytes ({output_size / 1024 / 1024:.2f} MB)", flush=True)
+            return True
+        
+        print("WARNING: Calibre direct conversion failed or produced empty file", flush=True)
+        
+        # METHOD 2: Fallback to LibreOffice → HTML → Calibre → EPUB
+        print("Method 2: Attempting fallback with LibreOffice + Calibre...", flush=True)
+        
+        import tempfile
         
         # Create temporary directory for intermediate files
         with tempfile.TemporaryDirectory() as tmpdir:
