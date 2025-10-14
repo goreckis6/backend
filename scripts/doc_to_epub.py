@@ -86,9 +86,39 @@ def convert_doc_to_epub(doc_file, epub_file):
             
             # Check if HTML file was created
             if not os.path.exists(html_file):
-                print(f"ERROR: HTML file not created at: {html_file}", flush=True)
+                print(f"WARNING: HTML file not created at: {html_file}", flush=True)
                 print(f"Directory contents: {os.listdir(tmpdir)}", flush=True)
-                raise Exception("Failed to convert DOC to HTML with LibreOffice")
+                
+                # Fallback: Try direct conversion with Pandoc
+                print("Attempting fallback conversion with Pandoc...", flush=True)
+                
+                cmd_pandoc = [
+                    'pandoc',
+                    doc_file,
+                    '-o', html_file,
+                    '--standalone',
+                    '--metadata', 'title=Document'
+                ]
+                
+                print(f"Executing: {' '.join(cmd_pandoc)}", flush=True)
+                
+                result = subprocess.run(
+                    cmd_pandoc,
+                    capture_output=True,
+                    text=True,
+                    timeout=120,
+                    encoding='utf-8',
+                    errors='replace'
+                )
+                
+                if result.stdout:
+                    print(f"Pandoc stdout: {result.stdout}", flush=True)
+                if result.stderr:
+                    print(f"Pandoc stderr: {result.stderr}", flush=True)
+                
+                if not os.path.exists(html_file):
+                    print(f"ERROR: Both LibreOffice and Pandoc failed", flush=True)
+                    raise Exception("Failed to convert DOC to HTML with LibreOffice and Pandoc")
             
             print(f"HTML file created: {html_file}", flush=True)
             html_size = os.path.getsize(html_file)
