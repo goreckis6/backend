@@ -43,40 +43,46 @@ def convert_doc_to_epub(doc_file, epub_file):
         # METHOD 1: Try Calibre ebook-convert direct conversion (DOC → EPUB)
         print("Method 1: Attempting direct conversion with Calibre...", flush=True)
         
-        cmd_calibre = [
-            'ebook-convert',
-            doc_file,
-            epub_file,
-            '--enable-heuristics',
-            '--chapter', '/',
-            '--chapter-mark', 'pagebreak'
-        ]
-        
-        print(f"Executing: {' '.join(cmd_calibre)}", flush=True)
-        
-        result = subprocess.run(
-            cmd_calibre,
-            capture_output=True,
-            text=True,
-            timeout=180,
-            encoding='utf-8',
-            errors='replace'
-        )
-        
-        if result.stdout:
-            print(f"Calibre stdout: {result.stdout}", flush=True)
-        if result.stderr:
-            print(f"Calibre stderr: {result.stderr}", flush=True)
-        
-        # Check if Calibre succeeded
-        if os.path.exists(epub_file) and os.path.getsize(epub_file) > 0:
-            output_size = os.path.getsize(epub_file)
-            print(f"=== CONVERSION SUCCESSFUL (Calibre direct) ===", flush=True)
-            print(f"EPUB file created: {epub_file}", flush=True)
-            print(f"EPUB size: {output_size:,} bytes ({output_size / 1024 / 1024:.2f} MB)", flush=True)
-            return True
-        
-        print("WARNING: Calibre direct conversion failed or produced empty file", flush=True)
+        try:
+            cmd_calibre = [
+                'ebook-convert',
+                doc_file,
+                epub_file,
+                '--enable-heuristics',
+                '--chapter', '/',
+                '--chapter-mark', 'pagebreak'
+            ]
+            
+            print(f"Executing: {' '.join(cmd_calibre)}", flush=True)
+            
+            result = subprocess.run(
+                cmd_calibre,
+                capture_output=True,
+                text=True,
+                timeout=180,
+                encoding='utf-8',
+                errors='replace'
+            )
+            
+            if result.stdout:
+                print(f"Calibre stdout: {result.stdout}", flush=True)
+            if result.stderr:
+                print(f"Calibre stderr: {result.stderr}", flush=True)
+            
+            # Check if Calibre succeeded
+            if os.path.exists(epub_file) and os.path.getsize(epub_file) > 0:
+                output_size = os.path.getsize(epub_file)
+                print(f"=== CONVERSION SUCCESSFUL (Calibre direct) ===", flush=True)
+                print(f"EPUB file created: {epub_file}", flush=True)
+                print(f"EPUB size: {output_size:,} bytes ({output_size / 1024 / 1024:.2f} MB)", flush=True)
+                return True
+            
+            print("WARNING: Calibre direct conversion failed or produced empty file", flush=True)
+            
+        except subprocess.TimeoutExpired:
+            print("WARNING: Calibre direct conversion timed out", flush=True)
+        except Exception as e:
+            print(f"WARNING: Calibre direct conversion error: {e}", flush=True)
         
         # METHOD 2: Fallback to LibreOffice → HTML → Calibre → EPUB
         print("Method 2: Attempting fallback with LibreOffice + Calibre...", flush=True)
@@ -134,37 +140,8 @@ def convert_doc_to_epub(doc_file, epub_file):
             if not os.path.exists(html_file):
                 print(f"WARNING: HTML file not created at: {html_file}", flush=True)
                 print(f"Directory contents: {os.listdir(tmpdir)}", flush=True)
-                
-                # Fallback: Try direct conversion with Pandoc
-                print("Attempting fallback conversion with Pandoc...", flush=True)
-                
-                cmd_pandoc = [
-                    'pandoc',
-                    doc_file,
-                    '-o', html_file,
-                    '--standalone',
-                    '--metadata', 'title=Document'
-                ]
-                
-                print(f"Executing: {' '.join(cmd_pandoc)}", flush=True)
-                
-                result = subprocess.run(
-                    cmd_pandoc,
-                    capture_output=True,
-                    text=True,
-                    timeout=120,
-                    encoding='utf-8',
-                    errors='replace'
-                )
-                
-                if result.stdout:
-                    print(f"Pandoc stdout: {result.stdout}", flush=True)
-                if result.stderr:
-                    print(f"Pandoc stderr: {result.stderr}", flush=True)
-                
-                if not os.path.exists(html_file):
-                    print(f"ERROR: Both LibreOffice and Pandoc failed", flush=True)
-                    raise Exception("Failed to convert DOC to HTML with LibreOffice and Pandoc")
+                print(f"ERROR: All conversion methods failed for this DOC file", flush=True)
+                raise Exception("Failed to convert DOC to HTML. The file may be corrupted or in an unsupported format.")
             
             print(f"HTML file created: {html_file}", flush=True)
             html_size = os.path.getsize(html_file)
