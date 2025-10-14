@@ -10132,6 +10132,161 @@ const convertCsvToYamlPython = async (
   }
 };
 
+// Route: DOC to CSV (Single)
+app.post('/convert/doc-to-csv/single', upload.single('file'), async (req, res) => {
+  console.log('DOC->CSV single conversion request');
+  
+  try {
+    const file = req.file;
+    if (!file) {
+      return res.status(400).json({ error: 'No file provided' });
+    }
+
+    const options = req.body || {};
+    const result = await convertDocToCsvPython(file, options, false);
+    
+    res.set({
+      'Content-Type': result.mime,
+      'Content-Disposition': `attachment; filename="${result.filename}"`,
+      'Content-Length': result.buffer.length
+    });
+    
+    res.send(result.buffer);
+  } catch (error) {
+    console.error('DOC->CSV single error:', error);
+    const message = error instanceof Error ? error.message : 'Unknown error';
+    res.status(500).json({ error: message });
+  }
+});
+
+// Route: DOC to CSV (Batch)
+app.post('/convert/doc-to-csv/batch', uploadBatch.array('files', 20), async (req, res) => {
+  console.log('DOC->CSV batch conversion request');
+  
+  try {
+    const files = req.files as Express.Multer.File[];
+    if (!files || files.length === 0) {
+      return res.status(400).json({ error: 'No files provided' });
+    }
+
+    const options = req.body || {};
+    const results = [];
+
+    for (const file of files) {
+      try {
+        const result = await convertDocToCsvPython(file, options, true);
+        results.push({
+          success: true,
+          filename: result.filename,
+          downloadUrl: result.downloadUrl,
+          size: result.size
+        });
+      } catch (error) {
+        results.push({
+          success: false,
+          filename: file.originalname,
+          error: error instanceof Error ? error.message : 'Conversion failed'
+        });
+      }
+    }
+
+    res.json({ results });
+  } catch (error) {
+    console.error('DOC->CSV batch error:', error);
+    const message = error instanceof Error ? error.message : 'Unknown error';
+    res.status(500).json({ error: message });
+  }
+});
+
+// DOC to CSV converter using Python
+const convertDocToCsvPython = async (
+  file: Express.Multer.File,
+  options: Record<string, string | undefined> = {},
+  persistToDisk = false
+): Promise<ConversionResult> => {
+  console.log(`=== DOC TO CSV (Python) START ===`);
+  const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'morphy-doc-csv-'));
+  const originalBase = path.basename(file.originalname, path.extname(file.originalname));
+  const sanitizedBase = sanitizeFilename(originalBase);
+  const safeBase = `${sanitizedBase}_${randomUUID()}`;
+
+  try {
+    // Write DOC file to temp directory
+    const docPath = path.join(tmpDir, `${safeBase}.doc`);
+    await fs.writeFile(docPath, file.buffer);
+
+    // Prepare output file
+    const outputPath = path.join(tmpDir, `${safeBase}.csv`);
+    
+    // Use Python script for DOC to CSV
+    const pythonPath = 'python3';
+    const scriptPath = path.join(__dirname, '..', 'scripts', 'doc_to_csv.py');
+    
+    console.log('Python execution details:', {
+      pythonPath,
+      scriptPath,
+      docPath,
+      outputPath,
+      delimiter: options.delimiter || ',',
+      includeHeaders: options.includeHeaders !== 'false',
+      encoding: options.encoding || 'utf-8',
+      fileSize: file.buffer.length
+    });
+
+    const args = [
+      scriptPath,
+      docPath,
+      outputPath,
+      '--delimiter', options.delimiter || ',',
+      '--encoding', options.encoding || 'utf-8'
+    ];
+
+    // Add no-headers flag if needed
+    if (options.includeHeaders === 'false') {
+      args.push('--no-headers');
+    }
+
+    const { stdout, stderr } = await execFileAsync(pythonPath, args, { timeout: 120000 });
+
+    if (stdout.trim().length > 0) console.log('Python stdout:', stdout.trim());
+    if (stderr.trim().length > 0) console.warn('Python stderr:', stderr.trim());
+
+    // Check if output file was created
+    const outputExists = await fs.access(outputPath).then(() => true).catch(() => false);
+    if (!outputExists) {
+      throw new Error(`Python DOC to CSV script did not produce output file: ${outputPath}`);
+    }
+
+    // Read output file
+    const outputBuffer = await fs.readFile(outputPath);
+    if (!outputBuffer || outputBuffer.length === 0) {
+      throw new Error('Python DOC to CSV script produced empty output file');
+    }
+
+    const downloadName = `${sanitizedBase}.csv`;
+    console.log(`DOC->CSV conversion successful:`, { 
+      filename: downloadName, 
+      size: outputBuffer.length 
+    });
+
+    if (persistToDisk) {
+      return await persistOutputBuffer(outputBuffer, downloadName, 'text/csv');
+    }
+
+    return {
+      buffer: outputBuffer,
+      filename: downloadName,
+      mime: 'text/csv'
+    };
+  } catch (error) {
+    console.error(`DOC->CSV conversion error:`, error);
+    const message = error instanceof Error ? error.message : `Unknown DOC->CSV error`;
+    throw new Error(`Failed to convert DOC to CSV: ${message}`);
+  } finally {
+    await fs.rm(tmpDir, { recursive: true, force: true }).catch(() => undefined);
+  }
+};
+
 // CSV to SQL converter using Python
 const convertCsvToSqlPython = async (
   file: Express.Multer.File,
