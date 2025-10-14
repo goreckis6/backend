@@ -10584,9 +10584,23 @@ app.post('/convert/doc-to-epub/batch', uploadBatch, async (req, res) => {
         return result.value;
       } else {
         console.error(`File ${index} failed:`, result.reason);
+        
+        // Extract clean error message from Python exceptions
+        let errorMessage = 'Conversion failed';
+        if (result.reason instanceof Error) {
+          const fullError = result.reason.message;
+          // Look for the actual exception message (after "Exception: ")
+          const exceptionMatch = fullError.match(/Exception: (.+?)(?:\n|$)/);
+          if (exceptionMatch) {
+            errorMessage = exceptionMatch[1];
+          } else {
+            errorMessage = fullError.split('\n')[0]; // Use first line if no exception found
+          }
+        }
+        
         return {
           filename: files[index].originalname.replace(/\.doc$/i, '.epub'),
-          error: result.reason instanceof Error ? result.reason.message : 'Conversion failed',
+          error: errorMessage,
           downloadUrl: '',
           size: 0
         };
