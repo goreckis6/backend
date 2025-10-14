@@ -13,22 +13,22 @@ import tempfile
 import shutil
 from pathlib import Path
 
-def convert_doc_to_docx(doc_file, docx_file):
+def convert_doc_to_html(doc_file, html_file):
     """
-    Convert DOC to DOCX using LibreOffice.
+    Convert DOC to HTML using LibreOffice.
     
     Args:
         doc_file (str): Path to input DOC file
-        docx_file (str): Path to output DOCX file
+        html_file (str): Path to output HTML file
     
     Returns:
         bool: True if conversion successful, False otherwise
     """
-    print(f"Converting DOC to DOCX with LibreOffice...", flush=True)
+    print(f"Converting DOC to HTML with LibreOffice...", flush=True)
     
     try:
         # Create output directory
-        output_dir = os.path.dirname(docx_file)
+        output_dir = os.path.dirname(html_file)
         if not os.path.exists(output_dir):
             os.makedirs(output_dir, exist_ok=True)
         
@@ -43,7 +43,7 @@ def convert_doc_to_docx(doc_file, docx_file):
             '--nolockcheck',
             '--nologo',
             '--norestore',
-            '--convert-to', 'docx',
+            '--convert-to', 'html',
             '--outdir', output_dir,
             doc_file
         ]
@@ -68,17 +68,17 @@ def convert_doc_to_docx(doc_file, docx_file):
         if result.stderr:
             print(f"LibreOffice stderr: {result.stderr}", flush=True)
         
-        # LibreOffice creates filename.docx, we need to rename it
+        # LibreOffice creates filename.html, we need to rename it
         base_name = os.path.splitext(os.path.basename(doc_file))[0]
-        actual_docx = os.path.join(output_dir, f"{base_name}.docx")
+        actual_html = os.path.join(output_dir, f"{base_name}.html")
         
-        if os.path.exists(actual_docx):
-            if actual_docx != docx_file:
-                shutil.move(actual_docx, docx_file)
-            print(f"DOCX file created: {docx_file}", flush=True)
+        if os.path.exists(actual_html):
+            if actual_html != html_file:
+                shutil.move(actual_html, html_file)
+            print(f"HTML file created: {html_file}", flush=True)
             return True
         else:
-            print(f"ERROR: DOCX file not created: {actual_docx}", flush=True)
+            print(f"ERROR: HTML file not created: {actual_html}", flush=True)
             # List directory contents for debugging
             print(f"Directory contents: {os.listdir(output_dir)}", flush=True)
             return False
@@ -91,46 +91,36 @@ def convert_doc_to_docx(doc_file, docx_file):
         traceback.print_exc()
         return False
 
-def extract_tables_from_docx(docx_file):
+def extract_tables_from_html(html_file):
     """
-    Extract tables from DOCX file using python-docx.
+    Extract tables from HTML file using pandas.
     
     Args:
-        docx_file (str): Path to DOCX file
+        html_file (str): Path to HTML file
     
     Returns:
-        list: List of tables (each table is a list of rows)
+        list: List of DataFrames (tables)
     """
-    print(f"Extracting tables from DOCX...", flush=True)
+    print(f"Extracting tables from HTML with pandas...", flush=True)
     
     try:
-        from docx import Document
+        import pandas as pd
         
-        doc = Document(docx_file)
-        tables = []
-        
-        for table_idx, table in enumerate(doc.tables):
-            print(f"Processing table {table_idx + 1}...", flush=True)
-            table_data = []
-            
-            for row_idx, row in enumerate(table.rows):
-                row_data = []
-                for cell in row.cells:
-                    # Get text from cell, strip whitespace
-                    cell_text = cell.text.strip()
-                    row_data.append(cell_text)
-                
-                table_data.append(row_data)
-            
-            if table_data:
-                tables.append(table_data)
-                print(f"Table {table_idx + 1}: {len(table_data)} rows × {len(table_data[0]) if table_data else 0} columns", flush=True)
+        # Read all tables from HTML
+        tables = pd.read_html(html_file, encoding='utf-8')
         
         print(f"Found {len(tables)} table(s)", flush=True)
+        
+        for idx, table in enumerate(tables):
+            print(f"Table {idx + 1}: {len(table)} rows × {len(table.columns)} columns", flush=True)
+        
         return tables
         
     except ImportError:
-        print("ERROR: python-docx not installed. Install with: pip install python-docx", flush=True)
+        print("ERROR: pandas not installed. Install with: pip install pandas", flush=True)
+        return []
+    except ValueError as e:
+        print(f"ERROR: No tables found in HTML: {e}", flush=True)
         return []
     except Exception as e:
         print(f"ERROR: Table extraction failed: {e}", flush=True)
@@ -152,6 +142,7 @@ def escape_csv_field(field):
 def convert_doc_to_csv(doc_file, csv_file, delimiter=',', include_headers=True, encoding='utf-8'):
     """
     Convert DOC to CSV format.
+    Strategy: DOC → HTML (LibreOffice) → Extract tables (pandas) → CSV
     
     Args:
         doc_file (str): Path to input DOC file
@@ -163,11 +154,14 @@ def convert_doc_to_csv(doc_file, csv_file, delimiter=',', include_headers=True, 
     Returns:
         bool: True if conversion successful, False otherwise
     """
-    print(f"Converting DOC to CSV...", flush=True)
+    print(f"=== Converting DOC to CSV ===", flush=True)
     print(f"Input: {doc_file}", flush=True)
     print(f"Output: {csv_file}", flush=True)
     
     try:
+        import pandas as pd
+        import csv
+        
         # Check if input file exists
         if not os.path.exists(doc_file):
             raise FileNotFoundError(f"DOC file not found: {doc_file}")
@@ -177,15 +171,17 @@ def convert_doc_to_csv(doc_file, csv_file, delimiter=',', include_headers=True, 
         
         # Create temporary directory for intermediate files
         with tempfile.TemporaryDirectory() as tmpdir:
-            docx_file = os.path.join(tmpdir, 'document.docx')
+            html_file = os.path.join(tmpdir, 'document.html')
             
-            # Convert DOC to DOCX
-            success = convert_doc_to_docx(doc_file, docx_file)
+            # Step 1: Convert DOC to HTML using LibreOffice
+            print("Step 1/3: Converting DOC to HTML...", flush=True)
+            success = convert_doc_to_html(doc_file, html_file)
             if not success:
-                raise Exception("Failed to convert DOC to DOCX with LibreOffice")
+                raise Exception("Failed to convert DOC to HTML with LibreOffice")
             
-            # Extract tables from DOCX
-            tables = extract_tables_from_docx(docx_file)
+            # Step 2: Extract tables from HTML using pandas
+            print("Step 2/3: Extracting tables from HTML...", flush=True)
+            tables = extract_tables_from_html(html_file)
             
             if not tables:
                 raise ValueError("No tables found in DOC file. The document may not contain tabular data.")
@@ -193,43 +189,47 @@ def convert_doc_to_csv(doc_file, csv_file, delimiter=',', include_headers=True, 
             # Use the first (or largest) table
             if len(tables) > 1:
                 print(f"Multiple tables found. Using the largest table.", flush=True)
-                table = max(tables, key=len)
+                table_df = max(tables, key=len)
             else:
-                table = tables[0]
+                table_df = tables[0]
             
-            print(f"Selected table has {len(table)} rows", flush=True)
+            print(f"Selected table: {len(table_df)} rows × {len(table_df.columns)} columns", flush=True)
             
-            if len(table) == 0:
+            if len(table_df) == 0:
                 raise ValueError("Table is empty")
             
-            # Write CSV file
-            print(f"Writing CSV file...", flush=True)
-            with open(csv_file, 'w', encoding=encoding, newline='') as f:
-                for row_idx, row in enumerate(table):
-                    # Skip headers if not wanted
-                    if not include_headers and row_idx == 0:
-                        continue
-                    
-                    # Escape and join fields
-                    escaped_fields = [escape_csv_field(cell) for cell in row]
-                    csv_line = delimiter.join(escaped_fields)
-                    f.write(csv_line + '\n')
-                    
-                    # Progress logging for large tables
-                    if (row_idx + 1) % 1000 == 0:
-                        print(f"Processed {row_idx + 1} of {len(table)} rows...", flush=True)
+            # Step 3: Write CSV file using pandas
+            print("Step 3/3: Writing CSV file...", flush=True)
+            
+            # Determine quoting style for CSV
+            quoting = csv.QUOTE_MINIMAL
+            
+            # Write to CSV
+            table_df.to_csv(
+                csv_file,
+                sep=delimiter,
+                encoding=encoding,
+                index=False,
+                header=include_headers,
+                quoting=quoting
+            )
         
         # Verify output file
         if not os.path.exists(csv_file):
             raise FileNotFoundError(f"CSV file was not created: {csv_file}")
         
         output_size = os.path.getsize(csv_file)
-        print(f"CSV file created successfully!", flush=True)
+        print(f"=== CONVERSION SUCCESSFUL ===", flush=True)
+        print(f"CSV file created: {csv_file}", flush=True)
         print(f"CSV size: {output_size:,} bytes ({output_size / 1024 / 1024:.2f} MB)", flush=True)
-        print(f"Total rows exported: {len(table) if include_headers else len(table) - 1}", flush=True)
+        print(f"Total rows exported: {len(table_df)}", flush=True)
         
         return True
         
+    except ImportError as e:
+        print(f"ERROR: Required library not available: {e}", flush=True)
+        print("Make sure pandas is installed: pip install pandas", flush=True)
+        return False
     except FileNotFoundError as e:
         print(f"ERROR: File not found: {e}", flush=True)
         return False
