@@ -5327,7 +5327,7 @@ app.post('/api/convert', conversionTimeout(5 * 60 * 1000), upload.single('file')
   }
 });
 
-app.post('/api/convert/batch', conversionTimeout(10 * 60 * 1000), uploadBatch.array('files'), async (req, res) => {
+app.post('/api/convert/batch', conversionTimeout(10 * 60 * 1000), uploadBatch, async (req, res) => {
   const files = req.files as Express.Multer.File[] | undefined;
   const requestOptions = { ...(req.body as Record<string, string | undefined>) };
   const format = String(requestOptions.format ?? 'webp').toLowerCase();
@@ -9579,7 +9579,7 @@ app.post('/convert/csv-to-parquet/single', upload.single('file'), async (req, re
 });
 
 // Route: CSV to Parquet (Batch)
-app.post('/convert/csv-to-parquet/batch', uploadBatch.array('files', 20), async (req, res) => {
+app.post('/convert/csv-to-parquet/batch', uploadBatch, async (req, res) => {
   console.log('CSV->Parquet batch conversion request');
   
   try {
@@ -9645,7 +9645,7 @@ app.post('/convert/csv-to-sql/single', upload.single('file'), async (req, res) =
 });
 
 // Route: CSV to SQL (Batch)
-app.post('/convert/csv-to-sql/batch', uploadBatch.array('files', 20), async (req, res) => {
+app.post('/convert/csv-to-sql/batch', uploadBatch, async (req, res) => {
   console.log('CSV->SQL batch conversion request');
   
   try {
@@ -9711,7 +9711,7 @@ app.post('/convert/csv-to-toml/single', upload.single('file'), async (req, res) 
 });
 
 // Route: CSV to TOML (Batch)
-app.post('/convert/csv-to-toml/batch', uploadBatch.array('files', 20), async (req, res) => {
+app.post('/convert/csv-to-toml/batch', uploadBatch, async (req, res) => {
   console.log('CSV->TOML batch conversion request');
   
   try {
@@ -9860,7 +9860,7 @@ app.post('/convert/csv-to-xml/single', upload.single('file'), async (req, res) =
 });
 
 // Route: CSV to XML (Batch)
-app.post('/convert/csv-to-xml/batch', uploadBatch.array('files', 20), async (req, res) => {
+app.post('/convert/csv-to-xml/batch', uploadBatch, async (req, res) => {
   console.log('CSV->XML batch conversion request');
   
   try {
@@ -10015,7 +10015,7 @@ app.post('/convert/csv-to-yaml/single', upload.single('file'), async (req, res) 
 });
 
 // Route: CSV to YAML (Batch)
-app.post('/convert/csv-to-yaml/batch', uploadBatch.array('files', 20), async (req, res) => {
+app.post('/convert/csv-to-yaml/batch', uploadBatch, async (req, res) => {
   console.log('CSV->YAML batch conversion request');
   
   try {
@@ -10164,7 +10164,7 @@ app.post('/convert/doc-to-csv/single', upload.single('file'), async (req, res) =
 });
 
 // Route: DOC to CSV (Batch)
-app.post('/convert/doc-to-csv/batch', uploadBatch.array('files', 20), async (req, res) => {
+app.post('/convert/doc-to-csv/batch', uploadBatch, async (req, res) => {
   console.log('DOC->CSV batch conversion request');
   
   try {
