@@ -207,20 +207,36 @@ def convert_doc_to_csv(doc_file, csv_file, delimiter=',', include_headers=True, 
             print("Step 2/3: Extracting tables from HTML...", flush=True)
             tables = extract_tables_from_html(html_file)
             
-            if not tables:
-                raise ValueError("No tables found in DOC file. The document may not contain tabular data.")
-            
-            # Use the first (or largest) table
-            if len(tables) > 1:
-                print(f"Multiple tables found. Using the largest table.", flush=True)
-                table_df = max(tables, key=len)
+            if not tables or len(tables) == 0:
+                # If no tables found, read the entire HTML as plain text and convert to CSV
+                print("WARNING: No tables found. Converting document text to CSV format...", flush=True)
+                import pandas as pd
+                from bs4 import BeautifulSoup
+                
+                with open(html_file, 'r', encoding='utf-8') as f:
+                    soup = BeautifulSoup(f, 'html.parser')
+                    # Get all text, split by lines
+                    text = soup.get_text()
+                    lines = [line.strip() for line in text.split('\n') if line.strip()]
+                
+                if not lines:
+                    raise ValueError("Document appears to be empty or contains no text.")
+                
+                # Create a DataFrame with single column
+                table_df = pd.DataFrame({'Content': lines})
+                print(f"Created single-column CSV with {len(table_df)} lines", flush=True)
             else:
-                table_df = tables[0]
-            
-            print(f"Selected table: {len(table_df)} rows × {len(table_df.columns)} columns", flush=True)
-            
-            if len(table_df) == 0:
-                raise ValueError("Table is empty")
+                # Use the first (or largest) table
+                if len(tables) > 1:
+                    print(f"Multiple tables found. Using the largest table.", flush=True)
+                    table_df = max(tables, key=len)
+                else:
+                    table_df = tables[0]
+                
+                print(f"Selected table: {len(table_df)} rows × {len(table_df.columns)} columns", flush=True)
+                
+                if len(table_df) == 0:
+                    raise ValueError("Table is empty")
             
             # Step 3: Write CSV file using pandas
             print("Step 3/3: Writing CSV file...", flush=True)
