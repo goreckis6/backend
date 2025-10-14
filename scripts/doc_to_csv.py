@@ -105,6 +105,7 @@ def extract_tables_from_html(html_file):
     
     try:
         import pandas as pd
+        from io import StringIO
         
         # Try different parsers in order of preference
         parsers = ['lxml', 'html5lib', 'html.parser']
@@ -117,8 +118,11 @@ def extract_tables_from_html(html_file):
                 with open(html_file, 'r', encoding='utf-8') as f:
                     html_content = f.read()
                 
-                # Read all tables from HTML (without encoding parameter to avoid warning)
-                tables = pd.read_html(html_content, flavor=parser)
+                # Wrap HTML content in StringIO to avoid deprecation warning
+                html_io = StringIO(html_content)
+                
+                # Read all tables from HTML
+                tables = pd.read_html(html_io, flavor=parser)
                 print(f"Successfully parsed with {parser}", flush=True)
                 break
             except (ImportError, ValueError) as e:
