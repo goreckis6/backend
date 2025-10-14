@@ -10570,11 +10570,12 @@ app.post('/convert/doc-to-epub/batch', uploadBatch, async (req, res) => {
       return res.status(400).json({ error: 'No files uploaded' });
     }
 
-    console.log(`DOC->EPUB batch request: ${req.files.length} files`);
+    const files = req.files as Express.Multer.File[];
+    console.log(`DOC->EPUB batch request: ${files.length} files`);
 
     // Process files individually and handle errors gracefully
     const results = await Promise.allSettled(
-      req.files.map(file => convertDocToEpubPython(file, true))
+      files.map(file => convertDocToEpubPython(file, true))
     );
 
     // Map results to include success/failure status
@@ -10584,7 +10585,7 @@ app.post('/convert/doc-to-epub/batch', uploadBatch, async (req, res) => {
       } else {
         console.error(`File ${index} failed:`, result.reason);
         return {
-          filename: req.files![index].originalname.replace(/\.doc$/i, '.epub'),
+          filename: files[index].originalname.replace(/\.doc$/i, '.epub'),
           error: result.reason instanceof Error ? result.reason.message : 'Conversion failed',
           downloadUrl: '',
           size: 0
