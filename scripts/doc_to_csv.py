@@ -13,22 +13,22 @@ import tempfile
 import shutil
 from pathlib import Path
 
-def convert_doc_to_html(doc_file, html_file):
+def convert_doc_to_docx(doc_file, docx_file):
     """
-    Convert DOC to HTML using LibreOffice.
+    Convert DOC to DOCX using LibreOffice.
     
     Args:
         doc_file (str): Path to input DOC file
-        html_file (str): Path to output HTML file
+        docx_file (str): Path to output DOCX file
     
     Returns:
         bool: True if conversion successful, False otherwise
     """
-    print(f"Converting DOC to HTML with LibreOffice...", flush=True)
+    print(f"Converting DOC to DOCX with LibreOffice...", flush=True)
     
     try:
         # Create output directory
-        output_dir = os.path.dirname(html_file)
+        output_dir = os.path.dirname(docx_file)
         if not os.path.exists(output_dir):
             os.makedirs(output_dir, exist_ok=True)
         
@@ -43,7 +43,7 @@ def convert_doc_to_html(doc_file, html_file):
             '--nolockcheck',
             '--nologo',
             '--norestore',
-            '--convert-to', 'html',
+            '--convert-to', 'docx',
             '--outdir', output_dir,
             doc_file
         ]
@@ -68,17 +68,19 @@ def convert_doc_to_html(doc_file, html_file):
         if result.stderr:
             print(f"LibreOffice stderr: {result.stderr}", flush=True)
         
-        # LibreOffice creates filename.html, we need to rename it
+        # LibreOffice creates filename.docx, we need to rename it
         base_name = os.path.splitext(os.path.basename(doc_file))[0]
-        actual_html = os.path.join(output_dir, f"{base_name}.html")
+        actual_docx = os.path.join(output_dir, f"{base_name}.docx")
         
-        if os.path.exists(actual_html):
-            if actual_html != html_file:
-                shutil.move(actual_html, html_file)
-            print(f"HTML file created: {html_file}", flush=True)
+        if os.path.exists(actual_docx):
+            if actual_docx != docx_file:
+                shutil.move(actual_docx, docx_file)
+            print(f"DOCX file created: {docx_file}", flush=True)
             return True
         else:
-            print(f"ERROR: HTML file not created: {actual_html}", flush=True)
+            print(f"ERROR: DOCX file not created: {actual_docx}", flush=True)
+            # List directory contents for debugging
+            print(f"Directory contents: {os.listdir(output_dir)}", flush=True)
             return False
             
     except subprocess.TimeoutExpired:
@@ -89,70 +91,47 @@ def convert_doc_to_html(doc_file, html_file):
         traceback.print_exc()
         return False
 
-def extract_tables_from_html(html_file):
+def extract_tables_from_docx(docx_file):
     """
-    Extract tables from HTML file.
+    Extract tables from DOCX file using python-docx.
     
     Args:
-        html_file (str): Path to HTML file
+        docx_file (str): Path to DOCX file
     
     Returns:
         list: List of tables (each table is a list of rows)
     """
-    print(f"Extracting tables from HTML...", flush=True)
+    print(f"Extracting tables from DOCX...", flush=True)
     
     try:
-        from html.parser import HTMLParser
+        from docx import Document
         
-        class TableExtractor(HTMLParser):
-            def __init__(self):
-                super().__init__()
-                self.tables = []
-                self.current_table = []
-                self.current_row = []
-                self.current_cell = []
-                self.in_table = False
-                self.in_row = False
-                self.in_cell = False
+        doc = Document(docx_file)
+        tables = []
+        
+        for table_idx, table in enumerate(doc.tables):
+            print(f"Processing table {table_idx + 1}...", flush=True)
+            table_data = []
             
-            def handle_starttag(self, tag, attrs):
-                if tag == 'table':
-                    self.in_table = True
-                    self.current_table = []
-                elif tag == 'tr' and self.in_table:
-                    self.in_row = True
-                    self.current_row = []
-                elif tag in ['td', 'th'] and self.in_row:
-                    self.in_cell = True
-                    self.current_cell = []
+            for row_idx, row in enumerate(table.rows):
+                row_data = []
+                for cell in row.cells:
+                    # Get text from cell, strip whitespace
+                    cell_text = cell.text.strip()
+                    row_data.append(cell_text)
+                
+                table_data.append(row_data)
             
-            def handle_endtag(self, tag):
-                if tag == 'table' and self.in_table:
-                    if self.current_table:
-                        self.tables.append(self.current_table)
-                    self.in_table = False
-                elif tag == 'tr' and self.in_row:
-                    if self.current_row:
-                        self.current_table.append(self.current_row)
-                    self.in_row = False
-                elif tag in ['td', 'th'] and self.in_cell:
-                    cell_text = ' '.join(self.current_cell).strip()
-                    self.current_row.append(cell_text)
-                    self.in_cell = False
-            
-            def handle_data(self, data):
-                if self.in_cell:
-                    self.current_cell.append(data.strip())
+            if table_data:
+                tables.append(table_data)
+                print(f"Table {table_idx + 1}: {len(table_data)} rows × {len(table_data[0]) if table_data else 0} columns", flush=True)
         
-        with open(html_file, 'r', encoding='utf-8', errors='ignore') as f:
-            html_content = f.read()
+        print(f"Found {len(tables)} table(s)", flush=True)
+        return tables
         
-        parser = TableExtractor()
-        parser.feed(html_content)
-        
-        print(f"Found {len(parser.tables)} table(s)", flush=True)
-        return parser.tables
-        
+    except ImportError:
+        print("ERROR: python-docx not installed. Install with: pip install python-docx", flush=True)
+        return []
     except Exception as e:
         print(f"ERROR: Table extraction failed: {e}", flush=True)
         traceback.print_exc()
@@ -198,15 +177,15 @@ def convert_doc_to_csv(doc_file, csv_file, delimiter=',', include_headers=True, 
         
         # Create temporary directory for intermediate files
         with tempfile.TemporaryDirectory() as tmpdir:
-            html_file = os.path.join(tmpdir, 'document.html')
+            docx_file = os.path.join(tmpdir, 'document.docx')
             
-            # Convert DOC to HTML
-            success = convert_doc_to_html(doc_file, html_file)
+            # Convert DOC to DOCX
+            success = convert_doc_to_docx(doc_file, docx_file)
             if not success:
-                raise Exception("Failed to convert DOC to HTML")
+                raise Exception("Failed to convert DOC to DOCX with LibreOffice")
             
-            # Extract tables from HTML
-            tables = extract_tables_from_html(html_file)
+            # Extract tables from DOCX
+            tables = extract_tables_from_docx(docx_file)
             
             if not tables:
                 raise ValueError("No tables found in DOC file. The document may not contain tabular data.")
@@ -218,7 +197,7 @@ def convert_doc_to_csv(doc_file, csv_file, delimiter=',', include_headers=True, 
             else:
                 table = tables[0]
             
-            print(f"Table has {len(table)} rows", flush=True)
+            print(f"Selected table has {len(table)} rows", flush=True)
             
             if len(table) == 0:
                 raise ValueError("Table is empty")
@@ -247,7 +226,7 @@ def convert_doc_to_csv(doc_file, csv_file, delimiter=',', include_headers=True, 
         output_size = os.path.getsize(csv_file)
         print(f"CSV file created successfully!", flush=True)
         print(f"CSV size: {output_size:,} bytes ({output_size / 1024 / 1024:.2f} MB)", flush=True)
-        print(f"Total rows: {len(table)}", flush=True)
+        print(f"Total rows exported: {len(table) if include_headers else len(table) - 1}", flush=True)
         
         return True
         
