@@ -10456,6 +10456,128 @@ const convertCsvToParquetPython = async (
   }
 };
 
+// ====================================================================
+// DOC to EPUB Conversion
+// ====================================================================
+
+async function convertDocToEpubPython(
+  file: Express.Multer.File,
+  persistToDisk: boolean = false
+): Promise<ConversionResult> {
+  const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'morphy-doc-epub-'));
+  
+  try {
+    const sanitizedBase = sanitizeFilename(path.parse(file.originalname).name);
+    const docPath = path.join(tmpDir, `${sanitizedBase}.doc`);
+    const outputPath = path.join(tmpDir, `${sanitizedBase}.epub`);
+
+    console.log(`DOC->EPUB conversion request:`, { 
+      filename: file.originalname, 
+      size: file.buffer.length 
+    });
+
+    // Write DOC file
+    await fs.writeFile(docPath, file.buffer);
+
+    // Execute Python script
+    const pythonPath = 'python3';
+    const scriptPath = path.join(__dirname, '..', 'scripts', 'doc_to_epub.py');
+    
+    console.log('Python execution details:', {
+      pythonPath,
+      scriptPath,
+      docPath,
+      outputPath,
+      fileSize: file.buffer.length
+    });
+
+    const args = [
+      scriptPath,
+      docPath,
+      outputPath
+    ];
+
+    const { stdout, stderr } = await execFileAsync(pythonPath, args);
+
+    if (stdout.trim().length > 0) console.log('Python stdout:', stdout.trim());
+    if (stderr.trim().length > 0) console.warn('Python stderr:', stderr.trim());
+
+    // Check if output file was created
+    const outputExists = await fs.access(outputPath).then(() => true).catch(() => false);
+    if (!outputExists) {
+      throw new Error(`Python EPUB script did not produce output file: ${outputPath}`);
+    }
+
+    // Read output file
+    const outputBuffer = await fs.readFile(outputPath);
+    if (!outputBuffer || outputBuffer.length === 0) {
+      throw new Error('Python EPUB script produced empty output file');
+    }
+
+    const downloadName = `${sanitizedBase}.epub`;
+    console.log(`DOC->EPUB conversion successful:`, { 
+      filename: downloadName, 
+      size: outputBuffer.length 
+    });
+
+    if (persistToDisk) {
+      return await persistOutputBuffer(outputBuffer, downloadName, 'application/epub+zip');
+    }
+
+    return {
+      buffer: outputBuffer,
+      filename: downloadName,
+      mime: 'application/epub+zip'
+    };
+
+  } catch (error) {
+    console.error(`DOC->EPUB conversion error:`, error);
+    const message = error instanceof Error ? error.message : `Unknown DOC->EPUB error`;
+    throw new Error(`Failed to convert DOC to EPUB: ${message}`);
+  } finally {
+    await fs.rm(tmpDir, { recursive: true, force: true }).catch(() => undefined);
+  }
+}
+
+app.post('/convert/doc-to-epub/single', uploadSingle, async (req, res) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ error: 'No file uploaded' });
+    }
+
+    const result = await convertDocToEpubPython(req.file);
+
+    res.set({
+      'Content-Type': result.mime,
+      'Content-Disposition': `attachment; filename="${result.filename}"`,
+      'Content-Length': result.buffer.length
+    });
+    res.send(result.buffer);
+  } catch (error) {
+    console.error('DOC->EPUB single error:', error);
+    const message = error instanceof Error ? error.message : 'Unknown error';
+    res.status(500).json({ error: message });
+  }
+});
+
+app.post('/convert/doc-to-epub/batch', uploadBatch, async (req, res) => {
+  try {
+    if (!req.files || !Array.isArray(req.files) || req.files.length === 0) {
+      return res.status(400).json({ error: 'No files uploaded' });
+    }
+
+    const results = await Promise.all(
+      req.files.map(file => convertDocToEpubPython(file, true))
+    );
+
+    res.json(results);
+  } catch (error) {
+    console.error('DOC->EPUB batch error:', error);
+    const message = error instanceof Error ? error.message : 'Unknown error';
+    res.status(500).json({ error: message });
+  }
+});
+
 // Set server timeout for large file processing
 const server = app.listen(PORT, '0.0.0.0', () => {
   console.log(`Morpy backend running on port ${PORT}`);
