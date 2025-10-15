@@ -23,7 +23,7 @@ try:
     from odf.table import Table, TableColumn, TableRow, TableCell
     from odf.text import P, Span
     from odf.draw import Page, Frame, TextBox
-    from odf.presentation import Presentation
+    from odf.meta import Meta, Title, Creator
 except ImportError as e:
     logger.error(f"Required ODF library not found: {e}")
     logger.error("Please install odfpy: pip install odfpy")
@@ -57,13 +57,8 @@ def create_odp_from_csv(csv_path, output_path, title="CSV Data", author="CSV Con
         doc = OpenDocumentPresentation()
         
         # Set document metadata
-        doc.meta.addElement(doc.meta.getElementsByTagName("meta:initial-creator")[0])
-        doc.meta.getElementsByTagName("meta:initial-creator")[0].addText(author)
-        
-        # Add title to document info
-        if title:
-            title_elem = doc.meta.getElementsByTagName("meta:title")[0]
-            title_elem.addText(title)
+        doc.meta.addElement(Title(title))
+        doc.meta.addElement(Creator(author))
         
         # Create styles
         title_style = Style(name="TitleStyle", family="paragraph")
@@ -163,8 +158,8 @@ def create_table_slides(doc, df, columns, include_headers, chunk_size):
         table_frame.addElement(table)
         slide.addElement(table_frame)
         
-        # Add slide to presentation
-        doc.presentation.addElement(slide)
+        # Add slide to presentation body
+        doc.body.addElement(slide)
         slide_num += 1
         
         logger.info(f"Created slide {slide_num - 1} with {len(chunk_df)} rows")
@@ -230,7 +225,7 @@ def create_chart_slides(doc, df, columns, include_headers, chunk_size):
     table_frame.addElement(table)
     slide.addElement(table_frame)
     
-    doc.presentation.addElement(slide)
+    doc.body.addElement(slide)
     
     # Create data slides with table layout
     create_table_slides(doc, df, columns, include_headers, chunk_size)
@@ -265,7 +260,7 @@ def create_mixed_slides(doc, df, columns, include_headers, chunk_size):
     desc_frame.addElement(desc_textbox)
     slide.addElement(desc_frame)
     
-    doc.presentation.addElement(slide)
+    doc.body.addElement(slide)
     
     # Create data slides with table layout
     create_table_slides(doc, df, columns, include_headers, chunk_size)
