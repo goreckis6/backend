@@ -23,7 +23,6 @@ try:
     from odf.table import Table, TableColumn, TableRow, TableCell
     from odf.text import P, Span
     from odf.draw import Page, Frame, TextBox
-    from odf.meta import Meta, Title, Creator
 except ImportError as e:
     logger.error(f"Required ODF library not found: {e}")
     logger.error("Please install odfpy: pip install odfpy")
@@ -56,9 +55,23 @@ def create_odp_from_csv(csv_path, output_path, title="CSV Data", author="CSV Con
         # Create ODP document
         doc = OpenDocumentPresentation()
         
-        # Set document metadata
-        doc.meta.addElement(Title(title))
-        doc.meta.addElement(Creator(author))
+        # Set document metadata using DOM manipulation
+        logger.info("Setting document metadata")
+        try:
+            # Find and update existing meta elements
+            meta_elements = doc.meta.getElementsByTagName("meta:title")
+            if meta_elements:
+                meta_elements[0].addText(title)
+            else:
+                logger.warning("Could not set document title")
+            
+            meta_elements = doc.meta.getElementsByTagName("meta:initial-creator")
+            if meta_elements:
+                meta_elements[0].addText(author)
+            else:
+                logger.warning("Could not set document author")
+        except Exception as e:
+            logger.warning(f"Could not set document metadata: {e}")
         
         # Create styles
         title_style = Style(name="TitleStyle", family="paragraph")
