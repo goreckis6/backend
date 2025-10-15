@@ -190,7 +190,6 @@ def convert_csv_to_mobi(csv_path, output_path, book_title=None, author=None, inc
             '--title', book_title,
             '--authors', author,
             '--language', 'en',
-            '--format', 'mobi',
             '--mobi-file-type', 'old',
             '--disable-font-rescaling'
         ]
