@@ -55,23 +55,7 @@ def create_odp_from_csv(csv_path, output_path, title="CSV Data", author="CSV Con
         # Create ODP document
         doc = OpenDocumentPresentation()
         
-        # Set document metadata using DOM manipulation
-        logger.info("Setting document metadata")
-        try:
-            # Find and update existing meta elements
-            meta_elements = doc.meta.getElementsByTagName("title")
-            if meta_elements:
-                meta_elements[0].addText(title)
-            else:
-                logger.warning("Could not set document title")
-            
-            meta_elements = doc.meta.getElementsByTagName("initial-creator")
-            if meta_elements:
-                meta_elements[0].addText(author)
-            else:
-                logger.warning("Could not set document author")
-        except Exception as e:
-            logger.warning(f"Could not set document metadata: {e}")
+        # Skip metadata setting for now - focus on getting slides working
         
         # Create styles
         title_style = Style(name="TitleStyle", family="paragraph")
@@ -171,41 +155,29 @@ def create_table_slides(doc, df, columns, include_headers, chunk_size):
         table_frame.addElement(table)
         slide.addElement(table_frame)
         
-        # Add slide to presentation - use presentation namespace
+        # Add slide to document body - try different approaches
         try:
-            # Get or create presentation element
-            presentation_elements = doc.body.getElementsByTagName("presentation")
-            if presentation_elements:
-                presentation = presentation_elements[0]
-            else:
-                # Create presentation element
-                from odf.element import Element
-                from odf.namespaces import PRESENTATIONNS
-                presentation = Element(qname=(PRESENTATIONNS, "presentation"))
-                doc.body.addElement(presentation)
-            
-            presentation.addElement(slide)
-        except Exception as e:
-            logger.warning(f"Could not add slide to presentation: {e}")
-            # Fallback: try direct body addition
-            # Add slide to presentation - use presentation namespace
-    try:
-        # Get or create presentation element
-        presentation_elements = doc.body.getElementsByTagName("presentation")
-        if presentation_elements:
-            presentation = presentation_elements[0]
-        else:
-            # Create presentation element
-            from odf.element import Element
-            from odf.namespaces import PRESENTATIONNS
-            presentation = Element(qname=(PRESENTATIONNS, "presentation"))
-            doc.body.addElement(presentation)
+            # Method 1: Direct addition to body
+            doc.body.addElement(slide)
+        except Exception as e1:
+            logger.warning(f"Method 1 failed: {e1}")
+            try:
+                # Method 2: Try to find presentation element and add there
+                for child in doc.body.childNodes:
+                    if hasattr(child, 'tagName') and 'presentation' in str(child.tagName):
+                        child.addElement(slide)
+                        break
+                else:
+                    # Method 3: Create presentation element and add slide
+                    from odf.element import Element
+                    from odf.namespaces import PRESENTATIONNS
+                    presentation = Element(qname=(PRESENTATIONNS, "presentation"))
+                    presentation.addElement(slide)
+                    doc.body.addElement(presentation)
+            except Exception as e2:
+                logger.error(f"All methods failed: {e2}")
+                raise
         
-        presentation.addElement(slide)
-    except Exception as e:
-        logger.warning(f"Could not add slide to presentation: {e}")
-        # Fallback: try direct body addition
-        doc.body.addElement(slide)
         slide_num += 1
         
         logger.info(f"Created slide {slide_num - 1} with {len(chunk_df)} rows")
@@ -271,24 +243,11 @@ def create_chart_slides(doc, df, columns, include_headers, chunk_size):
     table_frame.addElement(table)
     slide.addElement(table_frame)
     
-    # Add slide to presentation - use presentation namespace
+    # Add slide to document
     try:
-        # Get or create presentation element
-        presentation_elements = doc.body.getElementsByTagName("presentation")
-        if presentation_elements:
-            presentation = presentation_elements[0]
-        else:
-            # Create presentation element
-            from odf.element import Element
-            from odf.namespaces import PRESENTATIONNS
-            presentation = Element(qname=(PRESENTATIONNS, "presentation"))
-            doc.body.addElement(presentation)
-        
-        presentation.addElement(slide)
-    except Exception as e:
-        logger.warning(f"Could not add slide to presentation: {e}")
-        # Fallback: try direct body addition
         doc.body.addElement(slide)
+    except Exception as e:
+        logger.warning(f"Could not add summary slide: {e}")
     
     # Create data slides with table layout
     create_table_slides(doc, df, columns, include_headers, chunk_size)
@@ -323,24 +282,11 @@ def create_mixed_slides(doc, df, columns, include_headers, chunk_size):
     desc_frame.addElement(desc_textbox)
     slide.addElement(desc_frame)
     
-    # Add slide to presentation - use presentation namespace
+    # Add slide to document
     try:
-        # Get or create presentation element
-        presentation_elements = doc.body.getElementsByTagName("presentation")
-        if presentation_elements:
-            presentation = presentation_elements[0]
-        else:
-            # Create presentation element
-            from odf.element import Element
-            from odf.namespaces import PRESENTATIONNS
-            presentation = Element(qname=(PRESENTATIONNS, "presentation"))
-            doc.body.addElement(presentation)
-        
-        presentation.addElement(slide)
-    except Exception as e:
-        logger.warning(f"Could not add slide to presentation: {e}")
-        # Fallback: try direct body addition
         doc.body.addElement(slide)
+    except Exception as e:
+        logger.warning(f"Could not add overview slide: {e}")
     
     # Create data slides with table layout
     create_table_slides(doc, df, columns, include_headers, chunk_size)
