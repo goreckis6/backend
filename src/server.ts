@@ -5233,7 +5233,7 @@ app.post('/api/convert', conversionTimeout(5 * 60 * 1000), upload.single('file')
       } else if (!result && isCSV && ['epub', 'html'].includes(targetFormat)) {
       console.log(`Single: Routing to Python (CSV to ${targetFormat.toUpperCase()} conversion)`);
       result = await convertCsvToEbookPython(file, targetFormat, requestOptions, true);
-    } else if (!result && isCSV && LIBREOFFICE_CONVERSIONS[targetFormat]) {
+    } else if (!result && isCSV && LIBREOFFICE_CONVERSIONS[targetFormat] && targetFormat !== 'doc') {
       console.log('Single: Routing to LibreOffice (CSV conversion)');
       result = await convertCsvWithLibreOffice(file, targetFormat, requestOptions, true);
     } else if (!result && (isDOC || file.originalname.toLowerCase().endsWith('.doc')) && targetFormat === 'csv') {
@@ -10694,6 +10694,72 @@ app.post('/convert/doc-to-epub/batch', uploadBatch, async (req, res) => {
     res.json(processedResults);
   } catch (error) {
     console.error('DOC->EPUB batch error:', error);
+    const message = error instanceof Error ? error.message : 'Unknown error';
+    res.status(500).json({ error: message });
+  }
+});
+
+// Route: CSV to DOC (Single)
+app.post('/convert/csv-to-doc/single', upload.single('file'), async (req, res) => {
+  console.log('CSV->DOC single conversion request');
+  
+  try {
+    const file = req.file;
+    if (!file) {
+      return res.status(400).json({ error: 'No file provided' });
+    }
+
+    const options = req.body || {};
+    const result = await convertCsvToDocPython(file, options, false);
+    
+    res.set({
+      'Content-Type': result.mime,
+      'Content-Disposition': `attachment; filename="${result.filename}"`,
+      'Content-Length': result.buffer.length
+    });
+    
+    res.send(result.buffer);
+  } catch (error) {
+    console.error('CSV->DOC single error:', error);
+    const message = error instanceof Error ? error.message : 'Unknown error';
+    res.status(500).json({ error: message });
+  }
+});
+
+// Route: CSV to DOC (Batch)
+app.post('/convert/csv-to-doc/batch', uploadBatch, async (req, res) => {
+  console.log('CSV->DOC batch conversion request');
+  
+  try {
+    const files = req.files as Express.Multer.File[];
+    if (!files || files.length === 0) {
+      return res.status(400).json({ error: 'No files provided' });
+    }
+
+    const options = req.body || {};
+    const results = [];
+
+    for (const file of files) {
+      try {
+        const result = await convertCsvToDocPython(file, options, true);
+        results.push({
+          success: true,
+          filename: result.filename,
+          downloadUrl: result.downloadUrl,
+          size: result.size
+        });
+      } catch (error) {
+        results.push({
+          success: false,
+          filename: file.originalname,
+          error: error instanceof Error ? error.message : 'Conversion failed'
+        });
+      }
+    }
+
+    res.json({ results });
+  } catch (error) {
+    console.error('CSV->DOC batch error:', error);
     const message = error instanceof Error ? error.message : 'Unknown error';
     res.status(500).json({ error: message });
   }
