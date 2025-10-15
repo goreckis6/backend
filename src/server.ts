@@ -3279,6 +3279,102 @@ const convertCsvToDocxPython = async (
   }
 };
 
+// CSV to EPUB converter using Python
+const convertCsvToEpubPython = async (
+  file: Express.Multer.File,
+  options: Record<string, string | undefined> = {},
+  persistToDisk = false
+): Promise<ConversionResult> => {
+  console.log(`=== CSV TO EPUB (Python) START ===`);
+  const startTime = Date.now();
+  const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'morphy-csv-epub-'));
+  const originalBase = path.basename(file.originalname, path.extname(file.originalname));
+  const sanitizedBase = sanitizeFilename(originalBase);
+  const safeBase = `${sanitizedBase}_${randomUUID()}`;
+
+  try {
+    // Write CSV file to temp directory
+    const csvPath = path.join(tmpDir, `${safeBase}.csv`);
+    await fs.writeFile(csvPath, file.buffer);
+
+    // Prepare output file
+    const outputPath = path.join(tmpDir, `${safeBase}.epub`);
+    
+    // Use Python script for EPUB
+    const pythonPath = '/opt/venv/bin/python3';
+    const scriptPath = path.join('/app/scripts/csv_to_epub.py');
+    
+    // Determine chunk size based on file size for optimal performance
+    const fileSizeMB = file.buffer.length / (1024 * 1024);
+    const chunkSize = fileSizeMB > 10 ? 2000 : fileSizeMB > 5 ? 1500 : 1000;
+    
+    console.log('Python execution details:', {
+      pythonPath,
+      scriptPath,
+      csvPath,
+      outputPath,
+      title: options.title || sanitizedBase,
+      author: options.author || 'Unknown',
+      includeToc: options.includeToc !== 'false',
+      fileSize: file.buffer.length,
+      fileSizeMB: fileSizeMB.toFixed(2),
+      chunkSize
+    });
+
+    const { stdout, stderr } = await execFileAsync(pythonPath, [
+      scriptPath,
+      csvPath,
+      outputPath,
+      '--title', options.title || sanitizedBase,
+      '--author', options.author || 'Unknown',
+      '--chunk-size', chunkSize.toString()
+    ].concat(options.includeToc === 'false' ? ['--no-toc'] : []), {
+      timeout: 300000, // 5 minutes timeout for large files
+      maxBuffer: 10 * 1024 * 1024 // 10MB buffer for large outputs
+    });
+
+    if (stdout.trim().length > 0) console.log('Python stdout:', stdout.trim());
+    if (stderr.trim().length > 0) console.warn('Python stderr:', stderr.trim());
+
+    // Check if output file was created
+    const outputExists = await fs.access(outputPath).then(() => true).catch(() => false);
+    if (!outputExists) {
+      throw new Error(`Python EPUB script did not produce output file: ${outputPath}`);
+    }
+
+    // Read output file
+    const outputBuffer = await fs.readFile(outputPath);
+    if (!outputBuffer || outputBuffer.length === 0) {
+      throw new Error('Python EPUB script produced empty output file');
+    }
+
+    const downloadName = `${sanitizedBase}.epub`;
+    const processingTime = Date.now() - startTime;
+    console.log(`CSV->EPUB conversion successful:`, { 
+      filename: downloadName, 
+      size: outputBuffer.length,
+      processingTimeMs: processingTime,
+      processingTimeSec: (processingTime / 1000).toFixed(2)
+    });
+
+    if (persistToDisk) {
+      return await persistOutputBuffer(outputBuffer, downloadName, 'application/epub+zip');
+    }
+
+    return {
+      buffer: outputBuffer,
+      filename: downloadName,
+      mime: 'application/epub+zip'
+    };
+  } catch (error) {
+    console.error(`CSV->EPUB conversion error:`, error);
+    const message = error instanceof Error ? error.message : `Unknown CSV->EPUB error`;
+    throw new Error(`Failed to convert CSV to EPUB: ${message}`);
+  } finally {
+    await fs.rm(tmpDir, { recursive: true, force: true }).catch(() => undefined);
+  }
+};
+
 // CSV to PPT converter using Python
 const convertCsvToPptPython = async (
   file: Express.Multer.File,
@@ -10935,6 +11031,72 @@ app.post('/convert/csv-to-docx/batch', uploadBatch, async (req, res) => {
     res.json({ results });
   } catch (error) {
     console.error('CSV->DOCX batch error:', error);
+    const message = error instanceof Error ? error.message : 'Unknown error';
+    res.status(500).json({ error: message });
+  }
+});
+
+// Route: CSV to EPUB (Single)
+app.post('/convert/csv-to-epub/single', upload.single('file'), async (req, res) => {
+  console.log('CSV->EPUB single conversion request');
+  
+  try {
+    const file = req.file;
+    if (!file) {
+      return res.status(400).json({ error: 'No file provided' });
+    }
+
+    const options = req.body || {};
+    const result = await convertCsvToEpubPython(file, options, false);
+    
+    res.set({
+      'Content-Type': result.mime,
+      'Content-Disposition': `attachment; filename="${result.filename}"`,
+      'Content-Length': result.buffer.length
+    });
+    
+    res.send(result.buffer);
+  } catch (error) {
+    console.error('CSV->EPUB single error:', error);
+    const message = error instanceof Error ? error.message : 'Unknown error';
+    res.status(500).json({ error: message });
+  }
+});
+
+// Route: CSV to EPUB (Batch)
+app.post('/convert/csv-to-epub/batch', uploadBatch, async (req, res) => {
+  console.log('CSV->EPUB batch conversion request');
+  
+  try {
+    const files = req.files as Express.Multer.File[];
+    if (!files || files.length === 0) {
+      return res.status(400).json({ error: 'No files provided' });
+    }
+
+    const options = req.body || {};
+    const results = [];
+
+    for (const file of files) {
+      try {
+        const result = await convertCsvToEpubPython(file, options, true);
+        results.push({
+          success: true,
+          filename: result.filename,
+          downloadUrl: result.downloadUrl,
+          size: result.size
+        });
+      } catch (error) {
+        results.push({
+          success: false,
+          filename: file.originalname,
+          error: error instanceof Error ? error.message : 'Conversion failed'
+        });
+      }
+    }
+
+    res.json({ results });
+  } catch (error) {
+    console.error('CSV->EPUB batch error:', error);
     const message = error instanceof Error ? error.message : 'Unknown error';
     res.status(500).json({ error: message });
   }
