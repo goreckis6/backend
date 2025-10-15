@@ -5073,6 +5073,100 @@ const convertDocxWithLibreOffice = async (
   }
 };
 
+// CSV to Markdown converter using Python
+const convertCsvToMdPython = async (
+  file: Express.Multer.File,
+  options: Record<string, string | undefined> = {},
+  persistToDisk = false
+): Promise<ConversionResult> => {
+  console.log(`=== CSV TO MARKDOWN (Python) START ===`);
+  const startTime = Date.now();
+  const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'morphy-csv-md-'));
+  const originalBase = path.basename(file.originalname, path.extname(file.originalname));
+  const sanitizedBase = sanitizeFilename(originalBase);
+  const safeBase = `${sanitizedBase}_${randomUUID()}`;
+
+  try {
+    // Write CSV file to temp directory
+    const csvPath = path.join(tmpDir, `${safeBase}.csv`);
+    await fs.writeFile(csvPath, file.buffer);
+
+    // Prepare output file
+    const outputPath = path.join(tmpDir, `${safeBase}.md`);
+
+    // Use Python script for Markdown
+    const pythonPath = '/opt/venv/bin/python3';
+    const scriptPath = path.join('/app/scripts/csv_to_md.py');
+
+    // Determine chunk size based on file size for optimal performance
+    const fileSizeMB = file.buffer.length / (1024 * 1024);
+    const chunkSize = fileSizeMB > 10 ? 2000 : fileSizeMB > 5 ? 1500 : 1000;
+
+    console.log('Python execution details:', {
+      pythonPath,
+      scriptPath,
+      csvPath,
+      outputPath,
+      tableAlignment: options.tableAlignment || 'left',
+      includeHeaders: options.includeHeaders !== 'false',
+      fileSize: file.buffer.length,
+      fileSizeMB: fileSizeMB.toFixed(2),
+      chunkSize
+    });
+
+    const { stdout, stderr } = await execFileAsync(pythonPath, [
+      scriptPath,
+      csvPath,
+      outputPath,
+      '--table-alignment', options.tableAlignment || 'left',
+      '--chunk-size', chunkSize.toString()
+    ].concat(options.includeHeaders === 'false' ? ['--no-headers'] : []), {
+      timeout: 300000, // 5 minutes timeout for large files
+      maxBuffer: 10 * 1024 * 1024 // 10MB buffer for large outputs
+    });
+
+    if (stdout.trim().length > 0) console.log('Python stdout:', stdout.trim());
+    if (stderr.trim().length > 0) console.warn('Python stderr:', stderr.trim());
+
+    // Check if output file was created
+    const outputExists = await fs.access(outputPath).then(() => true).catch(() => false);
+    if (!outputExists) {
+      throw new Error(`Python Markdown script did not produce output file: ${outputPath}`);
+    }
+
+    // Read output file
+    const outputBuffer = await fs.readFile(outputPath);
+    if (!outputBuffer || outputBuffer.length === 0) {
+      throw new Error('Python Markdown script produced empty output file');
+    }
+
+    const downloadName = `${sanitizedBase}.md`;
+    const processingTime = Date.now() - startTime;
+    console.log(`CSV->Markdown conversion successful:`, {
+      filename: downloadName,
+      size: outputBuffer.length,
+      processingTimeMs: processingTime,
+      processingTimeSec: (processingTime / 1000).toFixed(2)
+    });
+
+    if (persistToDisk) {
+      return await persistOutputBuffer(outputBuffer, downloadName, 'text/markdown');
+    }
+
+    return {
+      buffer: outputBuffer,
+      filename: downloadName,
+      mime: 'text/markdown'
+    };
+  } catch (error) {
+    console.error(`CSV->Markdown conversion error:`, error);
+    const message = error instanceof Error ? error.message : `Unknown CSV->Markdown error`;
+    throw new Error(`Failed to convert CSV to Markdown: ${message}`);
+  } finally {
+    await fs.rm(tmpDir, { recursive: true, force: true }).catch(() => undefined);
+  }
+};
+
 // Configure helmet with appropriate settings for large file uploads
 app.use(helmet({
   contentSecurityPolicy: false, // Disable CSP for file uploads
@@ -11257,6 +11351,72 @@ app.post('/convert/csv-to-html/batch', uploadBatch, async (req, res) => {
     res.json({ results });
   } catch (error) {
     console.error('CSV->HTML batch error:', error);
+    const message = error instanceof Error ? error.message : 'Unknown error';
+    res.status(500).json({ error: message });
+  }
+});
+
+// Route: CSV to Markdown (Single)
+app.post('/convert/csv-to-md/single', upload.single('file'), async (req, res) => {
+  console.log('CSV->Markdown single conversion request');
+  
+  try {
+    const file = req.file;
+    if (!file) {
+      return res.status(400).json({ error: 'No file provided' });
+    }
+
+    const options = req.body || {};
+    const result = await convertCsvToMdPython(file, options, false);
+    
+    res.set({
+      'Content-Type': result.mime,
+      'Content-Disposition': `attachment; filename="${result.filename}"`,
+      'Content-Length': result.buffer.length
+    });
+    
+    res.send(result.buffer);
+  } catch (error) {
+    console.error('CSV->Markdown single error:', error);
+    const message = error instanceof Error ? error.message : 'Unknown error';
+    res.status(500).json({ error: message });
+  }
+});
+
+// Route: CSV to Markdown (Batch)
+app.post('/convert/csv-to-md/batch', uploadBatch, async (req, res) => {
+  console.log('CSV->Markdown batch conversion request');
+  
+  try {
+    const files = req.files as Express.Multer.File[];
+    if (!files || files.length === 0) {
+      return res.status(400).json({ error: 'No files provided' });
+    }
+
+    const options = req.body || {};
+    const results = [];
+
+    for (const file of files) {
+      try {
+        const result = await convertCsvToMdPython(file, options, true);
+        results.push({
+          success: true,
+          filename: result.filename,
+          downloadUrl: result.downloadUrl,
+          size: result.size
+        });
+      } catch (error) {
+        results.push({
+          success: false,
+          filename: file.originalname,
+          error: error instanceof Error ? error.message : 'Conversion failed'
+        });
+      }
+    }
+
+    res.json({ results });
+  } catch (error) {
+    console.error('CSV->Markdown batch error:', error);
     const message = error instanceof Error ? error.message : 'Unknown error';
     res.status(500).json({ error: message });
   }
