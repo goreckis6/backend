@@ -1,206 +1,304 @@
 #!/usr/bin/env python3
 """
-CSV to ODP Converter using Python
-Optimized for large files with pagination and streaming
+CSV to ODP Converter
+Converts CSV data to OpenDocument Presentation (ODP) format
 """
 
-import sys
-import os
-import pandas as pd
 import argparse
-from pathlib import Path
-from odf.opendocument import OpenDocumentPresentation
-from odf import draw, text, style
-from odf.draw import Page, Frame, TextBox
-from odf.text import P, H
-from odf.style import Style, PageLayout, PageLayoutProperties, MasterPage, TextProperties, ParagraphProperties
+import logging
+import pandas as pd
 import tempfile
+import os
+import sys
+from pathlib import Path
+import traceback
 
-def escape_html(text):
-    """Escape HTML special characters"""
-    if not isinstance(text, str):
-        text = str(text)
-    return (text.replace('&', '&amp;')
-                .replace('<', '&lt;')
-                .replace('>', '&gt;')
-                .replace('"', '&quot;')
-                .replace("'", '&#39;'))
+# Configure logging
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+logger = logging.getLogger(__name__)
 
-def create_odp_from_csv(csv_file, output_file, title="CSV Data", author="Unknown", max_rows_per_slide=50):
-    """Convert CSV to ODP with pagination for large files"""
+try:
+    from odf.opendocument import OpenDocumentPresentation
+    from odf.style import Style, TextProperties, ParagraphProperties
+    from odf.table import Table, TableColumn, TableRow, TableCell
+    from odf.text import P, Span
+    from odf.draw import Page, Frame, TextBox
+    from odf.presentation import Presentation
+except ImportError as e:
+    logger.error(f"Required ODF library not found: {e}")
+    logger.error("Please install odfpy: pip install odfpy")
+    sys.exit(1)
+
+def create_odp_from_csv(csv_path, output_path, title="CSV Data", author="CSV Converter", 
+                       slide_layout="table", include_headers=True, chunk_size=1000):
+    """
+    Convert CSV data to ODP presentation
+    
+    Args:
+        csv_path: Path to input CSV file
+        output_path: Path to output ODP file
+        title: Presentation title
+        author: Presentation author
+        slide_layout: Layout type ('table', 'chart', 'mixed')
+        include_headers: Whether to include headers
+        chunk_size: Number of rows per slide for large files
+    """
+    
+    logger.info(f"Starting CSV to ODP conversion: {csv_path} -> {output_path}")
+    
     try:
-        print(f"Reading CSV file: {csv_file}")
+        # Read CSV file
+        logger.info("Reading CSV file...")
+        df = pd.read_csv(csv_path)
         
-        # Read CSV in chunks to handle large files
-        chunk_size = 1000
-        df_chunks = []
-        total_rows = 0
-        
-        for chunk in pd.read_csv(csv_file, chunksize=chunk_size):
-            df_chunks.append(chunk)
-            total_rows += len(chunk)
-            print(f"Processed {total_rows} rows so far...")
-        
-        # Combine chunks
-        df = pd.concat(df_chunks, ignore_index=True)
-        print(f"Total rows: {len(df)}, Columns: {len(df.columns)}")
+        logger.info(f"CSV file contains {len(df)} rows and {len(df.columns)} columns")
         
         # Create ODP document
         doc = OpenDocumentPresentation()
         
-        # Skip metadata for now to avoid validation errors
-        # The document will still work without explicit metadata
+        # Set document metadata
+        doc.meta.addElement(doc.meta.getElementsByTagName("meta:initial-creator")[0])
+        doc.meta.getElementsByTagName("meta:initial-creator")[0].addText(author)
+        
+        # Add title to document info
+        if title:
+            title_elem = doc.meta.getElementsByTagName("meta:title")[0]
+            title_elem.addText(title)
         
         # Create styles
-        create_odp_styles(doc)
+        title_style = Style(name="TitleStyle", family="paragraph")
+        title_props = TextProperties(fontsize="24pt", fontweight="bold")
+        title_style.addElement(title_props)
+        doc.styles.addElement(title_style)
         
-        # Get columns
+        header_style = Style(name="HeaderStyle", family="table-cell")
+        header_cell_props = TextProperties(fontweight="bold", backgroundcolor="#4472C4", color="#FFFFFF")
+        header_style.addElement(header_cell_props)
+        doc.styles.addElement(header_style)
+        
+        # Get column names
         columns = df.columns.tolist()
         
-        # Calculate number of slides needed
-        rows_per_slide = min(max_rows_per_slide, len(df))
-        num_slides = (len(df) + rows_per_slide - 1) // rows_per_slide
+        if slide_layout == "table":
+            # Create table-based slides
+            create_table_slides(doc, df, columns, include_headers, chunk_size)
+        elif slide_layout == "chart":
+            # Create chart-based slides (simplified as tables for now)
+            create_chart_slides(doc, df, columns, include_headers, chunk_size)
+        elif slide_layout == "mixed":
+            # Create mixed layout slides
+            create_mixed_slides(doc, df, columns, include_headers, chunk_size)
         
-        print(f"Creating {num_slides} slides with {rows_per_slide} rows each")
+        # Save document
+        logger.info(f"Saving ODP file: {output_path}")
+        doc.save(output_path)
         
-        # Create slides
-        for slide_num in range(num_slides):
-            start_row = slide_num * rows_per_slide
-            end_row = min(start_row + rows_per_slide, len(df))
-            slide_data = df.iloc[start_row:end_row]
-            
-            print(f"Creating slide {slide_num + 1}/{num_slides} (rows {start_row}-{end_row-1})")
-            
-            # Create slide
-            slide = create_odp_slide(doc, slide_num, slide_data, columns, title, slide_num + 1, num_slides)
-            doc.presentation.addElement(slide)
-        
-        # Save ODP file
-        doc.save(output_file)
-        print(f"Successfully created ODP: {output_file}")
-        
-        return True, f"Successfully converted to ODP: {len(df)} rows, {len(columns)} columns, {num_slides} slides"
+        logger.info("CSV to ODP conversion completed successfully")
         
     except Exception as e:
-        print(f"Error creating ODP: {str(e)}")
-        return False, f"Error converting to ODP: {str(e)}"
+        logger.error(f"Error converting CSV to ODP: {e}")
+        logger.error(traceback.format_exc())
+        raise
 
-def create_odp_styles(doc):
-    """Create styles for the ODP document"""
+def create_table_slides(doc, df, columns, include_headers, chunk_size):
+    """Create slides with table layout"""
     
-    # Page layout
-    pagelayout = PageLayout(name="PL1")
-    pagelayout.addElement(PageLayoutProperties(
-        pagewidth="28cm",
-        pageheight="21cm",
-        margin="2cm",
-        marginleft="2cm",
-        marginright="2cm",
-        margintop="2cm",
-        marginbottom="2cm",
-        printorientation="landscape"
-    ))
-    doc.automaticstyles.addElement(pagelayout)
+    # Process data in chunks
+    total_rows = len(df)
+    slide_num = 1
     
-    # Master page
-    masterpage = MasterPage(name="Standard", pagelayoutname="PL1")
-    doc.masterstyles.addElement(masterpage)
-    
-    # Title style
-    title_style = Style(name="TitleStyle", family="paragraph")
-    title_style.addElement(ParagraphProperties(textalign="center"))
-    title_style.addElement(TextProperties(fontsize="24pt", fontweight="bold"))
-    doc.styles.addElement(title_style)
-    
-    # Header style
-    header_style = Style(name="HeaderStyle", family="paragraph")
-    header_style.addElement(ParagraphProperties(textalign="center"))
-    header_style.addElement(TextProperties(fontsize="18pt", fontweight="bold", color="#2E86AB"))
-    doc.styles.addElement(header_style)
-    
-    # Table header style
-    table_header_style = Style(name="TableHeaderStyle", family="paragraph")
-    table_header_style.addElement(ParagraphProperties(textalign="center"))
-    table_header_style.addElement(TextProperties(fontsize="12pt", fontweight="bold", color="#FFFFFF"))
-    doc.styles.addElement(table_header_style)
-    
-    # Table cell style
-    table_cell_style = Style(name="TableCellStyle", family="paragraph")
-    table_cell_style.addElement(ParagraphProperties(textalign="left"))
-    table_cell_style.addElement(TextProperties(fontsize="10pt"))
-    doc.styles.addElement(table_cell_style)
+    for start_idx in range(0, total_rows, chunk_size):
+        end_idx = min(start_idx + chunk_size, total_rows)
+        chunk_df = df.iloc[start_idx:end_idx]
+        
+        # Create slide
+        slide = Page(name=f"Slide{slide_num}")
+        
+        # Add title frame
+        title_frame = Frame(
+            width="25cm", height="2cm",
+            x="1cm", y="1cm"
+        )
+        title_textbox = TextBox()
+        title_p = P(stylename="TitleStyle")
+        title_p.addText(f"Data Overview - Part {slide_num}")
+        title_textbox.addElement(title_p)
+        title_frame.addElement(title_textbox)
+        slide.addElement(title_frame)
+        
+        # Create table
+        table = Table()
+        
+        # Add columns
+        for _ in columns:
+            table.addElement(TableColumn())
+        
+        # Add header row if requested
+        if include_headers:
+            header_row = TableRow()
+            for col in columns:
+                cell = TableCell(stylename="HeaderStyle")
+                cell_p = P()
+                cell_p.addText(str(col))
+                cell.addElement(cell_p)
+                header_row.addElement(cell)
+            table.addElement(header_row)
+        
+        # Add data rows
+        for _, row in chunk_df.iterrows():
+            data_row = TableRow()
+            for col in columns:
+                cell = TableCell()
+                cell_p = P()
+                cell_p.addText(str(row[col]) if pd.notna(row[col]) else "")
+                cell.addElement(cell_p)
+                data_row.addElement(cell)
+            table.addElement(data_row)
+        
+        # Add table frame
+        table_frame = Frame(
+            width="23cm", height="15cm",
+            x="1cm", y="3.5cm"
+        )
+        table_frame.addElement(table)
+        slide.addElement(table_frame)
+        
+        # Add slide to presentation
+        doc.presentation.addElement(slide)
+        slide_num += 1
+        
+        logger.info(f"Created slide {slide_num - 1} with {len(chunk_df)} rows")
 
-def create_odp_slide(doc, slide_num, slide_data, columns, title, slide_number, total_slides):
-    """Create a single ODP slide with table data"""
+def create_chart_slides(doc, df, columns, include_headers, chunk_size):
+    """Create slides with chart layout (simplified as summary tables)"""
     
-    # Create slide
-    slide = Page(name=f"Slide{slide_num + 1}", masterpagename="Standard")
+    # Create summary slide
+    slide = Page(name="Summary")
     
     # Add title
     title_frame = Frame(
-        width="26cm",
-        height="2cm",
-        x="1cm",
-        y="0.5cm"
+        width="25cm", height="2cm",
+        x="1cm", y="1cm"
     )
-    title_text = TextBox()
-    title_text.addElement(P(stylename="TitleStyle", text=f"{title} - Slide {slide_number} of {total_slides}"))
-    title_frame.addElement(title_text)
+    title_textbox = TextBox()
+    title_p = P(stylename="TitleStyle")
+    title_p.addText("Data Summary")
+    title_textbox.addElement(title_p)
+    title_frame.addElement(title_textbox)
     slide.addElement(title_frame)
     
-    # Add table
+    # Create summary table
+    table = Table()
+    
+    # Add summary columns
+    summary_cols = ["Metric", "Value"]
+    for _ in summary_cols:
+        table.addElement(TableColumn())
+    
+    # Add header row
+    header_row = TableRow()
+    for col in summary_cols:
+        cell = TableCell(stylename="HeaderStyle")
+        cell_p = P()
+        cell_p.addText(col)
+        cell.addElement(cell_p)
+        header_row.addElement(cell)
+    table.addElement(header_row)
+    
+    # Add summary data
+    summary_data = [
+        ("Total Rows", len(df)),
+        ("Total Columns", len(columns)),
+        ("Columns", ", ".join(columns[:5]) + ("..." if len(columns) > 5 else ""))
+    ]
+    
+    for metric, value in summary_data:
+        data_row = TableRow()
+        for item in [metric, str(value)]:
+            cell = TableCell()
+            cell_p = P()
+            cell_p.addText(str(item))
+            cell.addElement(cell_p)
+            data_row.addElement(cell)
+        table.addElement(data_row)
+    
+    # Add table frame
     table_frame = Frame(
-        width="26cm",
-        height="16cm",
-        x="1cm",
-        y="3cm"
+        width="23cm", height="10cm",
+        x="1cm", y="3.5cm"
     )
-    
-    # Create table content
-    table_text = TextBox()
-    
-    # Add table header
-    header_text = " | ".join([escape_html(str(col)) for col in columns])
-    table_text.addElement(P(stylename="HeaderStyle", text=header_text))
-    table_text.addElement(P(text="-" * len(header_text)))
-    
-    # Add table rows
-    for _, row in slide_data.iterrows():
-        row_text = " | ".join([escape_html(str(cell)) for cell in row.values])
-        table_text.addElement(P(stylename="TableCellStyle", text=row_text))
-    
-    table_frame.addElement(table_text)
+    table_frame.addElement(table)
     slide.addElement(table_frame)
     
-    return slide
+    doc.presentation.addElement(slide)
+    
+    # Create data slides with table layout
+    create_table_slides(doc, df, columns, include_headers, chunk_size)
+
+def create_mixed_slides(doc, df, columns, include_headers, chunk_size):
+    """Create slides with mixed layout"""
+    
+    # Create overview slide
+    slide = Page(name="Overview")
+    
+    # Add title
+    title_frame = Frame(
+        width="25cm", height="2cm",
+        x="1cm", y="1cm"
+    )
+    title_textbox = TextBox()
+    title_p = P(stylename="TitleStyle")
+    title_p.addText("Data Overview")
+    title_textbox.addElement(title_p)
+    title_frame.addElement(title_textbox)
+    slide.addElement(title_frame)
+    
+    # Add description
+    desc_frame = Frame(
+        width="23cm", height="3cm",
+        x="1cm", y="3.5cm"
+    )
+    desc_textbox = TextBox()
+    desc_p = P()
+    desc_p.addText(f"This presentation contains {len(df)} rows of data with {len(columns)} columns.")
+    desc_textbox.addElement(desc_p)
+    desc_frame.addElement(desc_textbox)
+    slide.addElement(desc_frame)
+    
+    doc.presentation.addElement(slide)
+    
+    # Create data slides with table layout
+    create_table_slides(doc, df, columns, include_headers, chunk_size)
 
 def main():
-    parser = argparse.ArgumentParser(description='Convert CSV to ODP')
-    parser.add_argument('csv_file', help='Input CSV file')
-    parser.add_argument('output_file', help='Output ODP file')
-    parser.add_argument('--title', default='CSV Data', help='Document title')
-    parser.add_argument('--author', default='Unknown', help='Document author')
-    parser.add_argument('--max-rows-per-slide', type=int, default=50, help='Maximum rows per slide')
+    parser = argparse.ArgumentParser(description='Convert CSV to ODP presentation')
+    parser.add_argument('csv_path', help='Path to input CSV file')
+    parser.add_argument('output_path', help='Path to output ODP file')
+    parser.add_argument('--title', default='CSV Data', help='Presentation title')
+    parser.add_argument('--author', default='CSV Converter', help='Presentation author')
+    parser.add_argument('--slide-layout', choices=['table', 'chart', 'mixed'], 
+                       default='table', help='Slide layout type')
+    parser.add_argument('--no-headers', action='store_true', help='Exclude headers from table')
+    parser.add_argument('--chunk-size', type=int, default=1000, 
+                       help='Number of rows per slide for large files')
     
     args = parser.parse_args()
     
-    print(f"Converting {args.csv_file} to {args.output_file}")
-    print(f"Title: {args.title}, Author: {args.author}")
-    print(f"Max rows per slide: {args.max_rows_per_slide}")
-    
-    success, message = create_odp_from_csv(
-        args.csv_file,
-        args.output_file,
-        args.title,
-        args.author,
-        args.max_rows_per_slide
-    )
-    
-    if success:
-        print(f"SUCCESS: {message}")
-        sys.exit(0)
-    else:
-        print(f"ERROR: {message}")
+    try:
+        create_odp_from_csv(
+            csv_path=args.csv_path,
+            output_path=args.output_path,
+            title=args.title,
+            author=args.author,
+            slide_layout=args.slide_layout,
+            include_headers=not args.no_headers,
+            chunk_size=args.chunk_size
+        )
+        
+        print(f"Successfully converted {args.csv_path} to {args.output_path}")
+        
+    except Exception as e:
+        logger.error(f"Conversion failed: {e}")
         sys.exit(1)
 
 if __name__ == "__main__":
