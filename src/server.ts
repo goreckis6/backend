@@ -3089,6 +3089,87 @@ const convertCsvToPdfPython = async (
   }
 };
 
+// CSV to DOC converter using Python
+const convertCsvToDocPython = async (
+  file: Express.Multer.File,
+  options: Record<string, string | undefined> = {},
+  persistToDisk = false
+): Promise<ConversionResult> => {
+  console.log(`=== CSV TO DOC (Python) START ===`);
+  const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'morphy-csv-doc-'));
+  const originalBase = path.basename(file.originalname, path.extname(file.originalname));
+  const sanitizedBase = sanitizeFilename(originalBase);
+  const safeBase = `${sanitizedBase}_${randomUUID()}`;
+
+  try {
+    // Write CSV file to temp directory
+    const csvPath = path.join(tmpDir, `${safeBase}.csv`);
+    await fs.writeFile(csvPath, file.buffer);
+
+    // Prepare output file
+    const outputPath = path.join(tmpDir, `${safeBase}.docx`);
+    
+    // Use Python script for DOC
+    const pythonPath = '/opt/venv/bin/python3';
+    const scriptPath = path.join('/app/scripts/csv_to_doc.py');
+    
+    console.log('Python execution details:', {
+      pythonPath,
+      scriptPath,
+      csvPath,
+      outputPath,
+      title: options.title || sanitizedBase,
+      author: options.author || 'Unknown',
+      fileSize: file.buffer.length
+    });
+
+    const { stdout, stderr } = await execFileAsync(pythonPath, [
+      scriptPath,
+      csvPath,
+      outputPath,
+      '--title', options.title || sanitizedBase,
+      '--author', options.author || 'Unknown'
+    ]);
+
+    if (stdout.trim().length > 0) console.log('Python stdout:', stdout.trim());
+    if (stderr.trim().length > 0) console.warn('Python stderr:', stderr.trim());
+
+    // Check if output file was created
+    const outputExists = await fs.access(outputPath).then(() => true).catch(() => false);
+    if (!outputExists) {
+      throw new Error(`Python DOC script did not produce output file: ${outputPath}`);
+    }
+
+    // Read output file
+    const outputBuffer = await fs.readFile(outputPath);
+    if (!outputBuffer || outputBuffer.length === 0) {
+      throw new Error('Python DOC script produced empty output file');
+    }
+
+    const downloadName = `${sanitizedBase}.doc`;
+    console.log(`CSV->DOC conversion successful:`, { 
+      filename: downloadName, 
+      size: outputBuffer.length 
+    });
+
+    if (persistToDisk) {
+      return await persistOutputBuffer(outputBuffer, downloadName, 'application/msword');
+    }
+
+    return {
+      buffer: outputBuffer,
+      filename: downloadName,
+      mime: 'application/msword'
+    };
+  } catch (error) {
+    console.error(`CSV->DOC conversion error:`, error);
+    const message = error instanceof Error ? error.message : `Unknown CSV->DOC error`;
+    throw new Error(`Failed to convert CSV to DOC: ${message}`);
+  } finally {
+    await fs.rm(tmpDir, { recursive: true, force: true }).catch(() => undefined);
+  }
+};
+
 // CSV to PPT converter using Python
 const convertCsvToPptPython = async (
   file: Express.Multer.File,
@@ -5146,6 +5227,9 @@ app.post('/api/convert', conversionTimeout(5 * 60 * 1000), upload.single('file')
       } else if (!result && isCSV && targetFormat === 'ndjson') {
         console.log('Single: Routing to Python (CSV to NDJSON conversion)');
         result = await convertCsvToNdjsonPython(file, requestOptions, true);
+      } else if (!result && isCSV && targetFormat === 'doc') {
+        console.log('Single: Routing to Python (CSV to DOC conversion)');
+        result = await convertCsvToDocPython(file, requestOptions, true);
       } else if (!result && isCSV && ['epub', 'html'].includes(targetFormat)) {
       console.log(`Single: Routing to Python (CSV to ${targetFormat.toUpperCase()} conversion)`);
       result = await convertCsvToEbookPython(file, targetFormat, requestOptions, true);
