@@ -11,6 +11,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libmagick++-dev \
     libreoffice \
     libreoffice-impress \
+    libreoffice-writer \
+    libreoffice-calc \
+    libreoffice-java-common \
+    default-jre-headless \
     unoconv \
     calibre \
     exiftool \
@@ -60,11 +64,13 @@ RUN mkdir -p /home/appuser/.cache/dconf \
     && chmod -R 755 /home/appuser \
     && chmod -R 777 /tmp/libreoffice
 
-# Set environment variables for LibreOffice
+# Set environment variables for LibreOffice and Java
 ENV HOME=/home/appuser
 ENV TMPDIR=/tmp
 ENV DCONF_PROFILE=/dev/null
 ENV SAL_USE_VCLPLUGIN=svp
+ENV JAVA_HOME=/usr/lib/jvm/default-java
+ENV PATH="$JAVA_HOME/bin:$PATH"
 
 # Initialize LibreOffice user profile as root before switching to appuser
 RUN libreoffice --headless --invisible --nocrashreport --nodefault --nofirststartwizard --nologo --norestore --accept='socket,host=localhost,port=2002;urp;' & \
