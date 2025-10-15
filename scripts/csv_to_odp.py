@@ -59,13 +59,13 @@ def create_odp_from_csv(csv_path, output_path, title="CSV Data", author="CSV Con
         logger.info("Setting document metadata")
         try:
             # Find and update existing meta elements
-            meta_elements = doc.meta.getElementsByTagName("meta:title")
+            meta_elements = doc.meta.getElementsByTagName("title")
             if meta_elements:
                 meta_elements[0].addText(title)
             else:
                 logger.warning("Could not set document title")
             
-            meta_elements = doc.meta.getElementsByTagName("meta:initial-creator")
+            meta_elements = doc.meta.getElementsByTagName("initial-creator")
             if meta_elements:
                 meta_elements[0].addText(author)
             else:
@@ -119,8 +119,8 @@ def create_table_slides(doc, df, columns, include_headers, chunk_size):
         end_idx = min(start_idx + chunk_size, total_rows)
         chunk_df = df.iloc[start_idx:end_idx]
         
-        # Create slide
-        slide = Page(name=f"Slide{slide_num}")
+        # Create slide with required master page name
+        slide = Page(name=f"Slide{slide_num}", masterpagename="Standard")
         
         # Add title frame
         title_frame = Frame(
@@ -181,7 +181,7 @@ def create_chart_slides(doc, df, columns, include_headers, chunk_size):
     """Create slides with chart layout (simplified as summary tables)"""
     
     # Create summary slide
-    slide = Page(name="Summary")
+    slide = Page(name="Summary", masterpagename="Standard")
     
     # Add title
     title_frame = Frame(
@@ -247,7 +247,7 @@ def create_mixed_slides(doc, df, columns, include_headers, chunk_size):
     """Create slides with mixed layout"""
     
     # Create overview slide
-    slide = Page(name="Overview")
+    slide = Page(name="Overview", masterpagename="Standard")
     
     # Add title
     title_frame = Frame(
