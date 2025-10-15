@@ -171,7 +171,40 @@ def create_table_slides(doc, df, columns, include_headers, chunk_size):
         table_frame.addElement(table)
         slide.addElement(table_frame)
         
-        # Add slide to presentation body
+        # Add slide to presentation - use presentation namespace
+        try:
+            # Get or create presentation element
+            presentation_elements = doc.body.getElementsByTagName("presentation")
+            if presentation_elements:
+                presentation = presentation_elements[0]
+            else:
+                # Create presentation element
+                from odf.element import Element
+                from odf.namespaces import PRESENTATIONNS
+                presentation = Element(qname=(PRESENTATIONNS, "presentation"))
+                doc.body.addElement(presentation)
+            
+            presentation.addElement(slide)
+        except Exception as e:
+            logger.warning(f"Could not add slide to presentation: {e}")
+            # Fallback: try direct body addition
+            # Add slide to presentation - use presentation namespace
+    try:
+        # Get or create presentation element
+        presentation_elements = doc.body.getElementsByTagName("presentation")
+        if presentation_elements:
+            presentation = presentation_elements[0]
+        else:
+            # Create presentation element
+            from odf.element import Element
+            from odf.namespaces import PRESENTATIONNS
+            presentation = Element(qname=(PRESENTATIONNS, "presentation"))
+            doc.body.addElement(presentation)
+        
+        presentation.addElement(slide)
+    except Exception as e:
+        logger.warning(f"Could not add slide to presentation: {e}")
+        # Fallback: try direct body addition
         doc.body.addElement(slide)
         slide_num += 1
         
@@ -238,7 +271,24 @@ def create_chart_slides(doc, df, columns, include_headers, chunk_size):
     table_frame.addElement(table)
     slide.addElement(table_frame)
     
-    doc.body.addElement(slide)
+    # Add slide to presentation - use presentation namespace
+    try:
+        # Get or create presentation element
+        presentation_elements = doc.body.getElementsByTagName("presentation")
+        if presentation_elements:
+            presentation = presentation_elements[0]
+        else:
+            # Create presentation element
+            from odf.element import Element
+            from odf.namespaces import PRESENTATIONNS
+            presentation = Element(qname=(PRESENTATIONNS, "presentation"))
+            doc.body.addElement(presentation)
+        
+        presentation.addElement(slide)
+    except Exception as e:
+        logger.warning(f"Could not add slide to presentation: {e}")
+        # Fallback: try direct body addition
+        doc.body.addElement(slide)
     
     # Create data slides with table layout
     create_table_slides(doc, df, columns, include_headers, chunk_size)
@@ -273,7 +323,24 @@ def create_mixed_slides(doc, df, columns, include_headers, chunk_size):
     desc_frame.addElement(desc_textbox)
     slide.addElement(desc_frame)
     
-    doc.body.addElement(slide)
+    # Add slide to presentation - use presentation namespace
+    try:
+        # Get or create presentation element
+        presentation_elements = doc.body.getElementsByTagName("presentation")
+        if presentation_elements:
+            presentation = presentation_elements[0]
+        else:
+            # Create presentation element
+            from odf.element import Element
+            from odf.namespaces import PRESENTATIONNS
+            presentation = Element(qname=(PRESENTATIONNS, "presentation"))
+            doc.body.addElement(presentation)
+        
+        presentation.addElement(slide)
+    except Exception as e:
+        logger.warning(f"Could not add slide to presentation: {e}")
+        # Fallback: try direct body addition
+        doc.body.addElement(slide)
     
     # Create data slides with table layout
     create_table_slides(doc, df, columns, include_headers, chunk_size)
