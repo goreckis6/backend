@@ -11674,6 +11674,51 @@ app.post('/convert/csv-to-odp/batch', uploadBatch, async (req, res) => {
 // Initialize dotenv
 dotenv.config();
 
+// Initialize Express app
+const app = express();
+const PORT = process.env.PORT || 3000;
+
+// CORS configuration
+const allowedOrigins = [
+  process.env.FRONTEND_URL,
+  process.env.FRONTEND_URL_ALT,
+  'https://morphyimg.com',
+  'https://morphy-1-ulvv.onrender.com',
+  'https://morphy-2-n2tb.onrender.com',
+  'http://localhost:5173', // Frontend dev server
+  'http://localhost:3000', // Backend dev server
+].filter(Boolean) as string[];
+
+app.use(cors({
+  origin: (origin, callback) => {
+    // Allow requests with no origin (like mobile apps or curl requests)
+    if (!origin) return callback(null, true);
+    if (allowedOrigins.indexOf(origin) === -1) {
+      const msg = `The CORS policy for this site does not allow access from the specified Origin: ${origin}`;
+      return callback(new Error(msg), false);
+    }
+    return callback(null, true);
+  },
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization'],
+  credentials: true,
+}));
+
+// Security middleware
+app.use(helmet());
+
+// Rate limiting to prevent abuse
+const limiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 100, // Limit each IP to 100 requests per 15 minutes
+  message: 'Too many requests from this IP, please try again after 15 minutes',
+});
+app.use(limiter);
+
+// Body parser for JSON and URL-encoded data
+app.use(express.json({ limit: '50mb' }));
+app.use(express.urlencoded({ extended: true, limit: '50mb' }));
+
 // Health check endpoint
 app.get('/health', (req, res) => {
   res.json({
