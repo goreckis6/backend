@@ -11674,6 +11674,22 @@ app.post('/convert/csv-to-odp/batch', uploadBatch, async (req, res) => {
 // Initialize dotenv
 dotenv.config();
 
+// Health check endpoint
+app.get('/health', (req, res) => {
+  res.json({
+    status: 'healthy',
+    timestamp: new Date().toISOString(),
+    environment: process.env.NODE_ENV,
+    database: {
+      host: process.env.DB_HOST || 'Not configured',
+      port: process.env.DB_PORT || 'Not configured',
+      database: process.env.DB_NAME || 'Not configured',
+      user: process.env.DB_USER || 'Not configured',
+      ssl: process.env.DB_SSL === 'true'
+    }
+  });
+});
+
 // Authentication routes
 app.use('/api/auth', authRoutes);
 
