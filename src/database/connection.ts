@@ -23,13 +23,23 @@ const dbConfig = {
   }
 };
 
+// Log environment variables for debugging
+console.log('🔍 Environment variables check:');
+console.log('DATABASE_URL:', process.env.DATABASE_URL ? 'Set' : 'Not set');
+console.log('DB_HOST:', process.env.DB_HOST || 'Not set');
+console.log('DB_PORT:', process.env.DB_PORT || 'Not set');
+console.log('DB_NAME:', process.env.DB_NAME || 'Not set');
+console.log('DB_USER:', process.env.DB_USER || 'Not set');
+console.log('DB_PASSWORD:', process.env.DB_PASSWORD ? 'Set' : 'Not set');
+console.log('DB_SSL:', process.env.DB_SSL || 'Not set');
+
 // Validate required environment variables
 const requiredEnvVars = ['DB_HOST', 'DB_PORT', 'DB_NAME', 'DB_USER', 'DB_PASSWORD'];
 const missingVars = requiredEnvVars.filter(varName => !process.env[varName]);
 
 if (!process.env.DATABASE_URL && missingVars.length > 0) {
-  console.warn(`⚠️  Missing required environment variables: ${missingVars.join(', ')}`);
-  console.warn('Using default values for missing variables');
+  console.error(`❌ Missing required environment variables: ${missingVars.join(', ')}`);
+  console.error('This will cause database connection to fail!');
 }
 
 // Use DATABASE_URL if provided, otherwise use individual config
