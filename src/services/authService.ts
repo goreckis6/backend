@@ -115,11 +115,11 @@ export class AuthService {
       };
     } catch (error) {
       console.error('❌ Registration error:', error);
-      console.error('❌ Error details:', error.message);
-      console.error('❌ Stack trace:', error.stack);
+      console.error('❌ Error details:', error instanceof Error ? error.message : 'Unknown error');
+      console.error('❌ Stack trace:', error instanceof Error ? error.stack : 'No stack trace');
       return {
         success: false,
-        error: `Registration failed: ${error.message}`
+        error: `Registration failed: ${error instanceof Error ? error.message : 'Unknown error'}`
       };
     }
   }

@@ -11779,7 +11779,7 @@ app.post('/api/test-user', async (req, res) => {
     console.error('❌ User creation test failed:', error);
     res.status(500).json({
       success: false,
-      error: error.message,
+      error: error instanceof Error ? error.message : 'Unknown error',
       timestamp: new Date().toISOString()
     });
   }
@@ -11813,17 +11813,17 @@ app.get('/api/dbchecker', async (req, res) => {
     try {
       userCount = await User.count();
     } catch (e) {
-      console.log('Users table not found or error:', e.message);
+      console.log('Users table not found or error:', e instanceof Error ? e.message : 'Unknown error');
     }
     
     try {
       conversionCount = await Conversion.count();
     } catch (e) {
-      console.log('Conversions table not found or error:', e.message);
+      console.log('Conversions table not found or error:', e instanceof Error ? e.message : 'Unknown error');
     }
     
     // Get recent errors from logs
-    let recentErrors = [];
+    let recentErrors: any[] = [];
     try {
       recentErrors = await Conversion.findAll({
         where: { status: 'failed' },
@@ -11832,7 +11832,7 @@ app.get('/api/dbchecker', async (req, res) => {
         attributes: ['id', 'originalFilename', 'errorMessage', 'updatedAt']
       });
     } catch (e) {
-      console.log('Conversions table not found for error query:', e.message);
+      console.log('Conversions table not found for error query:', e instanceof Error ? e.message : 'Unknown error');
     }
     
     res.json({
@@ -11859,7 +11859,7 @@ app.get('/api/dbchecker', async (req, res) => {
       status: 'disconnected',
       timestamp: new Date().toISOString(),
       error: {
-        message: error.message || 'Unknown error',
+        message: error instanceof Error ? error.message : 'Unknown error',
         code: error.code || 'UNKNOWN',
         detail: error.detail || 'No additional details'
       },

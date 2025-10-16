@@ -4,8 +4,7 @@ import { Conversion } from './models/Conversion.js';
 import { AnonymousConversion } from './models/AnonymousConversion.js';
 
 // Define associations
-Conversion.belongsTo(User, { foreignKey: 'userId', as: 'user' });
-User.hasMany(Conversion, { foreignKey: 'userId', as: 'conversions' });
+// Note: Associations are defined in the model files themselves
 
 // Initialize database
 export const initializeDatabase = async () => {
@@ -25,7 +24,7 @@ export const initializeDatabase = async () => {
     return true;
   } catch (error) {
     console.error('❌ Database connection failed:', error);
-    console.error('❌ Error details:', error.message);
+    console.error('❌ Error details:', error instanceof Error ? error.message : 'Unknown error');
     throw error;
   }
 };

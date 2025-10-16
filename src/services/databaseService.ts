@@ -15,7 +15,7 @@ export class DatabaseService {
       return user;
     } catch (error) {
       console.error('❌ Database createUser error:', error);
-      console.error('❌ Error details:', error.message);
+      console.error('❌ Error details:', error instanceof Error ? error.message : 'Unknown error');
       throw error;
     }
   }
