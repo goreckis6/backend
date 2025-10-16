@@ -15,7 +15,7 @@ export const initializeDatabase = async () => {
     console.log('✅ Database connection established successfully');
     
     console.log('🔍 Synchronizing database tables...');
-    await sequelize.sync({ force: false }); // Create tables if they don't exist
+    await sequelize.sync({ force: true }); // Force recreate tables with correct schema
     console.log('✅ Database synchronized successfully');
     
     // Test if tables exist
