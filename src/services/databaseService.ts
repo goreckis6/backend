@@ -186,7 +186,7 @@ export class DatabaseService {
           todayConversions,
           weekConversions,
           monthConversions,
-          avgConversionTime: Math.round(avgConversionTime?.avgTime || 0),
+          avgConversionTime: Math.round((avgConversionTime as any)?.avgTime || 0),
           popularFormats
         }
       };

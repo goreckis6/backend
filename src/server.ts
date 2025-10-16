@@ -19,7 +19,7 @@ import { Document, Packer, Paragraph, Table, TableCell, TableRow, WidthType } fr
 import { fileURLToPath } from 'url';
 import { dirname } from 'path';
 import dotenv from 'dotenv';
-import { initializeDatabase, closeDatabase, Conversion } from './database/index.js';
+import { initializeDatabase, closeDatabase, Conversion, User, sequelize } from './database/index.js';
 import { DatabaseService } from './services/databaseService.js';
 import authRoutes from './routes/auth.js';
 
@@ -11726,16 +11726,16 @@ app.get('/api/dbchecker', async (req, res) => {
       }
     });
     
-  } catch (error) {
+  } catch (error: any) {
     console.error('Database check error:', error);
     
     res.status(500).json({
       status: 'disconnected',
       timestamp: new Date().toISOString(),
       error: {
-        message: error.message,
-        code: error.code,
-        detail: error.detail
+        message: error.message || 'Unknown error',
+        code: error.code || 'UNKNOWN',
+        detail: error.detail || 'No additional details'
       },
       database: {
         host: process.env.DB_HOST || 'Not configured',

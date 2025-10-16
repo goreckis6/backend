@@ -1,4 +1,4 @@
-import express from 'express';
+import express, { Request, Response } from 'express';
 import { body, validationResult } from 'express-validator';
 import { AuthService } from '../services/authService.js';
 import { authenticateToken } from '../middleware/auth.js';
@@ -67,7 +67,7 @@ const handleValidationErrors = (req: express.Request, res: express.Response, nex
 };
 
 // POST /api/auth/register
-router.post('/register', validateRegister, handleValidationErrors, async (req, res) => {
+router.post('/register', validateRegister, handleValidationErrors, async (req: Request, res: Response) => {
   try {
     const { email, password, name } = req.body;
     
@@ -96,7 +96,7 @@ router.post('/register', validateRegister, handleValidationErrors, async (req, r
 });
 
 // POST /api/auth/login
-router.post('/login', validateLogin, handleValidationErrors, async (req, res) => {
+router.post('/login', validateLogin, handleValidationErrors, async (req: Request, res: Response) => {
   try {
     const { email, password } = req.body;
     
@@ -125,7 +125,7 @@ router.post('/login', validateLogin, handleValidationErrors, async (req, res) =>
 });
 
 // GET /api/auth/me
-router.get('/me', authenticateToken, async (req, res) => {
+router.get('/me', authenticateToken, async (req: Request, res: Response) => {
   try {
     res.json({
       success: true,
@@ -141,7 +141,7 @@ router.get('/me', authenticateToken, async (req, res) => {
 });
 
 // PUT /api/auth/profile
-router.put('/profile', authenticateToken, validateProfileUpdate, handleValidationErrors, async (req, res) => {
+router.put('/profile', authenticateToken, validateProfileUpdate, handleValidationErrors, async (req: Request, res: Response) => {
   try {
     const { name, email } = req.body;
     
@@ -169,7 +169,7 @@ router.put('/profile', authenticateToken, validateProfileUpdate, handleValidatio
 });
 
 // PUT /api/auth/change-password
-router.put('/change-password', authenticateToken, validatePasswordChange, handleValidationErrors, async (req, res) => {
+router.put('/change-password', authenticateToken, validatePasswordChange, handleValidationErrors, async (req: Request, res: Response) => {
   try {
     const { currentPassword, newPassword } = req.body;
     
