@@ -5284,7 +5284,7 @@ const convertCsvToOdpPython = async (
 
 // Initialize Express app
 const app = express();
-const PORT = process.env.PORT || 3000;
+const PORT = parseInt(process.env.PORT || '3000', 10);
 
 // Rate limiting to prevent abuse
 const limiter = rateLimit({
