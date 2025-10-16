@@ -10,15 +10,22 @@ User.hasMany(Conversion, { foreignKey: 'userId', as: 'conversions' });
 // Initialize database
 export const initializeDatabase = async () => {
   try {
+    console.log('🔍 Attempting to connect to database...');
     await sequelize.authenticate();
     console.log('✅ Database connection established successfully');
     
-    await sequelize.sync({ alter: false }); // Set to true if you want to alter tables
+    console.log('🔍 Synchronizing database tables...');
+    await sequelize.sync({ force: false }); // Create tables if they don't exist
     console.log('✅ Database synchronized successfully');
+    
+    // Test if tables exist
+    const tables = await sequelize.getQueryInterface().showAllTables();
+    console.log('📋 Available tables:', tables);
     
     return true;
   } catch (error) {
     console.error('❌ Database connection failed:', error);
+    console.error('❌ Error details:', error.message);
     throw error;
   }
 };

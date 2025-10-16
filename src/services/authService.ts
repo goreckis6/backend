@@ -40,7 +40,15 @@ export class AuthService {
 
   // Hash password
   static async hashPassword(password: string): Promise<string> {
-    return await bcrypt.hash(password, this.SALT_ROUNDS);
+    try {
+      console.log('🔍 Hashing password...');
+      const hashed = await bcrypt.hash(password, this.SALT_ROUNDS);
+      console.log('✅ Password hashed successfully');
+      return hashed;
+    } catch (error) {
+      console.error('❌ Password hashing failed:', error);
+      throw error;
+    }
   }
 
   // Verify password
@@ -65,9 +73,12 @@ export class AuthService {
   // Register new user
   static async register(data: RegisterData): Promise<AuthResult> {
     try {
+      console.log('🔍 Registering user:', { email: data.email, name: data.name });
+      
       // Check if user already exists
       const existingUser = await DatabaseService.findUserByEmail(data.email);
       if (existingUser) {
+        console.log('❌ User already exists:', data.email);
         return {
           success: false,
           error: 'User with this email already exists'
@@ -76,6 +87,7 @@ export class AuthService {
 
       // Hash password
       const hashedPassword = await this.hashPassword(data.password);
+      console.log('✅ Password hashed successfully');
 
       // Create user
       const user = await DatabaseService.createUser({
@@ -83,6 +95,7 @@ export class AuthService {
         password: hashedPassword,
         name: data.name
       });
+      console.log('✅ User created successfully:', user.id);
 
       // Generate token
       const token = this.generateToken({
@@ -101,10 +114,12 @@ export class AuthService {
         token
       };
     } catch (error) {
-      console.error('Registration error:', error);
+      console.error('❌ Registration error:', error);
+      console.error('❌ Error details:', error.message);
+      console.error('❌ Stack trace:', error.stack);
       return {
         success: false,
-        error: 'Registration failed. Please try again.'
+        error: `Registration failed: ${error.message}`
       };
     }
   }

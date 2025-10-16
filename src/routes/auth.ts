@@ -57,6 +57,7 @@ const validatePasswordChange = [
 const handleValidationErrors = (req: express.Request, res: express.Response, next: express.NextFunction) => {
   const errors = validationResult(req);
   if (!errors.isEmpty()) {
+    console.log('❌ Validation errors:', errors.array());
     return res.status(400).json({
       success: false,
       error: 'Validation failed',
@@ -69,9 +70,11 @@ const handleValidationErrors = (req: express.Request, res: express.Response, nex
 // POST /api/auth/register
 router.post('/register', validateRegister, handleValidationErrors, async (req: Request, res: Response) => {
   try {
+    console.log('🔍 Register route called with body:', req.body);
     const { email, password, name } = req.body;
     
     const result = await AuthService.register({ email, password, name });
+    console.log('🔍 AuthService.register result:', result);
     
     if (result.success) {
       res.status(201).json({
@@ -81,16 +84,19 @@ router.post('/register', validateRegister, handleValidationErrors, async (req: R
         token: result.token
       });
     } else {
+      console.log('❌ Registration failed:', result.error);
       res.status(400).json({
         success: false,
         error: result.error
       });
     }
   } catch (error) {
-    console.error('Register route error:', error);
+    console.error('❌ Register route error:', error);
+    console.error('❌ Error details:', error.message);
+    console.error('❌ Stack trace:', error.stack);
     res.status(500).json({
       success: false,
-      error: 'Registration failed'
+      error: `Registration failed: ${error.message}`
     });
   }
 });

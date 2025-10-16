@@ -8,11 +8,28 @@ export class DatabaseService {
     password: string;
     name?: string;
   }) {
-    return await User.create(userData);
+    try {
+      console.log('🔍 Creating user in database:', { email: userData.email });
+      const user = await User.create(userData);
+      console.log('✅ User created in database:', user.id);
+      return user;
+    } catch (error) {
+      console.error('❌ Database createUser error:', error);
+      console.error('❌ Error details:', error.message);
+      throw error;
+    }
   }
 
   static async findUserByEmail(email: string) {
-    return await User.findOne({ where: { email } });
+    try {
+      console.log('🔍 Finding user by email:', email);
+      const user = await User.findOne({ where: { email } });
+      console.log('✅ User lookup completed:', user ? 'found' : 'not found');
+      return user;
+    } catch (error) {
+      console.error('❌ Database findUserByEmail error:', error);
+      throw error;
+    }
   }
 
   static async findUserById(id: number) {

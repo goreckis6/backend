@@ -11752,6 +11752,39 @@ app.use('/api/auth', authRoutes);
 // Conversion limits endpoint
 app.get('/api/conversion-status', getConversionStatus);
 
+// Test user creation endpoint
+app.post('/api/test-user', async (req, res) => {
+  try {
+    console.log('🔍 Testing user creation...');
+    
+    // Try to create a test user
+    const testUser = await User.create({
+      email: 'test@example.com',
+      password: 'testpassword',
+      name: 'Test User'
+    });
+    
+    console.log('✅ Test user created:', testUser.id);
+    
+    // Clean up - delete the test user
+    await testUser.destroy();
+    console.log('✅ Test user deleted');
+    
+    res.json({
+      success: true,
+      message: 'User creation test successful',
+      timestamp: new Date().toISOString()
+    });
+  } catch (error) {
+    console.error('❌ User creation test failed:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message,
+      timestamp: new Date().toISOString()
+    });
+  }
+});
+
 // Database checker endpoint
 app.get('/api/dbchecker', async (req, res) => {
   try {
@@ -11773,16 +11806,34 @@ app.get('/api/dbchecker', async (req, res) => {
     
     // Get table counts
     const tableStats = await sequelize.getQueryInterface().showAllTables();
-    const userCount = await User.count();
-    const conversionCount = await Conversion.count();
+    
+    let userCount = 0;
+    let conversionCount = 0;
+    
+    try {
+      userCount = await User.count();
+    } catch (e) {
+      console.log('Users table not found or error:', e.message);
+    }
+    
+    try {
+      conversionCount = await Conversion.count();
+    } catch (e) {
+      console.log('Conversions table not found or error:', e.message);
+    }
     
     // Get recent errors from logs
-    const recentErrors = await Conversion.findAll({
-      where: { status: 'failed' },
-      order: [['updatedAt', 'DESC']],
-      limit: 10,
-      attributes: ['id', 'originalFilename', 'errorMessage', 'updatedAt']
-    });
+    let recentErrors = [];
+    try {
+      recentErrors = await Conversion.findAll({
+        where: { status: 'failed' },
+        order: [['updatedAt', 'DESC']],
+        limit: 10,
+        attributes: ['id', 'originalFilename', 'errorMessage', 'updatedAt']
+      });
+    } catch (e) {
+      console.log('Conversions table not found for error query:', e.message);
+    }
     
     res.json({
       status: 'connected',
