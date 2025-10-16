@@ -21,6 +21,7 @@ import { dirname } from 'path';
 import dotenv from 'dotenv';
 import { initializeDatabase, closeDatabase, Conversion, User, sequelize, AnonymousConversion } from './database/index.js';
 import { DatabaseService } from './services/databaseService.js';
+import { AnonymousConversionService } from './services/anonymousConversionService.js';
 import authRoutes from './routes/auth.js';
 import { checkConversionLimits, recordConversion, getConversionStatus } from './middleware/conversionLimits.js';
 
@@ -11751,6 +11752,36 @@ app.use('/api/auth', authRoutes);
 
 // Conversion limits endpoint
 app.get('/api/conversion-status', getConversionStatus);
+
+// Reset conversion limits endpoint (for testing)
+app.post('/api/conversion-reset', async (req, res) => {
+  try {
+    const clientIP = req.ip || req.connection.remoteAddress || req.socket.remoteAddress || '127.0.0.1';
+    console.log('🔍 Resetting conversion count for IP:', clientIP);
+    
+    const result = await AnonymousConversionService.resetConversionsForIP(clientIP);
+    
+    if (result) {
+      res.json({
+        success: true,
+        message: 'Conversion count reset successfully',
+        ip: clientIP
+      });
+    } else {
+      res.json({
+        success: false,
+        message: 'No conversion record found for this IP',
+        ip: clientIP
+      });
+    }
+  } catch (error) {
+    console.error('Error resetting conversions:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to reset conversion count'
+    });
+  }
+});
 
 // Test user creation endpoint
 app.post('/api/test-user', async (req, res) => {
