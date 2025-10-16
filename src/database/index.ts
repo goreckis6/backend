@@ -2,6 +2,7 @@ import sequelize from './connection.js';
 import { User } from './models/User.js';
 import { Conversion } from './models/Conversion.js';
 import { AnonymousConversion } from './models/AnonymousConversion.js';
+import { up as runMigrations } from './migrations.js';
 
 // Define associations after models are imported
 Conversion.belongsTo(User, { foreignKey: 'userId', as: 'user' });
@@ -14,8 +15,35 @@ export const initializeDatabase = async () => {
     await sequelize.authenticate();
     console.log('✅ Database connection established successfully');
     
-    console.log('🔍 Synchronizing database tables...');
-    await sequelize.sync({ force: true }); // Force recreate tables with correct schema
+    // Check if this is the first deployment (no users table or missing columns)
+    const usersTableExists = await sequelize.getQueryInterface().tableExists('users');
+    let needsForceSync = false;
+    
+    if (usersTableExists) {
+      try {
+        // Test if the table has the correct schema by trying to query it
+        await User.findOne({ limit: 1 });
+        console.log('✅ Users table schema is correct');
+      } catch (error) {
+        console.log('⚠️ Users table schema mismatch, will use migrations');
+        needsForceSync = false; // Use migrations instead of force sync
+      }
+    } else {
+      console.log('🆕 First deployment - creating tables');
+      needsForceSync = true;
+    }
+    
+    if (needsForceSync) {
+      console.log('🔍 Creating tables (first deployment)...');
+      await sequelize.sync({ force: true });
+    } else {
+      console.log('🔍 Synchronizing database tables...');
+      await sequelize.sync({ alter: true }); // Alter tables to match model schema without dropping data
+      
+      // Run migrations to ensure all columns exist
+      await runMigrations(sequelize.getQueryInterface());
+    }
+    
     console.log('✅ Database synchronized successfully');
     
     // Test if tables exist
