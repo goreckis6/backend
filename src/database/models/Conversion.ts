@@ -110,7 +110,6 @@ Conversion.init(
   }
 );
 
-// Define associations
-Conversion.belongsTo(require('./User.js').User, { foreignKey: 'userId', as: 'user' });
+// Note: Associations will be defined after all models are loaded
 
 export default Conversion;

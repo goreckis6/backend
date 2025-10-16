@@ -3,8 +3,9 @@ import { User } from './models/User.js';
 import { Conversion } from './models/Conversion.js';
 import { AnonymousConversion } from './models/AnonymousConversion.js';
 
-// Define associations
-// Note: Associations are defined in the model files themselves
+// Define associations after models are imported
+Conversion.belongsTo(User, { foreignKey: 'userId', as: 'user' });
+User.hasMany(Conversion, { foreignKey: 'userId', as: 'conversions' });
 
 // Initialize database
 export const initializeDatabase = async () => {
