@@ -5282,6 +5282,17 @@ const convertCsvToOdpPython = async (
   }
 };
 
+// Initialize Express app
+const app = express();
+const PORT = process.env.PORT || 3000;
+
+// Rate limiting to prevent abuse
+const limiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 100, // Limit each IP to 100 requests per 15 minutes
+  message: 'Too many requests from this IP, please try again after 15 minutes',
+});
+
 // Configure helmet with appropriate settings for large file uploads
 app.use(helmet({
   contentSecurityPolicy: false, // Disable CSP for file uploads
