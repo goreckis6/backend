@@ -19,9 +19,10 @@ import { Document, Packer, Paragraph, Table, TableCell, TableRow, WidthType } fr
 import { fileURLToPath } from 'url';
 import { dirname } from 'path';
 import dotenv from 'dotenv';
-import { initializeDatabase, closeDatabase, Conversion, User, sequelize } from './database/index.js';
+import { initializeDatabase, closeDatabase, Conversion, User, sequelize, AnonymousConversion } from './database/index.js';
 import { DatabaseService } from './services/databaseService.js';
 import authRoutes from './routes/auth.js';
+import { checkConversionLimits, recordConversion, getConversionStatus } from './middleware/conversionLimits.js';
 
 // ES module compatibility: define __dirname
 const __filename = fileURLToPath(import.meta.url);
@@ -1176,9 +1177,6 @@ const convertCsvToNdjsonPython = async (
     await fs.rm(tmpDir, { recursive: true, force: true }).catch(() => undefined);
   }
 };
-
-const app = express();
-const PORT = Number(process.env.PORT || 3000);
 
 const RAW_EXTENSIONS = new Set([
   'cr2','cr3','crw','nef','arw','dng','rw2','pef','orf','raf','x3f','raw','sr2','nrw','k25','kdc','dcr'
@@ -5316,11 +5314,6 @@ app.use((req, res, next) => {
   next();
 });
 
-const limiter = rateLimit({
-  windowMs: 15 * 60 * 1000,
-  max: 60,
-  message: 'Too many requests from this IP, please try again later.'
-});
 app.use('/api/', limiter);
 
 // Increase body parser limits for large file uploads
@@ -5479,7 +5472,7 @@ app.use('/api/convert', (req, res, next) => {
   next();
 });
 
-app.post('/api/convert', conversionTimeout(5 * 60 * 1000), upload.single('file'), async (req, res) => {
+app.post('/api/convert', conversionTimeout(5 * 60 * 1000), checkConversionLimits, upload.single('file'), async (req, res) => {
   try {
     let file = req.file;
     const requestOptions = { ...(req.body as Record<string, string | undefined>) };
@@ -5896,6 +5889,14 @@ app.post('/api/convert', conversionTimeout(5 * 60 * 1000), upload.single('file')
       size: result.buffer.length
     });
     
+    // Record conversion for anonymous users (IP-based limits)
+    try {
+      await recordConversion(req, res, () => {});
+    } catch (recordError) {
+      console.warn('Failed to record conversion:', recordError);
+      // Don't fail the request if recording fails
+    }
+    
     console.log('=== CONVERSION REQUEST END (SUCCESS) ===');
   } catch (error) {
     console.error('=== CONVERSION ERROR ===');
@@ -5921,7 +5922,7 @@ app.post('/api/convert', conversionTimeout(5 * 60 * 1000), upload.single('file')
   }
 });
 
-app.post('/api/convert/batch', conversionTimeout(10 * 60 * 1000), uploadBatch, async (req, res) => {
+app.post('/api/convert/batch', conversionTimeout(10 * 60 * 1000), checkConversionLimits, uploadBatch, async (req, res) => {
   const files = req.files as Express.Multer.File[] | undefined;
   const requestOptions = { ...(req.body as Record<string, string | undefined>) };
   const format = String(requestOptions.format ?? 'webp').toLowerCase();
@@ -6064,6 +6065,14 @@ app.post('/api/convert/batch', conversionTimeout(10 * 60 * 1000), uploadBatch, a
     processed,
     results
   });
+  
+  // Record conversion for anonymous users (IP-based limits) - batch counts as 1 conversion
+  try {
+    await recordConversion(req, res, () => {});
+  } catch (recordError) {
+    console.warn('Failed to record batch conversion:', recordError);
+    // Don't fail the request if recording fails
+  }
 });
 
 app.get('/download/:filename', async (req, res) => {
@@ -11674,10 +11683,6 @@ app.post('/convert/csv-to-odp/batch', uploadBatch, async (req, res) => {
 // Initialize dotenv
 dotenv.config();
 
-// Initialize Express app
-const app = express();
-const PORT = process.env.PORT || 3000;
-
 // CORS configuration
 const allowedOrigins = [
   process.env.FRONTEND_URL,
@@ -11708,11 +11713,6 @@ app.use(cors({
 app.use(helmet());
 
 // Rate limiting to prevent abuse
-const limiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 100, // Limit each IP to 100 requests per 15 minutes
-  message: 'Too many requests from this IP, please try again after 15 minutes',
-});
 app.use(limiter);
 
 // Body parser for JSON and URL-encoded data
@@ -11737,6 +11737,9 @@ app.get('/health', (req, res) => {
 
 // Authentication routes
 app.use('/api/auth', authRoutes);
+
+// Conversion limits endpoint
+app.get('/api/conversion-status', getConversionStatus);
 
 // Database checker endpoint
 app.get('/api/dbchecker', async (req, res) => {

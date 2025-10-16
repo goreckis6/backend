@@ -1,6 +1,7 @@
 import sequelize from './connection.js';
 import { User } from './models/User.js';
 import { Conversion } from './models/Conversion.js';
+import { AnonymousConversion } from './models/AnonymousConversion.js';
 
 // Define associations
 Conversion.belongsTo(User, { foreignKey: 'userId', as: 'user' });
@@ -32,5 +33,5 @@ export const closeDatabase = async () => {
   }
 };
 
-export { sequelize, User, Conversion };
+export { sequelize, User, Conversion, AnonymousConversion };
 export default sequelize;
