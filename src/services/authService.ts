@@ -35,7 +35,7 @@ export interface JwtPayload {
 
 export class AuthService {
   private static readonly JWT_SECRET = process.env.JWT_SECRET || 'fallback-secret-key';
-  private static readonly JWT_EXPIRES_IN = '7d';
+  private static readonly JWT_EXPIRES_IN = '30d'; // 30 days session persistence
   private static readonly SALT_ROUNDS = 12;
 
   // Hash password
