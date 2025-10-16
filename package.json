@@ -13,7 +13,8 @@
     "db:sync": "tsx scripts/db-setup.js sync",
     "db:seed": "tsx scripts/db-setup.js seed",
     "db:reset": "tsx scripts/db-setup.js reset",
-    "db:status": "tsx scripts/db-setup.js status"
+    "db:status": "tsx scripts/db-setup.js status",
+    "user:activate": "tsx scripts/activate-users.ts"
   },
   "dependencies": {
     "express": "^4.18.2",
