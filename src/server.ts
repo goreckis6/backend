@@ -18,6 +18,10 @@ import * as cheerio from 'cheerio';
 import { Document, Packer, Paragraph, Table, TableCell, TableRow, WidthType } from 'docx';
 import { fileURLToPath } from 'url';
 import { dirname } from 'path';
+import dotenv from 'dotenv';
+import { initializeDatabase, closeDatabase, Conversion } from './database/index.js';
+import { DatabaseService } from './services/databaseService.js';
+import authRoutes from './routes/auth.js';
 
 // ES module compatibility: define __dirname
 const __filename = fileURLToPath(import.meta.url);
@@ -11667,15 +11671,163 @@ app.post('/convert/csv-to-odp/batch', uploadBatch, async (req, res) => {
   }
 });
 
-// Set server timeout for large file processing
-const server = app.listen(PORT, '0.0.0.0', () => {
-  console.log(`Morpy backend running on port ${PORT}`);
+// Initialize dotenv
+dotenv.config();
+
+// Authentication routes
+app.use('/api/auth', authRoutes);
+
+// Database checker endpoint
+app.get('/api/dbchecker', async (req, res) => {
+  try {
+    const startTime = Date.now();
+    
+    // Test database connection
+    await sequelize.authenticate();
+    const connectionTime = Date.now() - startTime;
+    
+    // Get database info
+    const dbInfo = {
+      host: process.env.DB_HOST || 'Not configured',
+      port: process.env.DB_PORT || 'Not configured',
+      database: process.env.DB_NAME || 'Not configured',
+      user: process.env.DB_USER || 'Not configured',
+      ssl: process.env.DB_SSL === 'true',
+      connectionTime: `${connectionTime}ms`
+    };
+    
+    // Get table counts
+    const tableStats = await sequelize.getQueryInterface().showAllTables();
+    const userCount = await User.count();
+    const conversionCount = await Conversion.count();
+    
+    // Get recent errors from logs
+    const recentErrors = await Conversion.findAll({
+      where: { status: 'failed' },
+      order: [['updatedAt', 'DESC']],
+      limit: 10,
+      attributes: ['id', 'originalFilename', 'errorMessage', 'updatedAt']
+    });
+    
+    res.json({
+      status: 'connected',
+      timestamp: new Date().toISOString(),
+      database: dbInfo,
+      tables: tableStats,
+      stats: {
+        users: userCount,
+        conversions: conversionCount,
+        totalTables: tableStats.length
+      },
+      recentErrors: recentErrors,
+      environment: {
+        nodeEnv: process.env.NODE_ENV,
+        port: process.env.PORT
+      }
+    });
+    
+  } catch (error) {
+    console.error('Database check error:', error);
+    
+    res.status(500).json({
+      status: 'disconnected',
+      timestamp: new Date().toISOString(),
+      error: {
+        message: error.message,
+        code: error.code,
+        detail: error.detail
+      },
+      database: {
+        host: process.env.DB_HOST || 'Not configured',
+        port: process.env.DB_PORT || 'Not configured',
+        database: process.env.DB_NAME || 'Not configured',
+        user: process.env.DB_USER || 'Not configured',
+        ssl: process.env.DB_SSL === 'true'
+      },
+      environment: {
+        nodeEnv: process.env.NODE_ENV,
+        port: process.env.PORT
+      }
+    });
+  }
 });
 
-// Increase timeout for large file processing (5 minutes)
-server.timeout = 5 * 60 * 1000; // 5 minutes
-server.keepAliveTimeout = 65000; // 65 seconds
-server.headersTimeout = 66000; // 66 seconds
+// Database analytics endpoints
+app.get('/api/analytics/conversions', async (req, res) => {
+  try {
+    const stats = await DatabaseService.getConversionStats();
+    res.json(stats);
+  } catch (error) {
+    console.error('Analytics error:', error);
+    res.status(500).json({ error: 'Failed to fetch conversion statistics' });
+  }
+});
+
+app.get('/api/analytics/formats', async (req, res) => {
+  try {
+    const formats = await DatabaseService.getPopularFormats(10);
+    res.json(formats);
+  } catch (error) {
+    console.error('Analytics error:', error);
+    res.status(500).json({ error: 'Failed to fetch format statistics' });
+  }
+});
+
+app.get('/api/analytics/recent', async (req, res) => {
+  try {
+    const recentConversions = await DatabaseService.getRecentConversions();
+    res.json(recentConversions);
+  } catch (error) {
+    console.error('Analytics error:', error);
+    res.status(500).json({ error: 'Failed to fetch recent conversions' });
+  }
+});
+
+// Start server with database initialization
+const startServer = async () => {
+  try {
+    // Initialize database
+    await initializeDatabase();
+    
+    // Set server timeout for large file processing
+    const server = app.listen(PORT, '0.0.0.0', () => {
+      console.log(`Morpy backend running on port ${PORT}`);
+      console.log('✅ Database connected and server started successfully');
+    });
+    
+    // Increase timeout for large file processing (5 minutes)
+    server.timeout = 5 * 60 * 1000; // 5 minutes
+    server.keepAliveTimeout = 65000; // 65 seconds
+    server.headersTimeout = 66000; // 66 seconds
+    
+    // Graceful shutdown
+    const gracefulShutdown = async (signal: string) => {
+      console.log(`\n${signal} received. Shutting down gracefully...`);
+      
+      server.close(async () => {
+        console.log('✅ HTTP server closed');
+        
+        try {
+          await closeDatabase();
+          console.log('✅ Database connection closed');
+          process.exit(0);
+        } catch (error) {
+          console.error('❌ Error during shutdown:', error);
+          process.exit(1);
+        }
+      });
+    };
+    
+    process.on('SIGINT', () => gracefulShutdown('SIGINT'));
+    process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
+    
+  } catch (error) {
+    console.error('❌ Failed to start server:', error);
+    process.exit(1);
+  }
+};
+
+startServer();
 
 export default app;
 
