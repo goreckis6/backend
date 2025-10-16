@@ -41,18 +41,36 @@ export const checkConversionLimits = async (req: Request, res: Response, next: N
     // Skip limit checking for authenticated users
     const authHeader = req.headers.authorization;
     if (authHeader && authHeader.startsWith('Bearer ')) {
-      // User is authenticated, skip limits
+      console.log('🔍 Authenticated user - skipping conversion limits');
       return next();
     }
 
     // Get client IP address
     const clientIP = getClientIP(req);
     
+    console.log('🔍 Checking conversion limits for anonymous user:', {
+      clientIP,
+      endpoint: req.path,
+      method: req.method
+    });
+    
     // Check if IP can perform conversion
     const canConvert = await AnonymousConversionService.canConvert(clientIP);
     
+    console.log('🔍 Conversion limit check result:', {
+      clientIP,
+      canConvert
+    });
+    
     if (!canConvert) {
       const status = await AnonymousConversionService.getConversionStatus(clientIP);
+      
+      console.log('❌ Conversion limit reached for IP:', {
+        clientIP,
+        usedConversions: status.usedConversions,
+        limit: status.limit,
+        remainingConversions: status.remainingConversions
+      });
       
       return res.status(429).json({
         success: false,
@@ -70,9 +88,10 @@ export const checkConversionLimits = async (req: Request, res: Response, next: N
     // Add IP to request for later use
     (req as any).clientIP = clientIP;
     
+    console.log('✅ Conversion limit check passed for IP:', clientIP);
     next();
   } catch (error) {
-    console.error('Error checking conversion limits:', error);
+    console.error('❌ Error checking conversion limits:', error);
     // In case of error, allow the request to proceed (fail open)
     next();
   }
@@ -83,9 +102,10 @@ export const checkConversionLimits = async (req: Request, res: Response, next: N
  */
 export const recordConversion = async (req: Request, res: Response, next: NextFunction) => {
   try {
-    // Skip recording for authenticated users
+    // Only record for anonymous users (no Bearer token)
     const authHeader = req.headers.authorization;
     if (authHeader && authHeader.startsWith('Bearer ')) {
+      // Skip recording for authenticated users - they have unlimited conversions
       return next();
     }
 
@@ -93,12 +113,18 @@ export const recordConversion = async (req: Request, res: Response, next: NextFu
     const clientIP = (req as any).clientIP || getClientIP(req);
     const userAgent = req.headers['user-agent'];
 
-    // Record the conversion
+    console.log('🔍 Recording conversion for anonymous user:', {
+      clientIP,
+      userAgent: userAgent ? userAgent.substring(0, 50) + '...' : 'unknown'
+    });
+
+    // Record the conversion for anonymous user
     await AnonymousConversionService.recordConversion(clientIP, userAgent);
     
+    console.log('✅ Conversion recorded successfully for IP:', clientIP);
     next();
   } catch (error) {
-    console.error('Error recording conversion:', error);
+    console.error('❌ Error recording conversion:', error);
     // Don't fail the request if recording fails
     next();
   }

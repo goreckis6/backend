@@ -291,14 +291,21 @@ export class AuthService {
   // Get user statistics
   static async getUserStats(userId: number) {
     try {
-      const stats = await DatabaseService.getConversionStats(userId);
+      const statsResult = await DatabaseService.getUserDashboardStats(userId);
       const conversions = await DatabaseService.findConversionsByUser(userId, 10);
       
-      return {
-        success: true,
-        stats,
-        recentConversions: conversions
-      };
+      if (statsResult.success) {
+        return {
+          success: true,
+          stats: statsResult.dashboard,
+          recentConversions: conversions
+        };
+      } else {
+        return {
+          success: false,
+          error: statsResult.error || 'Failed to get user statistics'
+        };
+      }
     } catch (error) {
       console.error('Get user stats error:', error);
       return {

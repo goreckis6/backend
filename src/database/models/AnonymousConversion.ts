@@ -14,13 +14,13 @@ interface AnonymousConversionAttributes {
 interface AnonymousConversionCreationAttributes extends Optional<AnonymousConversionAttributes, 'id' | 'userAgent' | 'conversionCount' | 'createdAt' | 'updatedAt'> {}
 
 export class AnonymousConversion extends Model<AnonymousConversionAttributes, AnonymousConversionCreationAttributes> implements AnonymousConversionAttributes {
-  public id!: number;
-  public ipAddress!: string;
-  public userAgent?: string;
-  public conversionCount!: number;
-  public lastConversionAt!: Date;
-  public readonly createdAt!: Date;
-  public readonly updatedAt!: Date;
+  declare id: number;
+  declare ipAddress: string;
+  declare userAgent?: string;
+  declare conversionCount: number;
+  declare lastConversionAt: Date;
+  declare readonly createdAt: Date;
+  declare readonly updatedAt: Date;
 }
 
 AnonymousConversion.init(

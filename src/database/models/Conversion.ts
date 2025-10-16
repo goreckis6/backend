@@ -21,20 +21,20 @@ interface ConversionAttributes {
 interface ConversionCreationAttributes extends Optional<ConversionAttributes, 'id' | 'conversionTime' | 'errorMessage' | 'ipAddress' | 'userAgent' | 'userId' | 'createdAt' | 'updatedAt'> {}
 
 export class Conversion extends Model<ConversionAttributes, ConversionCreationAttributes> implements ConversionAttributes {
-  public id!: number;
-  public originalFilename!: string;
-  public convertedFilename!: string;
-  public originalFormat!: string;
-  public convertedFormat!: string;
-  public fileSize!: number;
-  public conversionTime?: number;
-  public status!: 'completed' | 'failed' | 'processing';
-  public errorMessage?: string;
-  public ipAddress?: string;
-  public userAgent?: string;
-  public userId?: number;
-  public readonly createdAt!: Date;
-  public readonly updatedAt!: Date;
+  declare id: number;
+  declare originalFilename: string;
+  declare convertedFilename: string;
+  declare originalFormat: string;
+  declare convertedFormat: string;
+  declare fileSize: number;
+  declare conversionTime?: number;
+  declare status: 'completed' | 'failed' | 'processing';
+  declare errorMessage?: string;
+  declare ipAddress?: string;
+  declare userAgent?: string;
+  declare userId?: number;
+  declare readonly createdAt: Date;
+  declare readonly updatedAt: Date;
 }
 
 Conversion.init(
