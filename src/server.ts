@@ -11753,6 +11753,45 @@ app.use('/api/auth', authRoutes);
 // Conversion limits endpoint
 app.get('/api/conversion-status', getConversionStatus);
 
+// Debug endpoint to check anonymous conversions
+app.get('/api/debug/anonymous-conversions', async (req, res) => {
+  try {
+    const clientIP = req.ip || req.connection.remoteAddress || req.socket.remoteAddress || '127.0.0.1';
+    console.log('🔍 Debug: Checking anonymous conversions for IP:', clientIP);
+    
+    // Get all anonymous conversion records
+    const allRecords = await AnonymousConversion.findAll({
+      order: [['createdAt', 'DESC']],
+      limit: 10
+    });
+    
+    // Get specific record for this IP
+    const ipRecord = await AnonymousConversion.findOne({
+      where: { ipAddress: clientIP }
+    });
+    
+    res.json({
+      success: true,
+      clientIP,
+      ipRecord,
+      allRecords: allRecords.map(record => ({
+        id: record.id,
+        ipAddress: record.ipAddress,
+        conversionCount: record.conversionCount,
+        lastConversionAt: record.lastConversionAt,
+        createdAt: record.createdAt
+      })),
+      totalRecords: allRecords.length
+    });
+  } catch (error) {
+    console.error('Error getting anonymous conversions debug info:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to get debug info'
+    });
+  }
+});
+
 // Reset conversion limits endpoint (for testing)
 app.post('/api/conversion-reset', async (req, res) => {
   try {

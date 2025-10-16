@@ -136,7 +136,27 @@ export const recordConversion = async (req: Request, res: Response, next: NextFu
 export const getConversionStatus = async (req: Request, res: Response) => {
   try {
     const clientIP = getClientIP(req);
+    
+    console.log('🔍 Getting conversion status for IP:', {
+      clientIP,
+      headers: {
+        'x-forwarded-for': req.headers['x-forwarded-for'],
+        'x-real-ip': req.headers['x-real-ip'],
+        'cf-connecting-ip': req.headers['cf-connecting-ip'],
+        'user-agent': req.headers['user-agent']?.substring(0, 50) + '...'
+      },
+      connection: {
+        remoteAddress: req.connection.remoteAddress,
+        socketRemoteAddress: req.socket.remoteAddress
+      }
+    });
+    
     const status = await AnonymousConversionService.getConversionStatus(clientIP);
+    
+    console.log('🔍 Conversion status result:', {
+      clientIP,
+      status
+    });
     
     res.json({
       success: true,
