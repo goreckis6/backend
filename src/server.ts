@@ -11843,6 +11843,38 @@ app.post('/api/conversion-reset-expired', async (req, res) => {
   }
 });
 
+// Record mock conversion for AVRO converters (no actual file processing)
+app.post('/api/record-mock-conversion', checkConversionLimits, async (req, res) => {
+  try {
+    const { format, filename } = req.body;
+    const clientIP = req.ip || req.connection.remoteAddress || req.socket.remoteAddress || '127.0.0.1';
+    const userAgent = req.headers['user-agent'];
+
+    console.log('🔍 Recording mock conversion:', {
+      format,
+      filename,
+      clientIP,
+      userAgent: userAgent ? userAgent.substring(0, 50) + '...' : 'unknown'
+    });
+
+    // Record the conversion for anonymous users
+    await AnonymousConversionService.recordConversion(clientIP, userAgent);
+
+    res.json({
+      success: true,
+      message: 'Mock conversion recorded successfully',
+      format,
+      filename
+    });
+  } catch (error) {
+    console.error('Error recording mock conversion:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to record mock conversion'
+    });
+  }
+});
+
 // Test user creation endpoint
 app.post('/api/test-user', async (req, res) => {
   try {
