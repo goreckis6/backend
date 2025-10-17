@@ -12810,7 +12810,7 @@ app.post('/convert/bmp-to-webp/batch', uploadBatch, async (req, res) => {
                   success: false,
                   error: stderr || `Conversion failed with code ${code}`
                 });
-                reject(new Error(`Conversion failed for ${file.originalname}`));
+                resolve(); // Continue with other files even if this one failed
               }
             } catch (error) {
               console.error('Error handling batch conversion result:', error);
@@ -12821,7 +12821,7 @@ app.post('/convert/bmp-to-webp/batch', uploadBatch, async (req, res) => {
                 success: false,
                 error: error instanceof Error ? error.message : 'Unknown error'
               });
-              reject(new Error(`Error handling result for ${file.originalname}`));
+              resolve(); // Continue with other files even if this one failed
             }
           });
         });
@@ -13018,7 +13018,7 @@ app.post('/convert/cr2-to-ico/batch', uploadBatch, async (req, res) => {
                   success: false,
                   error: stderr || `Conversion failed with code ${code}`
                 });
-                reject(new Error(`Conversion failed for ${file.originalname}`));
+                resolve(); // Continue with other files even if this one failed
               }
             } catch (error) {
               console.error('Error handling batch conversion result:', error);
@@ -13029,7 +13029,7 @@ app.post('/convert/cr2-to-ico/batch', uploadBatch, async (req, res) => {
                 success: false,
                 error: error instanceof Error ? error.message : 'Unknown error'
               });
-              reject(new Error(`Error handling result for ${file.originalname}`));
+              resolve(); // Continue with other files even if this one failed
             }
           });
         });
@@ -13226,7 +13226,7 @@ app.post('/convert/cr2-to-webp/batch', uploadBatch, async (req, res) => {
                   success: false,
                   error: stderr || `Conversion failed with code ${code}`
                 });
-                reject(new Error(`Conversion failed for ${file.originalname}`));
+                resolve(); // Continue with other files even if this one failed
               }
             } catch (error) {
               console.error('Error handling batch conversion result:', error);
@@ -13237,7 +13237,7 @@ app.post('/convert/cr2-to-webp/batch', uploadBatch, async (req, res) => {
                 success: false,
                 error: error instanceof Error ? error.message : 'Unknown error'
               });
-              reject(new Error(`Error handling result for ${file.originalname}`));
+              resolve(); // Continue with other files even if this one failed
             }
           });
         });
