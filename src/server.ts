@@ -6114,6 +6114,11 @@ app.get('/download/:filename', async (req, res) => {
     });
 
     if (!metadata) {
+      res.set({
+        'Access-Control-Allow-Origin': '*',
+        'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+        'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept'
+      });
       return res.status(404).json({ error: 'File not found or expired' });
     }
 
@@ -6121,6 +6126,11 @@ app.get('/download/:filename', async (req, res) => {
     const stat = await fs.stat(filePath).catch(() => null);
     if (!stat) {
       batchFileMetadata.delete(storedFilename);
+      res.set({
+        'Access-Control-Allow-Origin': '*',
+        'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+        'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept'
+      });
       return res.status(404).json({ error: 'File not found or expired' });
     }
 
@@ -6146,7 +6156,10 @@ app.get('/download/:filename', async (req, res) => {
       'Content-Type': metadata.mime,
       'Content-Disposition': `attachment; filename="${metadata.downloadName}"`,
       'Content-Length': stat.size.toString(),
-      'Cache-Control': 'no-cache'
+      'Cache-Control': 'no-cache',
+      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+      'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept'
     });
 
     const stream = (await import('node:fs')).createReadStream(filePath);
@@ -6157,6 +6170,11 @@ app.get('/download/:filename', async (req, res) => {
     stream.pipe(res);
   } catch (error) {
     console.error('Download error:', error);
+    res.set({
+      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+      'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept'
+    });
     res.status(500).json({ error: 'Failed to download file' });
   }
 });
