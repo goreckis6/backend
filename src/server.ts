@@ -5494,6 +5494,11 @@ app.post('/api/convert', conversionTimeout(5 * 60 * 1000), checkConversionLimits
       }
       
       if (!file) {
+      res.set({
+        'Access-Control-Allow-Origin': '*',
+        'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+        'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept'
+      });
       return res.status(400).json({ error: 'No file uploaded' });
       }
     }
@@ -5545,6 +5550,11 @@ app.post('/api/convert', conversionTimeout(5 * 60 * 1000), checkConversionLimits
             console.log('Created generic fallback filename');
           }
         } else {
+          res.set({
+            'Access-Control-Allow-Origin': '*',
+            'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+            'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept'
+          });
           return res.status(400).json({ error: 'Invalid file upload - missing filename and content' });
         }
       }
@@ -5552,6 +5562,11 @@ app.post('/api/convert', conversionTimeout(5 * 60 * 1000), checkConversionLimits
 
     if (!file.buffer || file.buffer.length === 0) {
       console.log('ERROR: File has no content');
+      res.set({
+        'Access-Control-Allow-Origin': '*',
+        'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+        'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept'
+      });
       return res.status(400).json({ error: 'Invalid file upload - empty file' });
     }
 
@@ -5869,6 +5884,11 @@ app.post('/api/convert', conversionTimeout(5 * 60 * 1000), checkConversionLimits
       mime: result.mime
     });
     
+    res.set({
+      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+      'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept'
+    });
     res.json({
       success: true,
       downloadPath: `/download/${encodeURIComponent(result.storedFilename!)}`,
@@ -5902,6 +5922,11 @@ app.post('/api/convert', conversionTimeout(5 * 60 * 1000), checkConversionLimits
     const errorMessage = error instanceof Error ? error.message : 'Unknown conversion error';
     console.log('=== CONVERSION REQUEST END (ERROR) ===');
     
+    res.set({
+      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+      'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept'
+    });
     res.status(500).json({
       error: 'Conversion failed',
       details: errorMessage
@@ -5915,6 +5940,11 @@ app.post('/api/convert/batch', conversionTimeout(10 * 60 * 1000), checkConversio
   const format = String(requestOptions.format ?? 'webp').toLowerCase();
 
   if (!files || files.length === 0) {
+    res.set({
+      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+      'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept'
+    });
     return res.status(400).json({
       success: false,
       processed: 0,
@@ -5924,6 +5954,11 @@ app.post('/api/convert/batch', conversionTimeout(10 * 60 * 1000), checkConversio
   }
 
   if (files.length > 20) {
+    res.set({
+      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+      'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept'
+    });
     return res.status(400).json({
       success: false,
       processed: 0,
@@ -6047,6 +6082,11 @@ app.post('/api/convert/batch', conversionTimeout(10 * 60 * 1000), checkConversio
     }
   }
 
+  res.set({
+    'Access-Control-Allow-Origin': '*',
+    'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+    'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept'
+  });
   res.json({
     success: results.every(result => result.success),
     processed,
