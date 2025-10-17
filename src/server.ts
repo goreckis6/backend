@@ -6030,10 +6030,16 @@ app.post('/api/convert/batch', conversionTimeout(10 * 60 * 1000), checkConversio
       } else if (isCSV && format === 'ndjson') {
         console.log('Batch: Routing to Python (CSV to NDJSON conversion)');
         output = await convertCsvToNdjsonPython(file, requestOptions, true);
+      } else if (isCSV && format === 'doc') {
+        console.log('Batch: Routing to Python (CSV to DOC conversion)');
+        output = await convertCsvToDocPython(file, requestOptions, true);
+      } else if (isCSV && format === 'docx') {
+        console.log('Batch: Routing to Python (CSV to DOCX conversion)');
+        output = await convertCsvToDocxPython(file, requestOptions, true);
       } else if (isCSV && ['epub', 'html'].includes(format)) {
         console.log(`Batch: Routing to Python (CSV to ${format.toUpperCase()} conversion)`);
         output = await convertCsvToEbookPython(file, format, requestOptions, true);
-      } else if (isCSV && LIBREOFFICE_CONVERSIONS[format]) {
+      } else if (isCSV && LIBREOFFICE_CONVERSIONS[format] && format !== 'doc' && format !== 'docx') {
         console.log('Routing to LibreOffice (CSV conversion)');
         output = await convertCsvWithLibreOffice(file, format, requestOptions, true);
       } else if ((isDOC || file.originalname.toLowerCase().endsWith('.doc')) && format === 'csv') {
