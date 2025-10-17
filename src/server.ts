@@ -12202,8 +12202,22 @@ app.post('/convert/avro-to-json/single', upload.single('file'), async (req, res)
 
     await fs.writeFile(inputPath, file.buffer);
 
+    const scriptPath = path.join(__dirname, '../scripts/avro_to_json.py');
+    console.log('AVRO to JSON: Executing Python script:', scriptPath);
+    console.log('AVRO to JSON: Input file:', inputPath);
+    console.log('AVRO to JSON: Output file:', outputPath);
+    
+    // Check if script exists
+    try {
+      await fs.access(scriptPath);
+      console.log('AVRO to JSON: Script exists');
+    } catch (error) {
+      console.error('AVRO to JSON: Script does not exist:', scriptPath);
+      return res.status(500).json({ error: 'Conversion script not found' });
+    }
+
     const python = spawn('/opt/venv/bin/python', [
-      path.join(__dirname, '../scripts/avro_to_json.py'),
+      scriptPath,
       inputPath,
       outputPath
     ]);
@@ -12213,28 +12227,35 @@ app.post('/convert/avro-to-json/single', upload.single('file'), async (req, res)
 
     python.stdout.on('data', (data: Buffer) => {
       stdout += data.toString();
+      console.log('AVRO to JSON stdout:', data.toString());
     });
 
     python.stderr.on('data', (data: Buffer) => {
       stderr += data.toString();
+      console.log('AVRO to JSON stderr:', data.toString());
     });
 
     python.on('close', async (code: number) => {
+      console.log('AVRO to JSON: Python script finished with code:', code);
+      console.log('AVRO to JSON: stdout:', stdout);
+      console.log('AVRO to JSON: stderr:', stderr);
+      
       try {
         if (code === 0 && await fs.access(outputPath).then(() => true).catch(() => false)) {
           const outputBuffer = await fs.readFile(outputPath);
+          console.log('AVRO to JSON: Output file size:', outputBuffer.length);
           res.set({
             'Content-Type': 'application/json',
             'Content-Disposition': `attachment; filename="${path.basename(outputPath)}"`
           });
           res.send(outputBuffer);
         } else {
-          console.error('AVRO to JSON conversion failed:', stderr);
-          res.status(500).json({ error: 'Conversion failed' });
+          console.error('AVRO to JSON conversion failed. Code:', code, 'Stderr:', stderr);
+          res.status(500).json({ error: 'Conversion failed', details: stderr });
         }
       } catch (error) {
         console.error('Error handling conversion result:', error);
-        res.status(500).json({ error: 'Conversion failed' });
+        res.status(500).json({ error: 'Conversion failed', details: error.message });
       } finally {
         await fs.rm(tmpDir, { recursive: true, force: true }).catch(() => undefined);
       }
@@ -12331,8 +12352,22 @@ app.post('/convert/avro-to-ndjson/single', upload.single('file'), async (req, re
 
     await fs.writeFile(inputPath, file.buffer);
 
+    const scriptPath = path.join(__dirname, '../scripts/avro_to_ndjson.py');
+    console.log('AVRO to NDJSON: Executing Python script:', scriptPath);
+    console.log('AVRO to NDJSON: Input file:', inputPath);
+    console.log('AVRO to NDJSON: Output file:', outputPath);
+    
+    // Check if script exists
+    try {
+      await fs.access(scriptPath);
+      console.log('AVRO to NDJSON: Script exists');
+    } catch (error) {
+      console.error('AVRO to NDJSON: Script does not exist:', scriptPath);
+      return res.status(500).json({ error: 'Conversion script not found' });
+    }
+
     const python = spawn('/opt/venv/bin/python', [
-      path.join(__dirname, '../scripts/avro_to_ndjson.py'),
+      scriptPath,
       inputPath,
       outputPath
     ]);
@@ -12342,28 +12377,35 @@ app.post('/convert/avro-to-ndjson/single', upload.single('file'), async (req, re
 
     python.stdout.on('data', (data: Buffer) => {
       stdout += data.toString();
+      console.log('AVRO to NDJSON stdout:', data.toString());
     });
 
     python.stderr.on('data', (data: Buffer) => {
       stderr += data.toString();
+      console.log('AVRO to NDJSON stderr:', data.toString());
     });
 
     python.on('close', async (code: number) => {
+      console.log('AVRO to NDJSON: Python script finished with code:', code);
+      console.log('AVRO to NDJSON: stdout:', stdout);
+      console.log('AVRO to NDJSON: stderr:', stderr);
+      
       try {
         if (code === 0 && await fs.access(outputPath).then(() => true).catch(() => false)) {
           const outputBuffer = await fs.readFile(outputPath);
+          console.log('AVRO to NDJSON: Output file size:', outputBuffer.length);
           res.set({
             'Content-Type': 'application/x-ndjson',
             'Content-Disposition': `attachment; filename="${path.basename(outputPath)}"`
           });
           res.send(outputBuffer);
         } else {
-          console.error('AVRO to NDJSON conversion failed:', stderr);
-          res.status(500).json({ error: 'Conversion failed' });
+          console.error('AVRO to NDJSON conversion failed. Code:', code, 'Stderr:', stderr);
+          res.status(500).json({ error: 'Conversion failed', details: stderr });
         }
       } catch (error) {
         console.error('Error handling conversion result:', error);
-        res.status(500).json({ error: 'Conversion failed' });
+        res.status(500).json({ error: 'Conversion failed', details: error.message });
       } finally {
         await fs.rm(tmpDir, { recursive: true, force: true }).catch(() => undefined);
       }
@@ -12460,8 +12502,22 @@ app.post('/convert/csv-to-avro/single', upload.single('file'), async (req, res) 
 
     await fs.writeFile(inputPath, file.buffer);
 
+    const scriptPath = path.join(__dirname, '../scripts/csv_to_avro.py');
+    console.log('CSV to AVRO: Executing Python script:', scriptPath);
+    console.log('CSV to AVRO: Input file:', inputPath);
+    console.log('CSV to AVRO: Output file:', outputPath);
+    
+    // Check if script exists
+    try {
+      await fs.access(scriptPath);
+      console.log('CSV to AVRO: Script exists');
+    } catch (error) {
+      console.error('CSV to AVRO: Script does not exist:', scriptPath);
+      return res.status(500).json({ error: 'Conversion script not found' });
+    }
+
     const python = spawn('/opt/venv/bin/python', [
-      path.join(__dirname, '../scripts/csv_to_avro.py'),
+      scriptPath,
       inputPath,
       outputPath
     ]);
@@ -12471,28 +12527,35 @@ app.post('/convert/csv-to-avro/single', upload.single('file'), async (req, res) 
 
     python.stdout.on('data', (data: Buffer) => {
       stdout += data.toString();
+      console.log('CSV to AVRO stdout:', data.toString());
     });
 
     python.stderr.on('data', (data: Buffer) => {
       stderr += data.toString();
+      console.log('CSV to AVRO stderr:', data.toString());
     });
 
     python.on('close', async (code: number) => {
+      console.log('CSV to AVRO: Python script finished with code:', code);
+      console.log('CSV to AVRO: stdout:', stdout);
+      console.log('CSV to AVRO: stderr:', stderr);
+      
       try {
         if (code === 0 && await fs.access(outputPath).then(() => true).catch(() => false)) {
           const outputBuffer = await fs.readFile(outputPath);
+          console.log('CSV to AVRO: Output file size:', outputBuffer.length);
           res.set({
             'Content-Type': 'application/avro',
             'Content-Disposition': `attachment; filename="${path.basename(outputPath)}"`
           });
           res.send(outputBuffer);
         } else {
-          console.error('CSV to AVRO conversion failed:', stderr);
-          res.status(500).json({ error: 'Conversion failed' });
+          console.error('CSV to AVRO conversion failed. Code:', code, 'Stderr:', stderr);
+          res.status(500).json({ error: 'Conversion failed', details: stderr });
         }
       } catch (error) {
         console.error('Error handling conversion result:', error);
-        res.status(500).json({ error: 'Conversion failed' });
+        res.status(500).json({ error: 'Conversion failed', details: error.message });
       } finally {
         await fs.rm(tmpDir, { recursive: true, force: true }).catch(() => undefined);
       }

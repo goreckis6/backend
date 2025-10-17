@@ -33,23 +33,41 @@ def convert_avro_to_json(avro_file, output_file, orient='records', indent=2, dat
     print(f"Date format: {date_format}")
     
     try:
+        # Check if input file exists and is readable
+        if not os.path.exists(avro_file):
+            print(f"ERROR: Input AVRO file not found: {avro_file}")
+            return False
+            
+        file_size = os.path.getsize(avro_file)
+        print(f"AVRO file size: {file_size} bytes")
+        
+        if file_size == 0:
+            print("ERROR: AVRO file is empty")
+            return False
+        
         # Read AVRO file
         print("Reading AVRO file...")
         records = []
         schema = None
         
-        with open(avro_file, 'rb') as avro_file_handle:
-            avro_reader = fastavro.reader(avro_file_handle)
-            schema = avro_reader.schema
-            print(f"AVRO schema: {schema}")
-            
-            # Reset file position to beginning
-            avro_file_handle.seek(0)
-            avro_reader = fastavro.reader(avro_file_handle)
-            
-            # Read all records
-            for record in avro_reader:
-                records.append(record)
+        try:
+            with open(avro_file, 'rb') as avro_file_handle:
+                avro_reader = fastavro.reader(avro_file_handle)
+                schema = avro_reader.schema
+                print(f"AVRO schema: {schema}")
+                
+                # Reset file position to beginning
+                avro_file_handle.seek(0)
+                avro_reader = fastavro.reader(avro_file_handle)
+                
+                # Read all records
+                for record in avro_reader:
+                    records.append(record)
+                    
+        except Exception as avro_error:
+            print(f"ERROR: Failed to read AVRO file: {avro_error}")
+            print(f"ERROR: This might not be a valid AVRO file or the file is corrupted")
+            return False
         
         print(f"AVRO loaded successfully")
         print(f"Records count: {len(records)}")
