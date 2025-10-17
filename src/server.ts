@@ -10209,6 +10209,13 @@ app.post('/api/preview/pef', uploadDocument.single('file'), async (req, res) => 
 app.post('/convert/csv-to-parquet/single', upload.single('file'), async (req, res) => {
   console.log('CSV->Parquet single conversion request');
   
+  // Set CORS headers
+  res.set({
+    'Access-Control-Allow-Origin': '*',
+    'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+    'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept'
+  });
+  
   try {
     const file = req.file;
     if (!file) {
@@ -10221,7 +10228,10 @@ app.post('/convert/csv-to-parquet/single', upload.single('file'), async (req, re
     res.set({
       'Content-Type': result.mime,
       'Content-Disposition': `attachment; filename="${result.filename}"`,
-      'Content-Length': result.buffer.length
+      'Content-Length': result.buffer.length,
+      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+      'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept'
     });
     
     res.send(result.buffer);
@@ -10235,6 +10245,13 @@ app.post('/convert/csv-to-parquet/single', upload.single('file'), async (req, re
 // Route: CSV to Parquet (Batch)
 app.post('/convert/csv-to-parquet/batch', uploadBatch, async (req, res) => {
   console.log('CSV->Parquet batch conversion request');
+  
+  // Set CORS headers
+  res.set({
+    'Access-Control-Allow-Origin': '*',
+    'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+    'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept'
+  });
   
   try {
     const files = req.files as Express.Multer.File[];
@@ -10275,6 +10292,13 @@ app.post('/convert/csv-to-parquet/batch', uploadBatch, async (req, res) => {
 app.post('/convert/csv-to-sql/single', upload.single('file'), async (req, res) => {
   console.log('CSV->SQL single conversion request');
   
+  // Set CORS headers
+  res.set({
+    'Access-Control-Allow-Origin': '*',
+    'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+    'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept'
+  });
+  
   try {
     const file = req.file;
     if (!file) {
@@ -10287,7 +10311,10 @@ app.post('/convert/csv-to-sql/single', upload.single('file'), async (req, res) =
     res.set({
       'Content-Type': result.mime,
       'Content-Disposition': `attachment; filename="${result.filename}"`,
-      'Content-Length': result.buffer.length
+      'Content-Length': result.buffer.length,
+      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+      'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept'
     });
     
     res.send(result.buffer);
@@ -10301,6 +10328,13 @@ app.post('/convert/csv-to-sql/single', upload.single('file'), async (req, res) =
 // Route: CSV to SQL (Batch)
 app.post('/convert/csv-to-sql/batch', uploadBatch, async (req, res) => {
   console.log('CSV->SQL batch conversion request');
+  
+  // Set CORS headers
+  res.set({
+    'Access-Control-Allow-Origin': '*',
+    'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+    'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept'
+  });
   
   try {
     const files = req.files as Express.Multer.File[];
@@ -10341,6 +10375,13 @@ app.post('/convert/csv-to-sql/batch', uploadBatch, async (req, res) => {
 app.post('/convert/csv-to-toml/single', upload.single('file'), async (req, res) => {
   console.log('CSV->TOML single conversion request');
   
+  // Set CORS headers
+  res.set({
+    'Access-Control-Allow-Origin': '*',
+    'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+    'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept'
+  });
+  
   try {
     const file = req.file;
     if (!file) {
@@ -10353,7 +10394,10 @@ app.post('/convert/csv-to-toml/single', upload.single('file'), async (req, res) 
     res.set({
       'Content-Type': result.mime,
       'Content-Disposition': `attachment; filename="${result.filename}"`,
-      'Content-Length': result.buffer.length
+      'Content-Length': result.buffer.length,
+      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+      'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept'
     });
     
     res.send(result.buffer);
@@ -10367,6 +10411,13 @@ app.post('/convert/csv-to-toml/single', upload.single('file'), async (req, res) 
 // Route: CSV to TOML (Batch)
 app.post('/convert/csv-to-toml/batch', uploadBatch, async (req, res) => {
   console.log('CSV->TOML batch conversion request');
+  
+  // Set CORS headers
+  res.set({
+    'Access-Control-Allow-Origin': '*',
+    'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+    'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept'
+  });
   
   try {
     const files = req.files as Express.Multer.File[];
@@ -10490,6 +10541,13 @@ const convertCsvToTomlPython = async (
 app.post('/convert/csv-to-xml/single', upload.single('file'), async (req, res) => {
   console.log('CSV->XML single conversion request');
   
+  // Set CORS headers
+  res.set({
+    'Access-Control-Allow-Origin': '*',
+    'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+    'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept'
+  });
+  
   try {
     const file = req.file;
     if (!file) {
@@ -10502,7 +10560,10 @@ app.post('/convert/csv-to-xml/single', upload.single('file'), async (req, res) =
     res.set({
       'Content-Type': result.mime,
       'Content-Disposition': `attachment; filename="${result.filename}"`,
-      'Content-Length': result.buffer.length
+      'Content-Length': result.buffer.length,
+      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+      'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept'
     });
     
     res.send(result.buffer);
@@ -10516,6 +10577,13 @@ app.post('/convert/csv-to-xml/single', upload.single('file'), async (req, res) =
 // Route: CSV to XML (Batch)
 app.post('/convert/csv-to-xml/batch', uploadBatch, async (req, res) => {
   console.log('CSV->XML batch conversion request');
+  
+  // Set CORS headers
+  res.set({
+    'Access-Control-Allow-Origin': '*',
+    'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+    'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept'
+  });
   
   try {
     const files = req.files as Express.Multer.File[];
@@ -10645,6 +10713,13 @@ const convertCsvToXmlPython = async (
 app.post('/convert/csv-to-yaml/single', upload.single('file'), async (req, res) => {
   console.log('CSV->YAML single conversion request');
   
+  // Set CORS headers
+  res.set({
+    'Access-Control-Allow-Origin': '*',
+    'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+    'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept'
+  });
+  
   try {
     const file = req.file;
     if (!file) {
@@ -10657,7 +10732,10 @@ app.post('/convert/csv-to-yaml/single', upload.single('file'), async (req, res) 
     res.set({
       'Content-Type': result.mime,
       'Content-Disposition': `attachment; filename="${result.filename}"`,
-      'Content-Length': result.buffer.length
+      'Content-Length': result.buffer.length,
+      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+      'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept'
     });
     
     res.send(result.buffer);
@@ -10671,6 +10749,13 @@ app.post('/convert/csv-to-yaml/single', upload.single('file'), async (req, res) 
 // Route: CSV to YAML (Batch)
 app.post('/convert/csv-to-yaml/batch', uploadBatch, async (req, res) => {
   console.log('CSV->YAML batch conversion request');
+  
+  // Set CORS headers
+  res.set({
+    'Access-Control-Allow-Origin': '*',
+    'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+    'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept'
+  });
   
   try {
     const files = req.files as Express.Multer.File[];
