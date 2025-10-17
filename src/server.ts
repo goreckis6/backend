@@ -12052,8 +12052,22 @@ app.post('/convert/avro-to-csv/single', upload.single('file'), async (req, res) 
 
     await fs.writeFile(inputPath, file.buffer);
 
-    const python = spawn('python3', [
-      path.join(__dirname, '../scripts/avro_to_csv.py'),
+    const scriptPath = path.join(__dirname, '../scripts/avro_to_csv.py');
+    console.log('AVRO to CSV: Executing Python script:', scriptPath);
+    console.log('AVRO to CSV: Input file:', inputPath);
+    console.log('AVRO to CSV: Output file:', outputPath);
+    
+    // Check if script exists
+    try {
+      await fs.access(scriptPath);
+      console.log('AVRO to CSV: Script exists');
+    } catch (error) {
+      console.error('AVRO to CSV: Script does not exist:', scriptPath);
+      return res.status(500).json({ error: 'Conversion script not found' });
+    }
+
+    const python = spawn('/opt/venv/bin/python', [
+      scriptPath,
       inputPath,
       outputPath
     ]);
@@ -12063,28 +12077,35 @@ app.post('/convert/avro-to-csv/single', upload.single('file'), async (req, res) 
 
     python.stdout.on('data', (data: Buffer) => {
       stdout += data.toString();
+      console.log('AVRO to CSV stdout:', data.toString());
     });
 
     python.stderr.on('data', (data: Buffer) => {
       stderr += data.toString();
+      console.log('AVRO to CSV stderr:', data.toString());
     });
 
     python.on('close', async (code: number) => {
+      console.log('AVRO to CSV: Python script finished with code:', code);
+      console.log('AVRO to CSV: stdout:', stdout);
+      console.log('AVRO to CSV: stderr:', stderr);
+      
       try {
         if (code === 0 && await fs.access(outputPath).then(() => true).catch(() => false)) {
           const outputBuffer = await fs.readFile(outputPath);
+          console.log('AVRO to CSV: Output file size:', outputBuffer.length);
           res.set({
             'Content-Type': 'text/csv',
             'Content-Disposition': `attachment; filename="${path.basename(outputPath)}"`
           });
           res.send(outputBuffer);
         } else {
-          console.error('AVRO to CSV conversion failed:', stderr);
-          res.status(500).json({ error: 'Conversion failed' });
+          console.error('AVRO to CSV conversion failed. Code:', code, 'Stderr:', stderr);
+          res.status(500).json({ error: 'Conversion failed', details: stderr });
         }
       } catch (error) {
         console.error('Error handling conversion result:', error);
-        res.status(500).json({ error: 'Conversion failed' });
+        res.status(500).json({ error: 'Conversion failed', details: error.message });
       } finally {
         await fs.rm(tmpDir, { recursive: true, force: true }).catch(() => undefined);
       }
@@ -12118,7 +12139,7 @@ app.post('/convert/avro-to-csv/batch', uploadBatch, async (req, res) => {
 
         await fs.writeFile(inputPath, file.buffer);
 
-        const python = spawn('python3', [
+        const python = spawn('/opt/venv/bin/python', [
           path.join(__dirname, '../scripts/avro_to_csv.py'),
           inputPath,
           outputPath
@@ -12181,7 +12202,7 @@ app.post('/convert/avro-to-json/single', upload.single('file'), async (req, res)
 
     await fs.writeFile(inputPath, file.buffer);
 
-    const python = spawn('python3', [
+    const python = spawn('/opt/venv/bin/python', [
       path.join(__dirname, '../scripts/avro_to_json.py'),
       inputPath,
       outputPath
@@ -12247,7 +12268,7 @@ app.post('/convert/avro-to-json/batch', uploadBatch, async (req, res) => {
 
         await fs.writeFile(inputPath, file.buffer);
 
-        const python = spawn('python3', [
+        const python = spawn('/opt/venv/bin/python', [
           path.join(__dirname, '../scripts/avro_to_json.py'),
           inputPath,
           outputPath
@@ -12310,7 +12331,7 @@ app.post('/convert/avro-to-ndjson/single', upload.single('file'), async (req, re
 
     await fs.writeFile(inputPath, file.buffer);
 
-    const python = spawn('python3', [
+    const python = spawn('/opt/venv/bin/python', [
       path.join(__dirname, '../scripts/avro_to_ndjson.py'),
       inputPath,
       outputPath
@@ -12376,7 +12397,7 @@ app.post('/convert/avro-to-ndjson/batch', uploadBatch, async (req, res) => {
 
         await fs.writeFile(inputPath, file.buffer);
 
-        const python = spawn('python3', [
+        const python = spawn('/opt/venv/bin/python', [
           path.join(__dirname, '../scripts/avro_to_ndjson.py'),
           inputPath,
           outputPath
@@ -12439,7 +12460,7 @@ app.post('/convert/csv-to-avro/single', upload.single('file'), async (req, res) 
 
     await fs.writeFile(inputPath, file.buffer);
 
-    const python = spawn('python3', [
+    const python = spawn('/opt/venv/bin/python', [
       path.join(__dirname, '../scripts/csv_to_avro.py'),
       inputPath,
       outputPath
@@ -12505,7 +12526,7 @@ app.post('/convert/csv-to-avro/batch', uploadBatch, async (req, res) => {
 
         await fs.writeFile(inputPath, file.buffer);
 
-        const python = spawn('python3', [
+        const python = spawn('/opt/venv/bin/python', [
           path.join(__dirname, '../scripts/csv_to_avro.py'),
           inputPath,
           outputPath
