@@ -7,7 +7,7 @@ import sharp from 'sharp';
 import { promises as fs } from 'fs';
 import path from 'path';
 import os from 'os';
-import { execFile } from 'child_process';
+import { execFile, spawn } from 'child_process';
 import { promisify } from 'util';
 import { randomUUID } from 'crypto';
 import Papa from 'papaparse';
@@ -12052,7 +12052,6 @@ app.post('/convert/avro-to-csv/single', upload.single('file'), async (req, res) 
 
     await fs.writeFile(inputPath, file.buffer);
 
-    const { spawn } = require('child_process');
     const python = spawn('python3', [
       path.join(__dirname, '../scripts/avro_to_csv.py'),
       inputPath,
@@ -12119,7 +12118,6 @@ app.post('/convert/avro-to-csv/batch', uploadBatch, async (req, res) => {
 
         await fs.writeFile(inputPath, file.buffer);
 
-        const { spawn } = require('child_process');
         const python = spawn('python3', [
           path.join(__dirname, '../scripts/avro_to_csv.py'),
           inputPath,
@@ -12183,7 +12181,6 @@ app.post('/convert/avro-to-json/single', upload.single('file'), async (req, res)
 
     await fs.writeFile(inputPath, file.buffer);
 
-    const { spawn } = require('child_process');
     const python = spawn('python3', [
       path.join(__dirname, '../scripts/avro_to_json.py'),
       inputPath,
@@ -12250,7 +12247,6 @@ app.post('/convert/avro-to-json/batch', uploadBatch, async (req, res) => {
 
         await fs.writeFile(inputPath, file.buffer);
 
-        const { spawn } = require('child_process');
         const python = spawn('python3', [
           path.join(__dirname, '../scripts/avro_to_json.py'),
           inputPath,
@@ -12314,7 +12310,6 @@ app.post('/convert/avro-to-ndjson/single', upload.single('file'), async (req, re
 
     await fs.writeFile(inputPath, file.buffer);
 
-    const { spawn } = require('child_process');
     const python = spawn('python3', [
       path.join(__dirname, '../scripts/avro_to_ndjson.py'),
       inputPath,
@@ -12381,7 +12376,6 @@ app.post('/convert/avro-to-ndjson/batch', uploadBatch, async (req, res) => {
 
         await fs.writeFile(inputPath, file.buffer);
 
-        const { spawn } = require('child_process');
         const python = spawn('python3', [
           path.join(__dirname, '../scripts/avro_to_ndjson.py'),
           inputPath,
@@ -12445,7 +12439,6 @@ app.post('/convert/csv-to-avro/single', upload.single('file'), async (req, res) 
 
     await fs.writeFile(inputPath, file.buffer);
 
-    const { spawn } = require('child_process');
     const python = spawn('python3', [
       path.join(__dirname, '../scripts/csv_to_avro.py'),
       inputPath,
@@ -12512,7 +12505,6 @@ app.post('/convert/csv-to-avro/batch', uploadBatch, async (req, res) => {
 
         await fs.writeFile(inputPath, file.buffer);
 
-        const { spawn } = require('child_process');
         const python = spawn('python3', [
           path.join(__dirname, '../scripts/csv_to_avro.py'),
           inputPath,
