@@ -5299,32 +5299,7 @@ app.use(helmet({
   contentSecurityPolicy: false, // Disable CSP for file uploads
   crossOriginEmbedderPolicy: false
 }));
-// CORS configuration with debugging
-app.use((req, res, next) => {
-  console.log('CORS middleware - Request origin:', req.get('origin'));
-  console.log('CORS middleware - Request method:', req.method);
-  next();
-});
-
-app.use(cors({
-  origin: [
-    'https://morphy-1-ulvv.onrender.com',
-    'http://localhost:3000',
-    'http://localhost:5173'
-  ],
-  credentials: true,
-  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'Accept']
-}));
-
-// Additional CORS headers for all responses
-app.use((req, res, next) => {
-  res.header('Access-Control-Allow-Origin', 'https://morphy-1-ulvv.onrender.com');
-  res.header('Access-Control-Allow-Credentials', 'true');
-  res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
-  res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization, Accept');
-  next();
-});
+// CORS configuration is handled later in the file
 
 app.use('/api/', limiter);
 
@@ -11708,16 +11683,26 @@ const allowedOrigins = [
 
 app.use(cors({
   origin: (origin, callback) => {
+    console.log('CORS check - Request origin:', origin);
+    console.log('CORS check - Allowed origins:', allowedOrigins);
+    
     // Allow requests with no origin (like mobile apps or curl requests)
-    if (!origin) return callback(null, true);
+    if (!origin) {
+      console.log('CORS check - No origin, allowing request');
+      return callback(null, true);
+    }
+    
     if (allowedOrigins.indexOf(origin) === -1) {
       const msg = `The CORS policy for this site does not allow access from the specified Origin: ${origin}`;
+      console.log('CORS check - Origin not allowed:', origin);
       return callback(new Error(msg), false);
     }
+    
+    console.log('CORS check - Origin allowed:', origin);
     return callback(null, true);
   },
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'Accept'],
   credentials: true,
 }));
 
@@ -12034,156 +12019,7 @@ app.get('/api/analytics/recent', async (req, res) => {
 
 // ==================== IMAGE CONVERSION ROUTES ====================
 
-// Route: BMP to WebP (Single)
-app.post('/convert/bmp-to-webp/single', upload.single('file'), async (req, res) => {
-  console.log('BMP->WebP single conversion request');
-
-  const tmpDir = path.join(os.tmpdir(), `bmp-webp-${Date.now()}`);
-
-  try {
-    const file = req.file;
-    if (!file) {
-      return res.status(400).json({ error: 'No file uploaded' });
-    }
-    await fs.mkdir(tmpDir, { recursive: true });
-
-    const inputPath = path.join(tmpDir, file.originalname);
-    const outputPath = path.join(tmpDir, file.originalname.replace(/\.bmp$/i, '.webp'));
-
-    await fs.writeFile(inputPath, file.buffer);
-
-    const scriptPath = path.join(__dirname, '../scripts/bmp_to_webp.py');
-    console.log('BMP to WebP: Executing Python script:', scriptPath);
-    console.log('BMP to WebP: Input file:', inputPath);
-    console.log('BMP to WebP: Output file:', outputPath);
-    
-    // Check if script exists
-    try {
-      await fs.access(scriptPath);
-      console.log('BMP to WebP: Script exists');
-    } catch (error) {
-      console.error('BMP to WebP: Script does not exist:', scriptPath);
-      return res.status(500).json({ error: 'Conversion script not found' });
-    }
-
-    const python = spawn('/opt/venv/bin/python', [
-      scriptPath,
-      inputPath,
-      outputPath,
-      '--quality', '80'
-    ]);
-
-    let stdout = '';
-    let stderr = '';
-
-    python.stdout.on('data', (data: Buffer) => {
-      stdout += data.toString();
-      console.log('BMP to WebP stdout:', data.toString());
-    });
-
-    python.stderr.on('data', (data: Buffer) => {
-      stderr += data.toString();
-      console.log('BMP to WebP stderr:', data.toString());
-    });
-
-    python.on('close', async (code: number) => {
-      console.log('BMP to WebP: Python script finished with code:', code);
-      console.log('BMP to WebP: stdout:', stdout);
-      console.log('BMP to WebP: stderr:', stderr);
-      
-      try {
-        if (code === 0 && await fs.access(outputPath).then(() => true).catch(() => false)) {
-          const outputBuffer = await fs.readFile(outputPath);
-          console.log('BMP to WebP: Output file size:', outputBuffer.length);
-          res.set({
-            'Content-Type': 'image/webp',
-            'Content-Disposition': `attachment; filename="${path.basename(outputPath)}"`
-          });
-          res.send(outputBuffer);
-        } else {
-          console.error('BMP to WebP conversion failed. Code:', code, 'Stderr:', stderr);
-          res.status(500).json({ error: 'Conversion failed', details: stderr });
-        }
-      } catch (error) {
-        console.error('Error handling conversion result:', error);
-        res.status(500).json({ error: 'Conversion failed', details: error.message });
-      } finally {
-        await fs.rm(tmpDir, { recursive: true, force: true }).catch(() => undefined);
-      }
-    });
-  } catch (error) {
-    console.error('BMP to WebP conversion error:', error);
-    const message = error instanceof Error ? error.message : 'Unknown error';
-    res.status(500).json({ error: message });
-  }
-});
-
-// Route: BMP to WebP (Batch)
-app.post('/convert/bmp-to-webp/batch', uploadBatch, async (req, res) => {
-  console.log('AVRO->CSV batch conversion request');
-
-  const tmpDir = path.join(os.tmpdir(), `avro-csv-batch-${Date.now()}`);
-
-  try {
-    const files = req.files as Express.Multer.File[];
-    if (!files || files.length === 0) {
-      return res.status(400).json({ error: 'No files uploaded' });
-    }
-    await fs.mkdir(tmpDir, { recursive: true });
-
-    const results = [];
-
-    for (const file of files) {
-      try {
-        const inputPath = path.join(tmpDir, file.originalname);
-        const outputPath = path.join(tmpDir, file.originalname.replace(/\.avro$/i, '.csv'));
-
-        await fs.writeFile(inputPath, file.buffer);
-
-        const python = spawn('/opt/venv/bin/python', [
-          path.join(__dirname, '../scripts/avro_to_csv.py'),
-          inputPath,
-          outputPath
-        ]);
-
-        await new Promise<void>((resolve, reject) => {
-          python.on('close', (code: number) => {
-            if (code === 0) {
-              resolve();
-            } else {
-              reject(new Error(`Conversion failed for ${file.originalname}`));
-            }
-          });
-        });
-
-        const outputBuffer = await fs.readFile(outputPath);
-        results.push({
-          originalName: file.originalname,
-          outputFilename: path.basename(outputPath),
-          size: outputBuffer.length,
-          success: true,
-          downloadPath: `data:text/csv;base64,${outputBuffer.toString('base64')}`
-        });
-      } catch (error) {
-        results.push({
-          originalName: file.originalname,
-          outputFilename: '',
-          size: 0,
-          success: false,
-          error: error instanceof Error ? error.message : 'Unknown error'
-        });
-      }
-    }
-
-    res.json({ success: true, results });
-  } catch (error) {
-    console.error('AVRO to CSV batch conversion error:', error);
-    const message = error instanceof Error ? error.message : 'Unknown error';
-    res.status(500).json({ error: message });
-  } finally {
-    await fs.rm(tmpDir, { recursive: true, force: true }).catch(() => undefined);
-  }
-});
+// Duplicate BMP routes removed - using the correct ones later in the file
 
 // Route: AVRO to JSON (Single)
 app.post('/convert/avro-to-json/single', upload.single('file'), async (req, res) => {
