@@ -22,6 +22,27 @@ export class AnonymousConversionService {
         where: { ipAddress }
       });
 
+      // Check if the last conversion was more than 12 hours ago
+      const twelveHoursAgo = new Date(Date.now() - 12 * 60 * 60 * 1000);
+      
+      if (record && record.lastConversionAt && record.lastConversionAt < twelveHoursAgo) {
+        // Reset conversions if last conversion was more than 12 hours ago
+        console.log(`🔄 Auto-resetting conversions for IP ${ipAddress} (last conversion: ${record.lastConversionAt})`);
+        await record.update({
+          conversionCount: 0,
+          lastConversionAt: new Date()
+        });
+        
+        // Return fresh status
+        return {
+          canConvert: true,
+          remainingConversions: this.FREE_CONVERSION_LIMIT,
+          usedConversions: 0,
+          limit: this.FREE_CONVERSION_LIMIT,
+          message: `${this.FREE_CONVERSION_LIMIT} free conversions remaining`
+        };
+      }
+
       const usedConversions = record?.conversionCount || 0;
       const remainingConversions = Math.max(0, this.FREE_CONVERSION_LIMIT - usedConversions);
       const canConvert = remainingConversions > 0;
@@ -167,6 +188,41 @@ export class AnonymousConversionService {
       return deletedCount;
     } catch (error) {
       console.error('Error cleaning up old records:', error);
+      return 0;
+    }
+  }
+
+  /**
+   * Reset conversions for IPs that haven't converted in the last 12 hours
+   */
+  static async resetExpiredConversions(): Promise<number> {
+    try {
+      const twelveHoursAgo = new Date(Date.now() - 12 * 60 * 60 * 1000);
+      
+      const [updatedCount] = await AnonymousConversion.update(
+        {
+          conversionCount: 0,
+          lastConversionAt: new Date()
+        },
+        {
+          where: {
+            lastConversionAt: {
+              [Op.lt]: twelveHoursAgo
+            },
+            conversionCount: {
+              [Op.gt]: 0 // Only reset records that have used conversions
+            }
+          }
+        }
+      );
+
+      if (updatedCount > 0) {
+        console.log(`🔄 Reset ${updatedCount} expired conversion records (older than 12 hours)`);
+      }
+      
+      return updatedCount;
+    } catch (error) {
+      console.error('Error resetting expired conversions:', error);
       return 0;
     }
   }

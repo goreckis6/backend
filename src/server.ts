@@ -11822,6 +11822,27 @@ app.post('/api/conversion-reset', async (req, res) => {
   }
 });
 
+// Reset all expired conversions (12+ hours old)
+app.post('/api/conversion-reset-expired', async (req, res) => {
+  try {
+    console.log('🔍 Resetting all expired conversions (12+ hours old)...');
+    
+    const resetCount = await AnonymousConversionService.resetExpiredConversions();
+    
+    res.json({
+      success: true,
+      message: `Reset ${resetCount} expired conversion records`,
+      resetCount
+    });
+  } catch (error) {
+    console.error('Error resetting expired conversions:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to reset expired conversions'
+    });
+  }
+});
+
 // Test user creation endpoint
 app.post('/api/test-user', async (req, res) => {
   try {
