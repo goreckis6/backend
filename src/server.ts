@@ -12845,6 +12845,10 @@ app.post('/convert/bmp-to-webp/batch', uploadBatch, async (req, res) => {
 app.post('/convert/cr2-to-ico/single', upload.single('file'), async (req, res) => {
   console.log('CR2->ICO single conversion request');
 
+  // Set longer timeout for CR2 processing (10 minutes)
+  req.setTimeout(10 * 60 * 1000);
+  res.setTimeout(10 * 60 * 1000);
+
   const tmpDir = path.join(os.tmpdir(), `cr2-ico-${Date.now()}`);
 
   try {
@@ -13048,6 +13052,10 @@ app.post('/convert/cr2-to-ico/batch', uploadBatch, async (req, res) => {
 // Route: CR2 to WebP (Single)
 app.post('/convert/cr2-to-webp/single', upload.single('file'), async (req, res) => {
   console.log('CR2->WebP single conversion request');
+
+  // Set longer timeout for CR2 processing (10 minutes)
+  req.setTimeout(10 * 60 * 1000);
+  res.setTimeout(10 * 60 * 1000);
 
   const tmpDir = path.join(os.tmpdir(), `cr2-webp-${Date.now()}`);
 
@@ -13261,10 +13269,10 @@ const startServer = async () => {
       console.log('✅ Database connected and server started successfully');
     });
     
-    // Increase timeout for large file processing (5 minutes)
-    server.timeout = 5 * 60 * 1000; // 5 minutes
-    server.keepAliveTimeout = 65000; // 65 seconds
-    server.headersTimeout = 66000; // 66 seconds
+    // Increase timeout for large file processing (10 minutes for CR2/RAW files)
+    server.timeout = 10 * 60 * 1000; // 10 minutes
+    server.keepAliveTimeout = 10 * 60 * 1000; // 10 minutes
+    server.headersTimeout = 10 * 60 * 1000 + 1000; // 10 minutes + 1 second
     
     // Graceful shutdown
     const gracefulShutdown = async (signal: string) => {
