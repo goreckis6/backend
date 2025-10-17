@@ -11681,6 +11681,16 @@ const allowedOrigins = [
   'http://localhost:3000', // Backend dev server
 ].filter(Boolean) as string[];
 
+// Temporary permissive CORS for debugging
+app.use(cors({
+  origin: true, // Allow all origins temporarily
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'Accept'],
+  credentials: true,
+}));
+
+// Original CORS configuration (commented out for debugging)
+/*
 app.use(cors({
   origin: (origin, callback) => {
     console.log('CORS check - Request origin:', origin);
@@ -11705,6 +11715,7 @@ app.use(cors({
   allowedHeaders: ['Content-Type', 'Authorization', 'Accept'],
   credentials: true,
 }));
+*/
 
 // Security middleware
 app.use(helmet());
