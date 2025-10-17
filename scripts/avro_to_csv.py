@@ -45,6 +45,28 @@ def convert_avro_to_csv(avro_file, output_file, delimiter=',', encoding='utf-8',
             print("ERROR: AVRO file is empty")
             return False
         
+        # Check file magic bytes to verify it's an AVRO file
+        with open(avro_file, 'rb') as f:
+            magic_bytes = f.read(4)
+            print(f"File magic bytes (first 4 bytes): {magic_bytes.hex()}")
+            print(f"Expected AVRO magic bytes: 4f626a01 (Obj\\x01)")
+            
+            # AVRO files should start with 'Obj\x01'
+            if magic_bytes != b'Obj\x01':
+                print(f"ERROR: File does not have AVRO magic bytes")
+                print(f"This file is not a valid AVRO binary file")
+                
+                # Try to read first 100 bytes as text to see what it is
+                f.seek(0)
+                first_bytes = f.read(min(100, file_size))
+                try:
+                    first_text = first_bytes.decode('utf-8', errors='ignore')
+                    print(f"First 100 bytes as text: {first_text[:100]}")
+                except:
+                    print(f"Could not decode first bytes as text")
+                
+                return False
+        
         # Read AVRO file
         print("Reading AVRO file...")
         records = []
