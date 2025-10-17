@@ -63,9 +63,7 @@ def convert_avro_to_json(avro_file, output_file, orient='records', indent=2, dat
             
         except Exception as avro_error:
             print(f"ERROR: Failed to read AVRO file: {avro_error}")
-            print(f"ERROR: This file is not a valid AVRO binary file")
-            print(f"ERROR: Please upload a file in Apache AVRO binary format")
-            print(f"ERROR: AVRO files should start with 'Obj\\x01' magic bytes")
+            traceback.print_exc()
             return False
         
         print(f"Records count: {len(records)}")
