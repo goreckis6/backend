@@ -10,6 +10,7 @@ import sys
 import json
 import traceback
 import fastavro
+import pandas as pd
 
 def convert_avro_to_ndjson(avro_file, output_file, encoding='utf-8', date_format='iso'):
     """
@@ -43,58 +44,50 @@ def convert_avro_to_ndjson(avro_file, output_file, encoding='utf-8', date_format
             print("ERROR: AVRO file is empty")
             return False
         
-        # Check file magic bytes to verify it's an AVRO file
-        with open(avro_file, 'rb') as f:
-            magic_bytes = f.read(4)
-            print(f"File magic bytes (first 4 bytes): {magic_bytes.hex()}")
-            print(f"Expected AVRO magic bytes: 4f626a01 (Obj\\x01)")
-            
-            # AVRO files should start with 'Obj\x01'
-            if magic_bytes != b'Obj\x01':
-                print(f"ERROR: File does not have AVRO magic bytes")
-                print(f"This file is not a valid AVRO binary file")
-                
-                # Try to read first 100 bytes as text to see what it is
-                f.seek(0)
-                first_bytes = f.read(min(100, file_size))
-                try:
-                    first_text = first_bytes.decode('utf-8', errors='ignore')
-                    print(f"First 100 bytes as text: {first_text[:100]}")
-                except:
-                    print(f"Could not decode first bytes as text")
-                
-                return False
-        
-        # Read AVRO file and write NDJSON
-        print("Reading AVRO file and converting to NDJSON...")
-        record_count = 0
+        # Read AVRO file using pandas
+        print("Reading AVRO file with pandas...")
         
         try:
-            with open(avro_file, 'rb') as avro_file_handle:
-                avro_reader = fastavro.reader(avro_file_handle)
-                schema = avro_reader.schema
-                print(f"AVRO schema: {schema}")
-                
-                with open(output_file, 'w', encoding=encoding) as ndjson_file:
-                    # Reset file position to beginning
-                    avro_file_handle.seek(0)
+            # Use pandas to read AVRO file directly
+            df = pd.read_parquet(avro_file, engine='pyarrow')
+            print(f"AVRO loaded successfully using pandas/pyarrow")
+            records = df.to_dict('records')
+        except Exception as pandas_error:
+            print(f"Pandas/pyarrow failed: {pandas_error}")
+            print("Trying with fastavro...")
+            
+            # Fallback to fastavro if pandas fails
+            try:
+                records = []
+                with open(avro_file, 'rb') as avro_file_handle:
                     avro_reader = fastavro.reader(avro_file_handle)
+                    schema = avro_reader.schema
+                    print(f"AVRO schema: {schema}")
                     
-                    # Process each record and write as NDJSON line
                     for record in avro_reader:
-                        # Handle date formatting if needed
-                        if date_format == 'epoch':
-                            record = convert_dates_to_epoch(record)
-                        
-                        # Write as JSON line
-                        json_line = json.dumps(record, ensure_ascii=False)
-                        ndjson_file.write(json_line + '\n')
-                        record_count += 1
-                        
-        except Exception as avro_error:
-            print(f"ERROR: Failed to read AVRO file: {avro_error}")
-            print(f"ERROR: This might not be a valid AVRO file or the file is corrupted")
-            return False
+                        records.append(record)
+                
+                print(f"AVRO loaded successfully using fastavro")
+                
+            except Exception as avro_error:
+                print(f"ERROR: Failed to read AVRO file: {avro_error}")
+                print(f"ERROR: This might not be a valid AVRO file or the file is corrupted")
+                return False
+        
+        print(f"Records count: {len(records)}")
+        record_count = len(records)
+        
+        # Write NDJSON
+        print("Writing NDJSON file...")
+        with open(output_file, 'w', encoding=encoding) as ndjson_file:
+            for record in records:
+                # Handle date formatting if needed
+                if date_format == 'epoch':
+                    record = convert_dates_to_epoch(record)
+                
+                # Write as JSON line
+                json_line = json.dumps(record, ensure_ascii=False)
+                ndjson_file.write(json_line + '\n')
         
         print(f"AVRO to NDJSON conversion completed")
         print(f"Records processed: {record_count}")

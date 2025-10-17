@@ -45,76 +45,63 @@ def convert_avro_to_csv(avro_file, output_file, delimiter=',', encoding='utf-8',
             print("ERROR: AVRO file is empty")
             return False
         
-        # Check file magic bytes to verify it's an AVRO file
-        with open(avro_file, 'rb') as f:
-            magic_bytes = f.read(4)
-            print(f"File magic bytes (first 4 bytes): {magic_bytes.hex()}")
-            print(f"Expected AVRO magic bytes: 4f626a01 (Obj\\x01)")
-            
-            # AVRO files should start with 'Obj\x01'
-            if magic_bytes != b'Obj\x01':
-                print(f"ERROR: File does not have AVRO magic bytes")
-                print(f"This file is not a valid AVRO binary file")
-                
-                # Try to read first 100 bytes as text to see what it is
-                f.seek(0)
-                first_bytes = f.read(min(100, file_size))
-                try:
-                    first_text = first_bytes.decode('utf-8', errors='ignore')
-                    print(f"First 100 bytes as text: {first_text[:100]}")
-                except:
-                    print(f"Could not decode first bytes as text")
-                
-                return False
-        
-        # Read AVRO file
-        print("Reading AVRO file...")
-        records = []
+        # Read AVRO file using pandas
+        print("Reading AVRO file with pandas...")
         
         try:
-            with open(avro_file, 'rb') as avro_file_handle:
-                # Get schema information
-                avro_reader = fastavro.reader(avro_file_handle)
-                schema = avro_reader.schema
-                print(f"AVRO schema: {schema}")
-                
-                # Reset file position to beginning
-                avro_file_handle.seek(0)
-                avro_reader = fastavro.reader(avro_file_handle)
-                
-                # Read all records
-                for record in avro_reader:
-                    records.append(record)
+            # Use pandas to read AVRO file directly
+            df = pd.read_parquet(avro_file, engine='pyarrow')
+            print(f"AVRO loaded successfully using pandas/pyarrow")
+        except Exception as pandas_error:
+            print(f"Pandas/pyarrow failed: {pandas_error}")
+            print("Trying with fastavro...")
+            
+            # Fallback to fastavro if pandas fails
+            try:
+                records = []
+                with open(avro_file, 'rb') as avro_file_handle:
+                    avro_reader = fastavro.reader(avro_file_handle)
+                    schema = avro_reader.schema
+                    print(f"AVRO schema: {schema}")
                     
-        except Exception as avro_error:
-            print(f"ERROR: Failed to read AVRO file: {avro_error}")
-            print(f"ERROR: This might not be a valid AVRO file or the file is corrupted")
-            return False
-        
-        print(f"AVRO loaded successfully")
-        print(f"Records count: {len(records)}")
-        
-        if len(records) == 0:
-            print("WARNING: AVRO file contains no records")
-            # Create empty CSV file
-            with open(output_file, 'w', encoding=encoding) as f:
-                if include_header:
-                    f.write("")  # Empty file with no header
-            print("Empty CSV file created")
-            return True
-        
-        # Convert to DataFrame
-        print("Converting to pandas DataFrame...")
-        df = pd.DataFrame(records)
+                    for record in avro_reader:
+                        records.append(record)
+                
+                if len(records) == 0:
+                    print("WARNING: AVRO file contains no records")
+                    # Create empty CSV file
+                    with open(output_file, 'w', encoding=encoding) as f:
+                        if include_header:
+                            f.write("")
+                    print("Empty CSV file created")
+                    return True
+                
+                # Convert to DataFrame
+                df = pd.DataFrame(records)
+                print(f"AVRO loaded successfully using fastavro")
+                
+            except Exception as avro_error:
+                print(f"ERROR: Failed to read AVRO file: {avro_error}")
+                print(f"ERROR: This might not be a valid AVRO file or the file is corrupted")
+                return False
         
         print(f"DataFrame shape: {df.shape}")
         print(f"Columns: {list(df.columns)}")
+        print(f"Records count: {len(df)}")
+        
+        if len(df) == 0:
+            print("WARNING: AVRO file contains no records")
+            with open(output_file, 'w', encoding=encoding) as f:
+                if include_header:
+                    f.write("")
+            print("Empty CSV file created")
+            return True
+        
         print(f"First few rows:\n{df.head()}")
         
         # Handle nested objects/arrays by converting to JSON strings
         for col in df.columns:
             if df[col].dtype == 'object':
-                # Check if column contains complex objects
                 sample_value = df[col].dropna().iloc[0] if not df[col].dropna().empty else None
                 if sample_value is not None and isinstance(sample_value, (dict, list)):
                     print(f"Converting complex objects in column '{col}' to JSON strings")
