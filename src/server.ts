@@ -12032,13 +12032,13 @@ app.get('/api/analytics/recent', async (req, res) => {
   }
 });
 
-// ==================== AVRO CONVERSION ROUTES ====================
+// ==================== IMAGE CONVERSION ROUTES ====================
 
-// Route: AVRO to CSV (Single)
-app.post('/convert/avro-to-csv/single', upload.single('file'), async (req, res) => {
-  console.log('AVRO->CSV single conversion request');
+// Route: BMP to WebP (Single)
+app.post('/convert/bmp-to-webp/single', upload.single('file'), async (req, res) => {
+  console.log('BMP->WebP single conversion request');
 
-  const tmpDir = path.join(os.tmpdir(), `avro-csv-${Date.now()}`);
+  const tmpDir = path.join(os.tmpdir(), `bmp-webp-${Date.now()}`);
 
   try {
     const file = req.file;
@@ -12048,28 +12048,29 @@ app.post('/convert/avro-to-csv/single', upload.single('file'), async (req, res) 
     await fs.mkdir(tmpDir, { recursive: true });
 
     const inputPath = path.join(tmpDir, file.originalname);
-    const outputPath = path.join(tmpDir, file.originalname.replace(/\.avro$/i, '.csv'));
+    const outputPath = path.join(tmpDir, file.originalname.replace(/\.bmp$/i, '.webp'));
 
     await fs.writeFile(inputPath, file.buffer);
 
-    const scriptPath = path.join(__dirname, '../scripts/avro_to_csv.py');
-    console.log('AVRO to CSV: Executing Python script:', scriptPath);
-    console.log('AVRO to CSV: Input file:', inputPath);
-    console.log('AVRO to CSV: Output file:', outputPath);
+    const scriptPath = path.join(__dirname, '../scripts/bmp_to_webp.py');
+    console.log('BMP to WebP: Executing Python script:', scriptPath);
+    console.log('BMP to WebP: Input file:', inputPath);
+    console.log('BMP to WebP: Output file:', outputPath);
     
     // Check if script exists
     try {
       await fs.access(scriptPath);
-      console.log('AVRO to CSV: Script exists');
+      console.log('BMP to WebP: Script exists');
     } catch (error) {
-      console.error('AVRO to CSV: Script does not exist:', scriptPath);
+      console.error('BMP to WebP: Script does not exist:', scriptPath);
       return res.status(500).json({ error: 'Conversion script not found' });
     }
 
     const python = spawn('/opt/venv/bin/python', [
       scriptPath,
       inputPath,
-      outputPath
+      outputPath,
+      '--quality', '80'
     ]);
 
     let stdout = '';
@@ -12077,30 +12078,30 @@ app.post('/convert/avro-to-csv/single', upload.single('file'), async (req, res) 
 
     python.stdout.on('data', (data: Buffer) => {
       stdout += data.toString();
-      console.log('AVRO to CSV stdout:', data.toString());
+      console.log('BMP to WebP stdout:', data.toString());
     });
 
     python.stderr.on('data', (data: Buffer) => {
       stderr += data.toString();
-      console.log('AVRO to CSV stderr:', data.toString());
+      console.log('BMP to WebP stderr:', data.toString());
     });
 
     python.on('close', async (code: number) => {
-      console.log('AVRO to CSV: Python script finished with code:', code);
-      console.log('AVRO to CSV: stdout:', stdout);
-      console.log('AVRO to CSV: stderr:', stderr);
+      console.log('BMP to WebP: Python script finished with code:', code);
+      console.log('BMP to WebP: stdout:', stdout);
+      console.log('BMP to WebP: stderr:', stderr);
       
       try {
         if (code === 0 && await fs.access(outputPath).then(() => true).catch(() => false)) {
           const outputBuffer = await fs.readFile(outputPath);
-          console.log('AVRO to CSV: Output file size:', outputBuffer.length);
+          console.log('BMP to WebP: Output file size:', outputBuffer.length);
           res.set({
-            'Content-Type': 'text/csv',
+            'Content-Type': 'image/webp',
             'Content-Disposition': `attachment; filename="${path.basename(outputPath)}"`
           });
           res.send(outputBuffer);
         } else {
-          console.error('AVRO to CSV conversion failed. Code:', code, 'Stderr:', stderr);
+          console.error('BMP to WebP conversion failed. Code:', code, 'Stderr:', stderr);
           res.status(500).json({ error: 'Conversion failed', details: stderr });
         }
       } catch (error) {
@@ -12111,14 +12112,14 @@ app.post('/convert/avro-to-csv/single', upload.single('file'), async (req, res) 
       }
     });
   } catch (error) {
-    console.error('AVRO to CSV conversion error:', error);
+    console.error('BMP to WebP conversion error:', error);
     const message = error instanceof Error ? error.message : 'Unknown error';
     res.status(500).json({ error: message });
   }
 });
 
-// Route: AVRO to CSV (Batch)
-app.post('/convert/avro-to-csv/batch', uploadBatch, async (req, res) => {
+// Route: BMP to WebP (Batch)
+app.post('/convert/bmp-to-webp/batch', uploadBatch, async (req, res) => {
   console.log('AVRO->CSV batch conversion request');
 
   const tmpDir = path.join(os.tmpdir(), `avro-csv-batch-${Date.now()}`);
@@ -12627,6 +12628,620 @@ app.post('/convert/csv-to-avro/batch', uploadBatch, async (req, res) => {
     res.json({ success: true, results });
   } catch (error) {
     console.error('CSV to AVRO batch conversion error:', error);
+    const message = error instanceof Error ? error.message : 'Unknown error';
+    res.status(500).json({ error: message });
+  } finally {
+    await fs.rm(tmpDir, { recursive: true, force: true }).catch(() => undefined);
+  }
+});
+
+// ==================== IMAGE CONVERSION ROUTES ====================
+
+// Route: BMP to WebP (Single)
+app.post('/convert/bmp-to-webp/single', upload.single('file'), async (req, res) => {
+  console.log('BMP->WebP single conversion request');
+
+  const tmpDir = path.join(os.tmpdir(), `bmp-webp-${Date.now()}`);
+
+  try {
+    const file = req.file;
+    if (!file) {
+      return res.status(400).json({ error: 'No file uploaded' });
+    }
+    await fs.mkdir(tmpDir, { recursive: true });
+
+    const inputPath = path.join(tmpDir, file.originalname);
+    const outputPath = path.join(tmpDir, file.originalname.replace(/\.bmp$/i, '.webp'));
+
+    await fs.writeFile(inputPath, file.buffer);
+
+    const scriptPath = path.join(__dirname, '../scripts/bmp_to_webp.py');
+    console.log('BMP to WebP: Executing Python script:', scriptPath);
+    console.log('BMP to WebP: Input file:', inputPath);
+    console.log('BMP to WebP: Output file:', outputPath);
+    
+    // Check if script exists
+    try {
+      await fs.access(scriptPath);
+      console.log('BMP to WebP: Script exists');
+    } catch (error) {
+      console.error('BMP to WebP: Script does not exist:', scriptPath);
+      return res.status(500).json({ error: 'Conversion script not found' });
+    }
+
+    const python = spawn('/opt/venv/bin/python', [
+      scriptPath,
+      inputPath,
+      outputPath,
+      '--quality', '80'
+    ]);
+
+    let stdout = '';
+    let stderr = '';
+
+    python.stdout.on('data', (data: Buffer) => {
+      stdout += data.toString();
+      console.log('BMP to WebP stdout:', data.toString());
+    });
+
+    python.stderr.on('data', (data: Buffer) => {
+      stderr += data.toString();
+      console.log('BMP to WebP stderr:', data.toString());
+    });
+
+    python.on('close', async (code: number) => {
+      console.log('BMP to WebP: Python script finished with code:', code);
+      console.log('BMP to WebP: stdout:', stdout);
+      console.log('BMP to WebP: stderr:', stderr);
+      
+      try {
+        if (code === 0 && await fs.access(outputPath).then(() => true).catch(() => false)) {
+          const outputBuffer = await fs.readFile(outputPath);
+          console.log('BMP to WebP: Output file size:', outputBuffer.length);
+          res.set({
+            'Content-Type': 'image/webp',
+            'Content-Disposition': `attachment; filename="${path.basename(outputPath)}"`
+          });
+          res.send(outputBuffer);
+        } else {
+          console.error('BMP to WebP conversion failed. Code:', code, 'Stderr:', stderr);
+          res.status(500).json({ error: 'Conversion failed', details: stderr });
+        }
+      } catch (error) {
+        console.error('Error handling conversion result:', error);
+        res.status(500).json({ error: 'Conversion failed', details: error.message });
+      } finally {
+        await fs.rm(tmpDir, { recursive: true, force: true }).catch(() => undefined);
+      }
+    });
+  } catch (error) {
+    console.error('BMP to WebP conversion error:', error);
+    const message = error instanceof Error ? error.message : 'Unknown error';
+    res.status(500).json({ error: message });
+  }
+});
+
+// Route: BMP to WebP (Batch)
+app.post('/convert/bmp-to-webp/batch', uploadBatch, async (req, res) => {
+  console.log('BMP->WebP batch conversion request');
+
+  const tmpDir = path.join(os.tmpdir(), `bmp-webp-batch-${Date.now()}`);
+
+  try {
+    const files = req.files as Express.Multer.File[];
+    if (!files || files.length === 0) {
+      return res.status(400).json({ error: 'No files uploaded' });
+    }
+    await fs.mkdir(tmpDir, { recursive: true });
+
+    const results = [];
+
+    for (const file of files) {
+      try {
+        const inputPath = path.join(tmpDir, file.originalname);
+        const outputPath = path.join(tmpDir, file.originalname.replace(/\.bmp$/i, '.webp'));
+
+        await fs.writeFile(inputPath, file.buffer);
+
+        const scriptPath = path.join(__dirname, '../scripts/bmp_to_webp.py');
+        console.log('BMP to WebP batch: Executing Python script:', scriptPath);
+        console.log('BMP to WebP batch: Input file:', inputPath);
+        console.log('BMP to WebP batch: Output file:', outputPath);
+
+        try {
+          await fs.access(scriptPath);
+          console.log('BMP to WebP batch: Script exists');
+        } catch (error) {
+          console.error('BMP to WebP batch: Script does not exist:', scriptPath);
+          results.push({
+            originalName: file.originalname,
+            outputFilename: '',
+            size: 0,
+            success: false,
+            error: 'Conversion script not found'
+          });
+          continue;
+        }
+
+        const python = spawn('/opt/venv/bin/python', [
+          scriptPath,
+          inputPath,
+          outputPath,
+          '--quality', '80'
+        ]);
+
+        let stdout = '';
+        let stderr = '';
+
+        python.stdout.on('data', (data: Buffer) => {
+          stdout += data.toString();
+          console.log('BMP to WebP batch stdout:', data.toString());
+        });
+
+        python.stderr.on('data', (data: Buffer) => {
+          stderr += data.toString();
+          console.log('BMP to WebP batch stderr:', data.toString());
+        });
+
+        await new Promise<void>((resolve, reject) => {
+          python.on('close', async (code: number) => {
+            console.log('BMP to WebP batch: Python script finished with code:', code);
+            console.log('BMP to WebP batch: stdout:', stdout);
+            console.log('BMP to WebP batch: stderr:', stderr);
+
+            try {
+              if (code === 0 && await fs.access(outputPath).then(() => true).catch(() => false)) {
+                const outputBuffer = await fs.readFile(outputPath);
+                console.log('BMP to WebP batch: Output file size:', outputBuffer.length);
+                results.push({
+                  originalName: file.originalname,
+                  outputFilename: path.basename(outputPath),
+                  size: outputBuffer.length,
+                  success: true,
+                  downloadPath: `data:image/webp;base64,${outputBuffer.toString('base64')}`
+                });
+                resolve();
+              } else {
+                console.error('BMP to WebP batch conversion failed. Code:', code, 'Stderr:', stderr);
+                results.push({
+                  originalName: file.originalname,
+                  outputFilename: '',
+                  size: 0,
+                  success: false,
+                  error: stderr || `Conversion failed with code ${code}`
+                });
+                reject(new Error(`Conversion failed for ${file.originalname}`));
+              }
+            } catch (error) {
+              console.error('Error handling batch conversion result:', error);
+              results.push({
+                originalName: file.originalname,
+                outputFilename: '',
+                size: 0,
+                success: false,
+                error: error instanceof Error ? error.message : 'Unknown error'
+              });
+              reject(new Error(`Error handling result for ${file.originalname}`));
+            }
+          });
+        });
+      } catch (error) {
+        console.error('BMP to WebP batch conversion error for file:', file.originalname, error);
+        // Error already pushed to results in the promise rejection
+      }
+    }
+
+    res.json({ success: true, results });
+  } catch (error) {
+    console.error('BMP to WebP batch conversion error:', error);
+    const message = error instanceof Error ? error.message : 'Unknown error';
+    res.status(500).json({ error: message });
+  } finally {
+    await fs.rm(tmpDir, { recursive: true, force: true }).catch(() => undefined);
+  }
+});
+
+// Route: CR2 to ICO (Single)
+app.post('/convert/cr2-to-ico/single', upload.single('file'), async (req, res) => {
+  console.log('CR2->ICO single conversion request');
+
+  const tmpDir = path.join(os.tmpdir(), `cr2-ico-${Date.now()}`);
+
+  try {
+    const file = req.file;
+    if (!file) {
+      return res.status(400).json({ error: 'No file uploaded' });
+    }
+    await fs.mkdir(tmpDir, { recursive: true });
+
+    const inputPath = path.join(tmpDir, file.originalname);
+    const outputPath = path.join(tmpDir, file.originalname.replace(/\.cr2$/i, '.ico'));
+
+    await fs.writeFile(inputPath, file.buffer);
+
+    const scriptPath = path.join(__dirname, '../scripts/cr2_to_ico.py');
+    console.log('CR2 to ICO: Executing Python script:', scriptPath);
+    console.log('CR2 to ICO: Input file:', inputPath);
+    console.log('CR2 to ICO: Output file:', outputPath);
+    
+    // Check if script exists
+    try {
+      await fs.access(scriptPath);
+      console.log('CR2 to ICO: Script exists');
+    } catch (error) {
+      console.error('CR2 to ICO: Script does not exist:', scriptPath);
+      return res.status(500).json({ error: 'Conversion script not found' });
+    }
+
+    const python = spawn('/opt/venv/bin/python', [
+      scriptPath,
+      inputPath,
+      outputPath,
+      '--quality', '95'
+    ]);
+
+    let stdout = '';
+    let stderr = '';
+
+    python.stdout.on('data', (data: Buffer) => {
+      stdout += data.toString();
+      console.log('CR2 to ICO stdout:', data.toString());
+    });
+
+    python.stderr.on('data', (data: Buffer) => {
+      stderr += data.toString();
+      console.log('CR2 to ICO stderr:', data.toString());
+    });
+
+    python.on('close', async (code: number) => {
+      console.log('CR2 to ICO: Python script finished with code:', code);
+      console.log('CR2 to ICO: stdout:', stdout);
+      console.log('CR2 to ICO: stderr:', stderr);
+      
+      try {
+        if (code === 0 && await fs.access(outputPath).then(() => true).catch(() => false)) {
+          const outputBuffer = await fs.readFile(outputPath);
+          console.log('CR2 to ICO: Output file size:', outputBuffer.length);
+          res.set({
+            'Content-Type': 'image/x-icon',
+            'Content-Disposition': `attachment; filename="${path.basename(outputPath)}"`
+          });
+          res.send(outputBuffer);
+        } else {
+          console.error('CR2 to ICO conversion failed. Code:', code, 'Stderr:', stderr);
+          res.status(500).json({ error: 'Conversion failed', details: stderr });
+        }
+      } catch (error) {
+        console.error('Error handling conversion result:', error);
+        res.status(500).json({ error: 'Conversion failed', details: error.message });
+      } finally {
+        await fs.rm(tmpDir, { recursive: true, force: true }).catch(() => undefined);
+      }
+    });
+  } catch (error) {
+    console.error('CR2 to ICO conversion error:', error);
+    const message = error instanceof Error ? error.message : 'Unknown error';
+    res.status(500).json({ error: message });
+  }
+});
+
+// Route: CR2 to ICO (Batch)
+app.post('/convert/cr2-to-ico/batch', uploadBatch, async (req, res) => {
+  console.log('CR2->ICO batch conversion request');
+
+  const tmpDir = path.join(os.tmpdir(), `cr2-ico-batch-${Date.now()}`);
+
+  try {
+    const files = req.files as Express.Multer.File[];
+    if (!files || files.length === 0) {
+      return res.status(400).json({ error: 'No files uploaded' });
+    }
+    await fs.mkdir(tmpDir, { recursive: true });
+
+    const results = [];
+
+    for (const file of files) {
+      try {
+        const inputPath = path.join(tmpDir, file.originalname);
+        const outputPath = path.join(tmpDir, file.originalname.replace(/\.cr2$/i, '.ico'));
+
+        await fs.writeFile(inputPath, file.buffer);
+
+        const scriptPath = path.join(__dirname, '../scripts/cr2_to_ico.py');
+        console.log('CR2 to ICO batch: Executing Python script:', scriptPath);
+        console.log('CR2 to ICO batch: Input file:', inputPath);
+        console.log('CR2 to ICO batch: Output file:', outputPath);
+
+        try {
+          await fs.access(scriptPath);
+          console.log('CR2 to ICO batch: Script exists');
+        } catch (error) {
+          console.error('CR2 to ICO batch: Script does not exist:', scriptPath);
+          results.push({
+            originalName: file.originalname,
+            outputFilename: '',
+            size: 0,
+            success: false,
+            error: 'Conversion script not found'
+          });
+          continue;
+        }
+
+        const python = spawn('/opt/venv/bin/python', [
+          scriptPath,
+          inputPath,
+          outputPath,
+          '--quality', '95'
+        ]);
+
+        let stdout = '';
+        let stderr = '';
+
+        python.stdout.on('data', (data: Buffer) => {
+          stdout += data.toString();
+          console.log('CR2 to ICO batch stdout:', data.toString());
+        });
+
+        python.stderr.on('data', (data: Buffer) => {
+          stderr += data.toString();
+          console.log('CR2 to ICO batch stderr:', data.toString());
+        });
+
+        await new Promise<void>((resolve, reject) => {
+          python.on('close', async (code: number) => {
+            console.log('CR2 to ICO batch: Python script finished with code:', code);
+            console.log('CR2 to ICO batch: stdout:', stdout);
+            console.log('CR2 to ICO batch: stderr:', stderr);
+
+            try {
+              if (code === 0 && await fs.access(outputPath).then(() => true).catch(() => false)) {
+                const outputBuffer = await fs.readFile(outputPath);
+                console.log('CR2 to ICO batch: Output file size:', outputBuffer.length);
+                results.push({
+                  originalName: file.originalname,
+                  outputFilename: path.basename(outputPath),
+                  size: outputBuffer.length,
+                  success: true,
+                  downloadPath: `data:image/x-icon;base64,${outputBuffer.toString('base64')}`
+                });
+                resolve();
+              } else {
+                console.error('CR2 to ICO batch conversion failed. Code:', code, 'Stderr:', stderr);
+                results.push({
+                  originalName: file.originalname,
+                  outputFilename: '',
+                  size: 0,
+                  success: false,
+                  error: stderr || `Conversion failed with code ${code}`
+                });
+                reject(new Error(`Conversion failed for ${file.originalname}`));
+              }
+            } catch (error) {
+              console.error('Error handling batch conversion result:', error);
+              results.push({
+                originalName: file.originalname,
+                outputFilename: '',
+                size: 0,
+                success: false,
+                error: error instanceof Error ? error.message : 'Unknown error'
+              });
+              reject(new Error(`Error handling result for ${file.originalname}`));
+            }
+          });
+        });
+      } catch (error) {
+        console.error('CR2 to ICO batch conversion error for file:', file.originalname, error);
+        // Error already pushed to results in the promise rejection
+      }
+    }
+
+    res.json({ success: true, results });
+  } catch (error) {
+    console.error('CR2 to ICO batch conversion error:', error);
+    const message = error instanceof Error ? error.message : 'Unknown error';
+    res.status(500).json({ error: message });
+  } finally {
+    await fs.rm(tmpDir, { recursive: true, force: true }).catch(() => undefined);
+  }
+});
+
+// Route: CR2 to WebP (Single)
+app.post('/convert/cr2-to-webp/single', upload.single('file'), async (req, res) => {
+  console.log('CR2->WebP single conversion request');
+
+  const tmpDir = path.join(os.tmpdir(), `cr2-webp-${Date.now()}`);
+
+  try {
+    const file = req.file;
+    if (!file) {
+      return res.status(400).json({ error: 'No file uploaded' });
+    }
+    await fs.mkdir(tmpDir, { recursive: true });
+
+    const inputPath = path.join(tmpDir, file.originalname);
+    const outputPath = path.join(tmpDir, file.originalname.replace(/\.cr2$/i, '.webp'));
+
+    await fs.writeFile(inputPath, file.buffer);
+
+    const scriptPath = path.join(__dirname, '../scripts/cr2_to_webp.py');
+    console.log('CR2 to WebP: Executing Python script:', scriptPath);
+    console.log('CR2 to WebP: Input file:', inputPath);
+    console.log('CR2 to WebP: Output file:', outputPath);
+    
+    // Check if script exists
+    try {
+      await fs.access(scriptPath);
+      console.log('CR2 to WebP: Script exists');
+    } catch (error) {
+      console.error('CR2 to WebP: Script does not exist:', scriptPath);
+      return res.status(500).json({ error: 'Conversion script not found' });
+    }
+
+    const python = spawn('/opt/venv/bin/python', [
+      scriptPath,
+      inputPath,
+      outputPath,
+      '--quality', '80'
+    ]);
+
+    let stdout = '';
+    let stderr = '';
+
+    python.stdout.on('data', (data: Buffer) => {
+      stdout += data.toString();
+      console.log('CR2 to WebP stdout:', data.toString());
+    });
+
+    python.stderr.on('data', (data: Buffer) => {
+      stderr += data.toString();
+      console.log('CR2 to WebP stderr:', data.toString());
+    });
+
+    python.on('close', async (code: number) => {
+      console.log('CR2 to WebP: Python script finished with code:', code);
+      console.log('CR2 to WebP: stdout:', stdout);
+      console.log('CR2 to WebP: stderr:', stderr);
+      
+      try {
+        if (code === 0 && await fs.access(outputPath).then(() => true).catch(() => false)) {
+          const outputBuffer = await fs.readFile(outputPath);
+          console.log('CR2 to WebP: Output file size:', outputBuffer.length);
+          res.set({
+            'Content-Type': 'image/webp',
+            'Content-Disposition': `attachment; filename="${path.basename(outputPath)}"`
+          });
+          res.send(outputBuffer);
+        } else {
+          console.error('CR2 to WebP conversion failed. Code:', code, 'Stderr:', stderr);
+          res.status(500).json({ error: 'Conversion failed', details: stderr });
+        }
+      } catch (error) {
+        console.error('Error handling conversion result:', error);
+        res.status(500).json({ error: 'Conversion failed', details: error.message });
+      } finally {
+        await fs.rm(tmpDir, { recursive: true, force: true }).catch(() => undefined);
+      }
+    });
+  } catch (error) {
+    console.error('CR2 to WebP conversion error:', error);
+    const message = error instanceof Error ? error.message : 'Unknown error';
+    res.status(500).json({ error: message });
+  }
+});
+
+// Route: CR2 to WebP (Batch)
+app.post('/convert/cr2-to-webp/batch', uploadBatch, async (req, res) => {
+  console.log('CR2->WebP batch conversion request');
+
+  const tmpDir = path.join(os.tmpdir(), `cr2-webp-batch-${Date.now()}`);
+
+  try {
+    const files = req.files as Express.Multer.File[];
+    if (!files || files.length === 0) {
+      return res.status(400).json({ error: 'No files uploaded' });
+    }
+    await fs.mkdir(tmpDir, { recursive: true });
+
+    const results = [];
+
+    for (const file of files) {
+      try {
+        const inputPath = path.join(tmpDir, file.originalname);
+        const outputPath = path.join(tmpDir, file.originalname.replace(/\.cr2$/i, '.webp'));
+
+        await fs.writeFile(inputPath, file.buffer);
+
+        const scriptPath = path.join(__dirname, '../scripts/cr2_to_webp.py');
+        console.log('CR2 to WebP batch: Executing Python script:', scriptPath);
+        console.log('CR2 to WebP batch: Input file:', inputPath);
+        console.log('CR2 to WebP batch: Output file:', outputPath);
+
+        try {
+          await fs.access(scriptPath);
+          console.log('CR2 to WebP batch: Script exists');
+        } catch (error) {
+          console.error('CR2 to WebP batch: Script does not exist:', scriptPath);
+          results.push({
+            originalName: file.originalname,
+            outputFilename: '',
+            size: 0,
+            success: false,
+            error: 'Conversion script not found'
+          });
+          continue;
+        }
+
+        const python = spawn('/opt/venv/bin/python', [
+          scriptPath,
+          inputPath,
+          outputPath,
+          '--quality', '80'
+        ]);
+
+        let stdout = '';
+        let stderr = '';
+
+        python.stdout.on('data', (data: Buffer) => {
+          stdout += data.toString();
+          console.log('CR2 to WebP batch stdout:', data.toString());
+        });
+
+        python.stderr.on('data', (data: Buffer) => {
+          stderr += data.toString();
+          console.log('CR2 to WebP batch stderr:', data.toString());
+        });
+
+        await new Promise<void>((resolve, reject) => {
+          python.on('close', async (code: number) => {
+            console.log('CR2 to WebP batch: Python script finished with code:', code);
+            console.log('CR2 to WebP batch: stdout:', stdout);
+            console.log('CR2 to WebP batch: stderr:', stderr);
+
+            try {
+              if (code === 0 && await fs.access(outputPath).then(() => true).catch(() => false)) {
+                const outputBuffer = await fs.readFile(outputPath);
+                console.log('CR2 to WebP batch: Output file size:', outputBuffer.length);
+                results.push({
+                  originalName: file.originalname,
+                  outputFilename: path.basename(outputPath),
+                  size: outputBuffer.length,
+                  success: true,
+                  downloadPath: `data:image/webp;base64,${outputBuffer.toString('base64')}`
+                });
+                resolve();
+              } else {
+                console.error('CR2 to WebP batch conversion failed. Code:', code, 'Stderr:', stderr);
+                results.push({
+                  originalName: file.originalname,
+                  outputFilename: '',
+                  size: 0,
+                  success: false,
+                  error: stderr || `Conversion failed with code ${code}`
+                });
+                reject(new Error(`Conversion failed for ${file.originalname}`));
+              }
+            } catch (error) {
+              console.error('Error handling batch conversion result:', error);
+              results.push({
+                originalName: file.originalname,
+                outputFilename: '',
+                size: 0,
+                success: false,
+                error: error instanceof Error ? error.message : 'Unknown error'
+              });
+              reject(new Error(`Error handling result for ${file.originalname}`));
+            }
+          });
+        });
+      } catch (error) {
+        console.error('CR2 to WebP batch conversion error for file:', file.originalname, error);
+        // Error already pushed to results in the promise rejection
+      }
+    }
+
+    res.json({ success: true, results });
+  } catch (error) {
+    console.error('CR2 to WebP batch conversion error:', error);
     const message = error instanceof Error ? error.message : 'Unknown error';
     res.status(500).json({ error: message });
   } finally {
