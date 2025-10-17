@@ -12038,13 +12038,13 @@ app.get('/api/analytics/recent', async (req, res) => {
 app.post('/convert/avro-to-csv/single', upload.single('file'), async (req, res) => {
   console.log('AVRO->CSV single conversion request');
 
+  const tmpDir = path.join(os.tmpdir(), `avro-csv-${Date.now()}`);
+
   try {
     const file = req.file;
     if (!file) {
       return res.status(400).json({ error: 'No file uploaded' });
     }
-
-    const tmpDir = path.join(os.tmpdir(), `avro-csv-${Date.now()}`);
     await fs.mkdir(tmpDir, { recursive: true });
 
     const inputPath = path.join(tmpDir, file.originalname);
@@ -12101,13 +12101,13 @@ app.post('/convert/avro-to-csv/single', upload.single('file'), async (req, res) 
 app.post('/convert/avro-to-csv/batch', uploadBatch, async (req, res) => {
   console.log('AVRO->CSV batch conversion request');
 
+  const tmpDir = path.join(os.tmpdir(), `avro-csv-batch-${Date.now()}`);
+
   try {
     const files = req.files as Express.Multer.File[];
     if (!files || files.length === 0) {
       return res.status(400).json({ error: 'No files uploaded' });
     }
-
-    const tmpDir = path.join(os.tmpdir(), `avro-csv-batch-${Date.now()}`);
     await fs.mkdir(tmpDir, { recursive: true });
 
     const results = [];
@@ -12169,13 +12169,13 @@ app.post('/convert/avro-to-csv/batch', uploadBatch, async (req, res) => {
 app.post('/convert/avro-to-json/single', upload.single('file'), async (req, res) => {
   console.log('AVRO->JSON single conversion request');
 
+  const tmpDir = path.join(os.tmpdir(), `avro-json-${Date.now()}`);
+
   try {
     const file = req.file;
     if (!file) {
       return res.status(400).json({ error: 'No file uploaded' });
     }
-
-    const tmpDir = path.join(os.tmpdir(), `avro-json-${Date.now()}`);
     await fs.mkdir(tmpDir, { recursive: true });
 
     const inputPath = path.join(tmpDir, file.originalname);
@@ -12232,13 +12232,13 @@ app.post('/convert/avro-to-json/single', upload.single('file'), async (req, res)
 app.post('/convert/avro-to-json/batch', uploadBatch, async (req, res) => {
   console.log('AVRO->JSON batch conversion request');
 
+  const tmpDir = path.join(os.tmpdir(), `avro-json-batch-${Date.now()}`);
+
   try {
     const files = req.files as Express.Multer.File[];
     if (!files || files.length === 0) {
       return res.status(400).json({ error: 'No files uploaded' });
     }
-
-    const tmpDir = path.join(os.tmpdir(), `avro-json-batch-${Date.now()}`);
     await fs.mkdir(tmpDir, { recursive: true });
 
     const results = [];
@@ -12300,13 +12300,13 @@ app.post('/convert/avro-to-json/batch', uploadBatch, async (req, res) => {
 app.post('/convert/avro-to-ndjson/single', upload.single('file'), async (req, res) => {
   console.log('AVRO->NDJSON single conversion request');
 
+  const tmpDir = path.join(os.tmpdir(), `avro-ndjson-${Date.now()}`);
+
   try {
     const file = req.file;
     if (!file) {
       return res.status(400).json({ error: 'No file uploaded' });
     }
-
-    const tmpDir = path.join(os.tmpdir(), `avro-ndjson-${Date.now()}`);
     await fs.mkdir(tmpDir, { recursive: true });
 
     const inputPath = path.join(tmpDir, file.originalname);
@@ -12363,13 +12363,13 @@ app.post('/convert/avro-to-ndjson/single', upload.single('file'), async (req, re
 app.post('/convert/avro-to-ndjson/batch', uploadBatch, async (req, res) => {
   console.log('AVRO->NDJSON batch conversion request');
 
+  const tmpDir = path.join(os.tmpdir(), `avro-ndjson-batch-${Date.now()}`);
+
   try {
     const files = req.files as Express.Multer.File[];
     if (!files || files.length === 0) {
       return res.status(400).json({ error: 'No files uploaded' });
     }
-
-    const tmpDir = path.join(os.tmpdir(), `avro-ndjson-batch-${Date.now()}`);
     await fs.mkdir(tmpDir, { recursive: true });
 
     const results = [];
@@ -12431,13 +12431,13 @@ app.post('/convert/avro-to-ndjson/batch', uploadBatch, async (req, res) => {
 app.post('/convert/csv-to-avro/single', upload.single('file'), async (req, res) => {
   console.log('CSV->AVRO single conversion request');
 
+  const tmpDir = path.join(os.tmpdir(), `csv-avro-${Date.now()}`);
+
   try {
     const file = req.file;
     if (!file) {
       return res.status(400).json({ error: 'No file uploaded' });
     }
-
-    const tmpDir = path.join(os.tmpdir(), `csv-avro-${Date.now()}`);
     await fs.mkdir(tmpDir, { recursive: true });
 
     const inputPath = path.join(tmpDir, file.originalname);
@@ -12494,13 +12494,13 @@ app.post('/convert/csv-to-avro/single', upload.single('file'), async (req, res) 
 app.post('/convert/csv-to-avro/batch', uploadBatch, async (req, res) => {
   console.log('CSV->AVRO batch conversion request');
 
+  const tmpDir = path.join(os.tmpdir(), `csv-avro-batch-${Date.now()}`);
+
   try {
     const files = req.files as Express.Multer.File[];
     if (!files || files.length === 0) {
       return res.status(400).json({ error: 'No files uploaded' });
     }
-
-    const tmpDir = path.join(os.tmpdir(), `csv-avro-batch-${Date.now()}`);
     await fs.mkdir(tmpDir, { recursive: true });
 
     const results = [];
