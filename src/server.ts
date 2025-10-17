@@ -12755,15 +12755,28 @@ app.post('/convert/cr2-to-ico/single', upload.single('file'), async (req, res) =
           console.log('CR2 to ICO: Output file size:', outputBuffer.length);
           res.set({
             'Content-Type': 'image/x-icon',
-            'Content-Disposition': `attachment; filename="${path.basename(outputPath)}"`
+            'Content-Disposition': `attachment; filename="${path.basename(outputPath)}"`,
+            'Access-Control-Allow-Origin': '*',
+            'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+            'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept'
           });
           res.send(outputBuffer);
         } else {
           console.error('CR2 to ICO conversion failed. Code:', code, 'Stderr:', stderr);
+          res.set({
+            'Access-Control-Allow-Origin': '*',
+            'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+            'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept'
+          });
           res.status(500).json({ error: 'Conversion failed', details: stderr });
         }
       } catch (error) {
         console.error('Error handling conversion result:', error);
+        res.set({
+          'Access-Control-Allow-Origin': '*',
+          'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+          'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept'
+        });
         res.status(500).json({ error: 'Conversion failed', details: error.message });
       } finally {
         await fs.rm(tmpDir, { recursive: true, force: true }).catch(() => undefined);
@@ -12772,6 +12785,11 @@ app.post('/convert/cr2-to-ico/single', upload.single('file'), async (req, res) =
   } catch (error) {
     console.error('CR2 to ICO conversion error:', error);
     const message = error instanceof Error ? error.message : 'Unknown error';
+    res.set({
+      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+      'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept'
+    });
     res.status(500).json({ error: message });
   }
 });
@@ -12963,15 +12981,28 @@ app.post('/convert/cr2-to-webp/single', upload.single('file'), async (req, res) 
           console.log('CR2 to WebP: Output file size:', outputBuffer.length);
           res.set({
             'Content-Type': 'image/webp',
-            'Content-Disposition': `attachment; filename="${path.basename(outputPath)}"`
+            'Content-Disposition': `attachment; filename="${path.basename(outputPath)}"`,
+            'Access-Control-Allow-Origin': '*',
+            'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+            'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept'
           });
           res.send(outputBuffer);
         } else {
           console.error('CR2 to WebP conversion failed. Code:', code, 'Stderr:', stderr);
+          res.set({
+            'Access-Control-Allow-Origin': '*',
+            'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+            'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept'
+          });
           res.status(500).json({ error: 'Conversion failed', details: stderr });
         }
       } catch (error) {
         console.error('Error handling conversion result:', error);
+        res.set({
+          'Access-Control-Allow-Origin': '*',
+          'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+          'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept'
+        });
         res.status(500).json({ error: 'Conversion failed', details: error.message });
       } finally {
         await fs.rm(tmpDir, { recursive: true, force: true }).catch(() => undefined);
@@ -12980,6 +13011,11 @@ app.post('/convert/cr2-to-webp/single', upload.single('file'), async (req, res) 
   } catch (error) {
     console.error('CR2 to WebP conversion error:', error);
     const message = error instanceof Error ? error.message : 'Unknown error';
+    res.set({
+      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+      'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept'
+    });
     res.status(500).json({ error: message });
   }
 });
