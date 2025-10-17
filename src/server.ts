@@ -12032,6 +12032,532 @@ app.get('/api/analytics/recent', async (req, res) => {
   }
 });
 
+// ==================== AVRO CONVERSION ROUTES ====================
+
+// Route: AVRO to CSV (Single)
+app.post('/convert/avro-to-csv/single', upload.single('file'), async (req, res) => {
+  console.log('AVRO->CSV single conversion request');
+
+  try {
+    const file = req.file;
+    if (!file) {
+      return res.status(400).json({ error: 'No file uploaded' });
+    }
+
+    const tmpDir = path.join(os.tmpdir(), `avro-csv-${Date.now()}`);
+    await fs.mkdir(tmpDir, { recursive: true });
+
+    const inputPath = path.join(tmpDir, file.originalname);
+    const outputPath = path.join(tmpDir, file.originalname.replace(/\.avro$/i, '.csv'));
+
+    await fs.writeFile(inputPath, file.buffer);
+
+    const { spawn } = require('child_process');
+    const python = spawn('python3', [
+      path.join(__dirname, '../scripts/avro_to_csv.py'),
+      inputPath,
+      outputPath
+    ]);
+
+    let stdout = '';
+    let stderr = '';
+
+    python.stdout.on('data', (data: Buffer) => {
+      stdout += data.toString();
+    });
+
+    python.stderr.on('data', (data: Buffer) => {
+      stderr += data.toString();
+    });
+
+    python.on('close', async (code: number) => {
+      try {
+        if (code === 0 && await fs.access(outputPath).then(() => true).catch(() => false)) {
+          const outputBuffer = await fs.readFile(outputPath);
+          res.set({
+            'Content-Type': 'text/csv',
+            'Content-Disposition': `attachment; filename="${path.basename(outputPath)}"`
+          });
+          res.send(outputBuffer);
+        } else {
+          console.error('AVRO to CSV conversion failed:', stderr);
+          res.status(500).json({ error: 'Conversion failed' });
+        }
+      } catch (error) {
+        console.error('Error handling conversion result:', error);
+        res.status(500).json({ error: 'Conversion failed' });
+      } finally {
+        await fs.rm(tmpDir, { recursive: true, force: true }).catch(() => undefined);
+      }
+    });
+  } catch (error) {
+    console.error('AVRO to CSV conversion error:', error);
+    const message = error instanceof Error ? error.message : 'Unknown error';
+    res.status(500).json({ error: message });
+  }
+});
+
+// Route: AVRO to CSV (Batch)
+app.post('/convert/avro-to-csv/batch', uploadBatch, async (req, res) => {
+  console.log('AVRO->CSV batch conversion request');
+
+  try {
+    const files = req.files as Express.Multer.File[];
+    if (!files || files.length === 0) {
+      return res.status(400).json({ error: 'No files uploaded' });
+    }
+
+    const tmpDir = path.join(os.tmpdir(), `avro-csv-batch-${Date.now()}`);
+    await fs.mkdir(tmpDir, { recursive: true });
+
+    const results = [];
+
+    for (const file of files) {
+      try {
+        const inputPath = path.join(tmpDir, file.originalname);
+        const outputPath = path.join(tmpDir, file.originalname.replace(/\.avro$/i, '.csv'));
+
+        await fs.writeFile(inputPath, file.buffer);
+
+        const { spawn } = require('child_process');
+        const python = spawn('python3', [
+          path.join(__dirname, '../scripts/avro_to_csv.py'),
+          inputPath,
+          outputPath
+        ]);
+
+        await new Promise<void>((resolve, reject) => {
+          python.on('close', (code: number) => {
+            if (code === 0) {
+              resolve();
+            } else {
+              reject(new Error(`Conversion failed for ${file.originalname}`));
+            }
+          });
+        });
+
+        const outputBuffer = await fs.readFile(outputPath);
+        results.push({
+          originalName: file.originalname,
+          outputFilename: path.basename(outputPath),
+          size: outputBuffer.length,
+          success: true,
+          downloadPath: `data:text/csv;base64,${outputBuffer.toString('base64')}`
+        });
+      } catch (error) {
+        results.push({
+          originalName: file.originalname,
+          outputFilename: '',
+          size: 0,
+          success: false,
+          error: error instanceof Error ? error.message : 'Unknown error'
+        });
+      }
+    }
+
+    res.json({ success: true, results });
+  } catch (error) {
+    console.error('AVRO to CSV batch conversion error:', error);
+    const message = error instanceof Error ? error.message : 'Unknown error';
+    res.status(500).json({ error: message });
+  } finally {
+    await fs.rm(tmpDir, { recursive: true, force: true }).catch(() => undefined);
+  }
+});
+
+// Route: AVRO to JSON (Single)
+app.post('/convert/avro-to-json/single', upload.single('file'), async (req, res) => {
+  console.log('AVRO->JSON single conversion request');
+
+  try {
+    const file = req.file;
+    if (!file) {
+      return res.status(400).json({ error: 'No file uploaded' });
+    }
+
+    const tmpDir = path.join(os.tmpdir(), `avro-json-${Date.now()}`);
+    await fs.mkdir(tmpDir, { recursive: true });
+
+    const inputPath = path.join(tmpDir, file.originalname);
+    const outputPath = path.join(tmpDir, file.originalname.replace(/\.avro$/i, '.json'));
+
+    await fs.writeFile(inputPath, file.buffer);
+
+    const { spawn } = require('child_process');
+    const python = spawn('python3', [
+      path.join(__dirname, '../scripts/avro_to_json.py'),
+      inputPath,
+      outputPath
+    ]);
+
+    let stdout = '';
+    let stderr = '';
+
+    python.stdout.on('data', (data: Buffer) => {
+      stdout += data.toString();
+    });
+
+    python.stderr.on('data', (data: Buffer) => {
+      stderr += data.toString();
+    });
+
+    python.on('close', async (code: number) => {
+      try {
+        if (code === 0 && await fs.access(outputPath).then(() => true).catch(() => false)) {
+          const outputBuffer = await fs.readFile(outputPath);
+          res.set({
+            'Content-Type': 'application/json',
+            'Content-Disposition': `attachment; filename="${path.basename(outputPath)}"`
+          });
+          res.send(outputBuffer);
+        } else {
+          console.error('AVRO to JSON conversion failed:', stderr);
+          res.status(500).json({ error: 'Conversion failed' });
+        }
+      } catch (error) {
+        console.error('Error handling conversion result:', error);
+        res.status(500).json({ error: 'Conversion failed' });
+      } finally {
+        await fs.rm(tmpDir, { recursive: true, force: true }).catch(() => undefined);
+      }
+    });
+  } catch (error) {
+    console.error('AVRO to JSON conversion error:', error);
+    const message = error instanceof Error ? error.message : 'Unknown error';
+    res.status(500).json({ error: message });
+  }
+});
+
+// Route: AVRO to JSON (Batch)
+app.post('/convert/avro-to-json/batch', uploadBatch, async (req, res) => {
+  console.log('AVRO->JSON batch conversion request');
+
+  try {
+    const files = req.files as Express.Multer.File[];
+    if (!files || files.length === 0) {
+      return res.status(400).json({ error: 'No files uploaded' });
+    }
+
+    const tmpDir = path.join(os.tmpdir(), `avro-json-batch-${Date.now()}`);
+    await fs.mkdir(tmpDir, { recursive: true });
+
+    const results = [];
+
+    for (const file of files) {
+      try {
+        const inputPath = path.join(tmpDir, file.originalname);
+        const outputPath = path.join(tmpDir, file.originalname.replace(/\.avro$/i, '.json'));
+
+        await fs.writeFile(inputPath, file.buffer);
+
+        const { spawn } = require('child_process');
+        const python = spawn('python3', [
+          path.join(__dirname, '../scripts/avro_to_json.py'),
+          inputPath,
+          outputPath
+        ]);
+
+        await new Promise<void>((resolve, reject) => {
+          python.on('close', (code: number) => {
+            if (code === 0) {
+              resolve();
+            } else {
+              reject(new Error(`Conversion failed for ${file.originalname}`));
+            }
+          });
+        });
+
+        const outputBuffer = await fs.readFile(outputPath);
+        results.push({
+          originalName: file.originalname,
+          outputFilename: path.basename(outputPath),
+          size: outputBuffer.length,
+          success: true,
+          downloadPath: `data:application/json;base64,${outputBuffer.toString('base64')}`
+        });
+      } catch (error) {
+        results.push({
+          originalName: file.originalname,
+          outputFilename: '',
+          size: 0,
+          success: false,
+          error: error instanceof Error ? error.message : 'Unknown error'
+        });
+      }
+    }
+
+    res.json({ success: true, results });
+  } catch (error) {
+    console.error('AVRO to JSON batch conversion error:', error);
+    const message = error instanceof Error ? error.message : 'Unknown error';
+    res.status(500).json({ error: message });
+  } finally {
+    await fs.rm(tmpDir, { recursive: true, force: true }).catch(() => undefined);
+  }
+});
+
+// Route: AVRO to NDJSON (Single)
+app.post('/convert/avro-to-ndjson/single', upload.single('file'), async (req, res) => {
+  console.log('AVRO->NDJSON single conversion request');
+
+  try {
+    const file = req.file;
+    if (!file) {
+      return res.status(400).json({ error: 'No file uploaded' });
+    }
+
+    const tmpDir = path.join(os.tmpdir(), `avro-ndjson-${Date.now()}`);
+    await fs.mkdir(tmpDir, { recursive: true });
+
+    const inputPath = path.join(tmpDir, file.originalname);
+    const outputPath = path.join(tmpDir, file.originalname.replace(/\.avro$/i, '.ndjson'));
+
+    await fs.writeFile(inputPath, file.buffer);
+
+    const { spawn } = require('child_process');
+    const python = spawn('python3', [
+      path.join(__dirname, '../scripts/avro_to_ndjson.py'),
+      inputPath,
+      outputPath
+    ]);
+
+    let stdout = '';
+    let stderr = '';
+
+    python.stdout.on('data', (data: Buffer) => {
+      stdout += data.toString();
+    });
+
+    python.stderr.on('data', (data: Buffer) => {
+      stderr += data.toString();
+    });
+
+    python.on('close', async (code: number) => {
+      try {
+        if (code === 0 && await fs.access(outputPath).then(() => true).catch(() => false)) {
+          const outputBuffer = await fs.readFile(outputPath);
+          res.set({
+            'Content-Type': 'application/x-ndjson',
+            'Content-Disposition': `attachment; filename="${path.basename(outputPath)}"`
+          });
+          res.send(outputBuffer);
+        } else {
+          console.error('AVRO to NDJSON conversion failed:', stderr);
+          res.status(500).json({ error: 'Conversion failed' });
+        }
+      } catch (error) {
+        console.error('Error handling conversion result:', error);
+        res.status(500).json({ error: 'Conversion failed' });
+      } finally {
+        await fs.rm(tmpDir, { recursive: true, force: true }).catch(() => undefined);
+      }
+    });
+  } catch (error) {
+    console.error('AVRO to NDJSON conversion error:', error);
+    const message = error instanceof Error ? error.message : 'Unknown error';
+    res.status(500).json({ error: message });
+  }
+});
+
+// Route: AVRO to NDJSON (Batch)
+app.post('/convert/avro-to-ndjson/batch', uploadBatch, async (req, res) => {
+  console.log('AVRO->NDJSON batch conversion request');
+
+  try {
+    const files = req.files as Express.Multer.File[];
+    if (!files || files.length === 0) {
+      return res.status(400).json({ error: 'No files uploaded' });
+    }
+
+    const tmpDir = path.join(os.tmpdir(), `avro-ndjson-batch-${Date.now()}`);
+    await fs.mkdir(tmpDir, { recursive: true });
+
+    const results = [];
+
+    for (const file of files) {
+      try {
+        const inputPath = path.join(tmpDir, file.originalname);
+        const outputPath = path.join(tmpDir, file.originalname.replace(/\.avro$/i, '.ndjson'));
+
+        await fs.writeFile(inputPath, file.buffer);
+
+        const { spawn } = require('child_process');
+        const python = spawn('python3', [
+          path.join(__dirname, '../scripts/avro_to_ndjson.py'),
+          inputPath,
+          outputPath
+        ]);
+
+        await new Promise<void>((resolve, reject) => {
+          python.on('close', (code: number) => {
+            if (code === 0) {
+              resolve();
+            } else {
+              reject(new Error(`Conversion failed for ${file.originalname}`));
+            }
+          });
+        });
+
+        const outputBuffer = await fs.readFile(outputPath);
+        results.push({
+          originalName: file.originalname,
+          outputFilename: path.basename(outputPath),
+          size: outputBuffer.length,
+          success: true,
+          downloadPath: `data:application/x-ndjson;base64,${outputBuffer.toString('base64')}`
+        });
+      } catch (error) {
+        results.push({
+          originalName: file.originalname,
+          outputFilename: '',
+          size: 0,
+          success: false,
+          error: error instanceof Error ? error.message : 'Unknown error'
+        });
+      }
+    }
+
+    res.json({ success: true, results });
+  } catch (error) {
+    console.error('AVRO to NDJSON batch conversion error:', error);
+    const message = error instanceof Error ? error.message : 'Unknown error';
+    res.status(500).json({ error: message });
+  } finally {
+    await fs.rm(tmpDir, { recursive: true, force: true }).catch(() => undefined);
+  }
+});
+
+// Route: CSV to AVRO (Single)
+app.post('/convert/csv-to-avro/single', upload.single('file'), async (req, res) => {
+  console.log('CSV->AVRO single conversion request');
+
+  try {
+    const file = req.file;
+    if (!file) {
+      return res.status(400).json({ error: 'No file uploaded' });
+    }
+
+    const tmpDir = path.join(os.tmpdir(), `csv-avro-${Date.now()}`);
+    await fs.mkdir(tmpDir, { recursive: true });
+
+    const inputPath = path.join(tmpDir, file.originalname);
+    const outputPath = path.join(tmpDir, file.originalname.replace(/\.csv$/i, '.avro'));
+
+    await fs.writeFile(inputPath, file.buffer);
+
+    const { spawn } = require('child_process');
+    const python = spawn('python3', [
+      path.join(__dirname, '../scripts/csv_to_avro.py'),
+      inputPath,
+      outputPath
+    ]);
+
+    let stdout = '';
+    let stderr = '';
+
+    python.stdout.on('data', (data: Buffer) => {
+      stdout += data.toString();
+    });
+
+    python.stderr.on('data', (data: Buffer) => {
+      stderr += data.toString();
+    });
+
+    python.on('close', async (code: number) => {
+      try {
+        if (code === 0 && await fs.access(outputPath).then(() => true).catch(() => false)) {
+          const outputBuffer = await fs.readFile(outputPath);
+          res.set({
+            'Content-Type': 'application/avro',
+            'Content-Disposition': `attachment; filename="${path.basename(outputPath)}"`
+          });
+          res.send(outputBuffer);
+        } else {
+          console.error('CSV to AVRO conversion failed:', stderr);
+          res.status(500).json({ error: 'Conversion failed' });
+        }
+      } catch (error) {
+        console.error('Error handling conversion result:', error);
+        res.status(500).json({ error: 'Conversion failed' });
+      } finally {
+        await fs.rm(tmpDir, { recursive: true, force: true }).catch(() => undefined);
+      }
+    });
+  } catch (error) {
+    console.error('CSV to AVRO conversion error:', error);
+    const message = error instanceof Error ? error.message : 'Unknown error';
+    res.status(500).json({ error: message });
+  }
+});
+
+// Route: CSV to AVRO (Batch)
+app.post('/convert/csv-to-avro/batch', uploadBatch, async (req, res) => {
+  console.log('CSV->AVRO batch conversion request');
+
+  try {
+    const files = req.files as Express.Multer.File[];
+    if (!files || files.length === 0) {
+      return res.status(400).json({ error: 'No files uploaded' });
+    }
+
+    const tmpDir = path.join(os.tmpdir(), `csv-avro-batch-${Date.now()}`);
+    await fs.mkdir(tmpDir, { recursive: true });
+
+    const results = [];
+
+    for (const file of files) {
+      try {
+        const inputPath = path.join(tmpDir, file.originalname);
+        const outputPath = path.join(tmpDir, file.originalname.replace(/\.csv$/i, '.avro'));
+
+        await fs.writeFile(inputPath, file.buffer);
+
+        const { spawn } = require('child_process');
+        const python = spawn('python3', [
+          path.join(__dirname, '../scripts/csv_to_avro.py'),
+          inputPath,
+          outputPath
+        ]);
+
+        await new Promise<void>((resolve, reject) => {
+          python.on('close', (code: number) => {
+            if (code === 0) {
+              resolve();
+            } else {
+              reject(new Error(`Conversion failed for ${file.originalname}`));
+            }
+          });
+        });
+
+        const outputBuffer = await fs.readFile(outputPath);
+        results.push({
+          originalName: file.originalname,
+          outputFilename: path.basename(outputPath),
+          size: outputBuffer.length,
+          success: true,
+          downloadPath: `data:application/avro;base64,${outputBuffer.toString('base64')}`
+        });
+      } catch (error) {
+        results.push({
+          originalName: file.originalname,
+          outputFilename: '',
+          size: 0,
+          success: false,
+          error: error instanceof Error ? error.message : 'Unknown error'
+        });
+      }
+    }
+
+    res.json({ success: true, results });
+  } catch (error) {
+    console.error('CSV to AVRO batch conversion error:', error);
+    const message = error instanceof Error ? error.message : 'Unknown error';
+    res.status(500).json({ error: message });
+  } finally {
+    await fs.rm(tmpDir, { recursive: true, force: true }).catch(() => undefined);
+  }
+});
+
 // Start server with database initialization
 const startServer = async () => {
   try {
