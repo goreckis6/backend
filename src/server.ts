@@ -12775,6 +12775,27 @@ app.post('/convert/cr2-to-ico/single', checkConversionLimits, upload.single('fil
   // Set longer timeout for CR2 processing (10 minutes)
   req.setTimeout(10 * 60 * 1000);
   res.setTimeout(10 * 60 * 1000);
+  
+  // Handle timeout gracefully with CORS headers
+  const timeoutHandler = () => {
+    console.log('CR2 to ICO: Request timeout - sending timeout response');
+    res.set({
+      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+      'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept'
+    });
+    if (!res.headersSent) {
+      res.status(408).json({ 
+        error: 'Conversion timeout', 
+        message: 'CR2 to ICO conversion is taking longer than expected. Please try with a smaller file or contact support.',
+        timeout: true
+      });
+    }
+  };
+  
+  // Set timeout handler
+  req.on('timeout', timeoutHandler);
+  res.on('timeout', timeoutHandler);
 
   const tmpDir = path.join(os.tmpdir(), `cr2-ico-${Date.now()}`);
 
@@ -13017,6 +13038,27 @@ app.post('/convert/cr2-to-webp/single', checkConversionLimits, upload.single('fi
   // Set longer timeout for CR2 processing (10 minutes)
   req.setTimeout(10 * 60 * 1000);
   res.setTimeout(10 * 60 * 1000);
+  
+  // Handle timeout gracefully with CORS headers
+  const timeoutHandler = () => {
+    console.log('CR2 to WebP: Request timeout - sending timeout response');
+    res.set({
+      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+      'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept'
+    });
+    if (!res.headersSent) {
+      res.status(408).json({ 
+        error: 'Conversion timeout', 
+        message: 'CR2 to WebP conversion is taking longer than expected. Please try with a smaller file or contact support.',
+        timeout: true
+      });
+    }
+  };
+  
+  // Set timeout handler
+  req.on('timeout', timeoutHandler);
+  res.on('timeout', timeoutHandler);
 
   const tmpDir = path.join(os.tmpdir(), `cr2-webp-${Date.now()}`);
 
