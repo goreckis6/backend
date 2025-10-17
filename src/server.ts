@@ -12485,7 +12485,7 @@ app.post('/convert/csv-to-avro/batch', uploadBatch, async (req, res) => {
 // ==================== IMAGE CONVERSION ROUTES ====================
 
 // Route: BMP to WebP (Single)
-app.post('/convert/bmp-to-webp/single', upload.single('file'), async (req, res) => {
+app.post('/convert/bmp-to-webp/single', checkConversionLimits, upload.single('file'), async (req, res) => {
   console.log('BMP->WebP single conversion request');
 
   const tmpDir = path.join(os.tmpdir(), `bmp-webp-${Date.now()}`);
@@ -12550,6 +12550,14 @@ app.post('/convert/bmp-to-webp/single', upload.single('file'), async (req, res) 
             'Content-Disposition': `attachment; filename="${path.basename(outputPath)}"`
           });
           res.send(outputBuffer);
+          
+          // Record conversion for anonymous users (IP-based limits)
+          try {
+            await recordConversion(req, res, () => {});
+          } catch (recordError) {
+            console.warn('Failed to record conversion:', recordError);
+            // Don't fail the request if recording fails
+          }
         } else {
           console.error('BMP to WebP conversion failed. Code:', code, 'Stderr:', stderr);
           res.status(500).json({ error: 'Conversion failed', details: stderr });
@@ -12569,7 +12577,7 @@ app.post('/convert/bmp-to-webp/single', upload.single('file'), async (req, res) 
 });
 
 // Route: BMP to WebP (Batch)
-app.post('/convert/bmp-to-webp/batch', uploadBatch, async (req, res) => {
+app.post('/convert/bmp-to-webp/batch', checkConversionLimits, uploadBatch, async (req, res) => {
   console.log('BMP->WebP batch conversion request');
 
   const tmpDir = path.join(os.tmpdir(), `bmp-webp-batch-${Date.now()}`);
@@ -12679,6 +12687,14 @@ app.post('/convert/bmp-to-webp/batch', uploadBatch, async (req, res) => {
     }
 
     res.json({ success: true, results });
+    
+    // Record conversion for anonymous users (IP-based limits)
+    try {
+      await recordConversion(req, res, () => {});
+    } catch (recordError) {
+      console.warn('Failed to record conversion:', recordError);
+      // Don't fail the request if recording fails
+    }
   } catch (error) {
     console.error('BMP to WebP batch conversion error:', error);
     const message = error instanceof Error ? error.message : 'Unknown error';
@@ -12689,7 +12705,7 @@ app.post('/convert/bmp-to-webp/batch', uploadBatch, async (req, res) => {
 });
 
 // Route: CR2 to ICO (Single)
-app.post('/convert/cr2-to-ico/single', upload.single('file'), async (req, res) => {
+app.post('/convert/cr2-to-ico/single', checkConversionLimits, upload.single('file'), async (req, res) => {
   console.log('CR2->ICO single conversion request');
 
   // Set longer timeout for CR2 processing (10 minutes)
@@ -12761,6 +12777,14 @@ app.post('/convert/cr2-to-ico/single', upload.single('file'), async (req, res) =
             'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept'
           });
           res.send(outputBuffer);
+          
+          // Record conversion for anonymous users (IP-based limits)
+          try {
+            await recordConversion(req, res, () => {});
+          } catch (recordError) {
+            console.warn('Failed to record conversion:', recordError);
+            // Don't fail the request if recording fails
+          }
         } else {
           console.error('CR2 to ICO conversion failed. Code:', code, 'Stderr:', stderr);
           res.set({
@@ -12795,7 +12819,7 @@ app.post('/convert/cr2-to-ico/single', upload.single('file'), async (req, res) =
 });
 
 // Route: CR2 to ICO (Batch)
-app.post('/convert/cr2-to-ico/batch', uploadBatch, async (req, res) => {
+app.post('/convert/cr2-to-ico/batch', checkConversionLimits, uploadBatch, async (req, res) => {
   console.log('CR2->ICO batch conversion request');
 
   const tmpDir = path.join(os.tmpdir(), `cr2-ico-batch-${Date.now()}`);
@@ -12905,6 +12929,14 @@ app.post('/convert/cr2-to-ico/batch', uploadBatch, async (req, res) => {
     }
 
     res.json({ success: true, results });
+    
+    // Record conversion for anonymous users (IP-based limits)
+    try {
+      await recordConversion(req, res, () => {});
+    } catch (recordError) {
+      console.warn('Failed to record conversion:', recordError);
+      // Don't fail the request if recording fails
+    }
   } catch (error) {
     console.error('CR2 to ICO batch conversion error:', error);
     const message = error instanceof Error ? error.message : 'Unknown error';
@@ -12915,7 +12947,7 @@ app.post('/convert/cr2-to-ico/batch', uploadBatch, async (req, res) => {
 });
 
 // Route: CR2 to WebP (Single)
-app.post('/convert/cr2-to-webp/single', upload.single('file'), async (req, res) => {
+app.post('/convert/cr2-to-webp/single', checkConversionLimits, upload.single('file'), async (req, res) => {
   console.log('CR2->WebP single conversion request');
 
   // Set longer timeout for CR2 processing (10 minutes)
@@ -12987,6 +13019,14 @@ app.post('/convert/cr2-to-webp/single', upload.single('file'), async (req, res) 
             'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept'
           });
           res.send(outputBuffer);
+          
+          // Record conversion for anonymous users (IP-based limits)
+          try {
+            await recordConversion(req, res, () => {});
+          } catch (recordError) {
+            console.warn('Failed to record conversion:', recordError);
+            // Don't fail the request if recording fails
+          }
         } else {
           console.error('CR2 to WebP conversion failed. Code:', code, 'Stderr:', stderr);
           res.set({
@@ -13021,7 +13061,7 @@ app.post('/convert/cr2-to-webp/single', upload.single('file'), async (req, res) 
 });
 
 // Route: CR2 to WebP (Batch)
-app.post('/convert/cr2-to-webp/batch', uploadBatch, async (req, res) => {
+app.post('/convert/cr2-to-webp/batch', checkConversionLimits, uploadBatch, async (req, res) => {
   console.log('CR2->WebP batch conversion request');
 
   const tmpDir = path.join(os.tmpdir(), `cr2-webp-batch-${Date.now()}`);
@@ -13131,6 +13171,14 @@ app.post('/convert/cr2-to-webp/batch', uploadBatch, async (req, res) => {
     }
 
     res.json({ success: true, results });
+    
+    // Record conversion for anonymous users (IP-based limits)
+    try {
+      await recordConversion(req, res, () => {});
+    } catch (recordError) {
+      console.warn('Failed to record conversion:', recordError);
+      // Don't fail the request if recording fails
+    }
   } catch (error) {
     console.error('CR2 to WebP batch conversion error:', error);
     const message = error instanceof Error ? error.message : 'Unknown error';
