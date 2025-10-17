@@ -46,35 +46,27 @@ def convert_avro_to_json(avro_file, output_file, orient='records', indent=2, dat
             print("ERROR: AVRO file is empty")
             return False
         
-        # Read AVRO file using pandas
-        print("Reading AVRO file with pandas...")
+        # Read AVRO file using fastavro
+        print("Reading AVRO file with fastavro...")
         
         try:
-            # Use pandas to read AVRO file directly
-            df = pd.read_parquet(avro_file, engine='pyarrow')
-            print(f"AVRO loaded successfully using pandas/pyarrow")
-            records = df.to_dict('records')
-        except Exception as pandas_error:
-            print(f"Pandas/pyarrow failed: {pandas_error}")
-            print("Trying with fastavro...")
+            records = []
+            with open(avro_file, 'rb') as avro_file_handle:
+                avro_reader = fastavro.reader(avro_file_handle)
+                schema = avro_reader.schema
+                print(f"AVRO schema: {schema}")
+                
+                for record in avro_reader:
+                    records.append(record)
             
-            # Fallback to fastavro if pandas fails
-            try:
-                records = []
-                with open(avro_file, 'rb') as avro_file_handle:
-                    avro_reader = fastavro.reader(avro_file_handle)
-                    schema = avro_reader.schema
-                    print(f"AVRO schema: {schema}")
-                    
-                    for record in avro_reader:
-                        records.append(record)
-                
-                print(f"AVRO loaded successfully using fastavro")
-                
-            except Exception as avro_error:
-                print(f"ERROR: Failed to read AVRO file: {avro_error}")
-                print(f"ERROR: This might not be a valid AVRO file or the file is corrupted")
-                return False
+            print(f"AVRO loaded successfully using fastavro")
+            
+        except Exception as avro_error:
+            print(f"ERROR: Failed to read AVRO file: {avro_error}")
+            print(f"ERROR: This file is not a valid AVRO binary file")
+            print(f"ERROR: Please upload a file in Apache AVRO binary format")
+            print(f"ERROR: AVRO files should start with 'Obj\\x01' magic bytes")
+            return False
         
         print(f"Records count: {len(records)}")
         
