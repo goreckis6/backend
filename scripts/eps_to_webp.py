@@ -42,6 +42,7 @@ def convert_eps_to_webp(eps_file, output_file, quality=80, lossless=False):
         # Open EPS file with Pillow
         print("Opening EPS file with Pillow...")
         try:
+            # Try to open EPS file - this may fail if Ghostscript is not available
             with Image.open(eps_file) as eps_image:
                 print(f"EPS image info: {eps_image.size}, mode: {eps_image.mode}")
                 
