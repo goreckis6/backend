@@ -11942,7 +11942,7 @@ app.post('/convert/csv-to-epub/batch', uploadBatch, async (req, res) => {
 });
 
 // Route: CSV to HTML (Single)
-app.post('/convert/csv-to-html/single', checkConversionLimits, upload.single('file'), async (req, res) => {
+app.post('/convert/csv-to-html/single', upload.single('file'), async (req, res) => {
   // Set CORS headers
   res.set({
     'Access-Control-Allow-Origin': '*',
@@ -11984,7 +11984,7 @@ app.post('/convert/csv-to-html/single', checkConversionLimits, upload.single('fi
 });
 
 // Route: CSV to HTML (Batch)
-app.post('/convert/csv-to-html/batch', checkConversionLimits, uploadBatch, async (req, res) => {
+app.post('/convert/csv-to-html/batch', uploadBatch, async (req, res) => {
   // Set CORS headers
   res.set({
     'Access-Control-Allow-Origin': '*',
@@ -12036,6 +12036,13 @@ app.post('/convert/csv-to-html/batch', checkConversionLimits, uploadBatch, async
 
 // Route: CSV to Markdown (Single)
 app.post('/convert/csv-to-md/single', upload.single('file'), async (req, res) => {
+  // Set CORS headers
+  res.set({
+    'Access-Control-Allow-Origin': '*',
+    'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+    'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept'
+  });
+  
   console.log('CSV->Markdown single conversion request');
   
   try {
@@ -12050,19 +12057,34 @@ app.post('/convert/csv-to-md/single', upload.single('file'), async (req, res) =>
     res.set({
       'Content-Type': result.mime,
       'Content-Disposition': `attachment; filename="${result.filename}"`,
-      'Content-Length': result.buffer.length
+      'Content-Length': result.buffer.length,
+      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+      'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept'
     });
     
     res.send(result.buffer);
   } catch (error) {
     console.error('CSV->Markdown single error:', error);
     const message = error instanceof Error ? error.message : 'Unknown error';
-    res.status(500).json({ error: message });
+    res.status(500).json({ 
+      error: message,
+      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+      'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept'
+    });
   }
 });
 
 // Route: CSV to Markdown (Batch)
 app.post('/convert/csv-to-md/batch', uploadBatch, async (req, res) => {
+  // Set CORS headers
+  res.set({
+    'Access-Control-Allow-Origin': '*',
+    'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+    'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept'
+  });
+  
   console.log('CSV->Markdown batch conversion request');
   
   try {
@@ -12096,12 +12118,24 @@ app.post('/convert/csv-to-md/batch', uploadBatch, async (req, res) => {
   } catch (error) {
     console.error('CSV->Markdown batch error:', error);
     const message = error instanceof Error ? error.message : 'Unknown error';
-    res.status(500).json({ error: message });
+    res.status(500).json({ 
+      error: message,
+      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+      'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept'
+    });
   }
 });
 
 // Route: CSV to MOBI (Single)
 app.post('/convert/csv-to-mobi/single', upload.single('file'), async (req, res) => {
+  // Set CORS headers
+  res.set({
+    'Access-Control-Allow-Origin': '*',
+    'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+    'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept'
+  });
+  
   console.log('CSV->MOBI single conversion request');
   
   try {
@@ -12116,14 +12150,22 @@ app.post('/convert/csv-to-mobi/single', upload.single('file'), async (req, res) 
     res.set({
       'Content-Type': result.mime,
       'Content-Disposition': `attachment; filename="${result.filename}"`,
-      'Content-Length': result.buffer.length
+      'Content-Length': result.buffer.length,
+      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+      'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept'
     });
     
     res.send(result.buffer);
   } catch (error) {
     console.error('CSV->MOBI single error:', error);
     const message = error instanceof Error ? error.message : 'Unknown error';
-    res.status(500).json({ error: message });
+    res.status(500).json({ 
+      error: message,
+      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+      'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept'
+    });
   }
 });
 
@@ -13050,7 +13092,7 @@ app.post('/convert/csv-to-avro/batch', uploadBatch, async (req, res) => {
 // ==================== IMAGE CONVERSION ROUTES ====================
 
 // Route: BMP to WebP (Single)
-app.post('/convert/bmp-to-webp/single', checkConversionLimits, upload.single('file'), async (req, res) => {
+app.post('/convert/bmp-to-webp/single', upload.single('file'), async (req, res) => {
   console.log('BMP->WebP single conversion request');
 
   const tmpDir = path.join(os.tmpdir(), `bmp-webp-${Date.now()}`);
@@ -13142,7 +13184,7 @@ app.post('/convert/bmp-to-webp/single', checkConversionLimits, upload.single('fi
 });
 
 // Route: BMP to WebP (Batch)
-app.post('/convert/bmp-to-webp/batch', checkConversionLimits, uploadBatch, async (req, res) => {
+app.post('/convert/bmp-to-webp/batch', uploadBatch, async (req, res) => {
   console.log('BMP->WebP batch conversion request');
 
   const tmpDir = path.join(os.tmpdir(), `bmp-webp-batch-${Date.now()}`);
@@ -13270,7 +13312,7 @@ app.post('/convert/bmp-to-webp/batch', checkConversionLimits, uploadBatch, async
 });
 
 // Route: CR2 to ICO (Single)
-app.post('/convert/cr2-to-ico/single', checkConversionLimits, upload.single('file'), async (req, res) => {
+app.post('/convert/cr2-to-ico/single', upload.single('file'), async (req, res) => {
   console.log('CR2->ICO single conversion request');
 
   // Set longer timeout for CR2 processing (10 minutes)
@@ -13405,7 +13447,7 @@ app.post('/convert/cr2-to-ico/single', checkConversionLimits, upload.single('fil
 });
 
 // Route: CR2 to ICO (Batch)
-app.post('/convert/cr2-to-ico/batch', checkConversionLimits, uploadBatch, async (req, res) => {
+app.post('/convert/cr2-to-ico/batch', uploadBatch, async (req, res) => {
   console.log('CR2->ICO batch conversion request');
 
   const tmpDir = path.join(os.tmpdir(), `cr2-ico-batch-${Date.now()}`);
@@ -13533,7 +13575,7 @@ app.post('/convert/cr2-to-ico/batch', checkConversionLimits, uploadBatch, async 
 });
 
 // Route: CR2 to WebP (Single)
-app.post('/convert/cr2-to-webp/single', checkConversionLimits, upload.single('file'), async (req, res) => {
+app.post('/convert/cr2-to-webp/single', upload.single('file'), async (req, res) => {
   console.log('CR2->WebP single conversion request');
 
   // Set longer timeout for CR2 processing (10 minutes)
@@ -13668,7 +13710,7 @@ app.post('/convert/cr2-to-webp/single', checkConversionLimits, upload.single('fi
 });
 
 // Route: CR2 to WebP (Batch)
-app.post('/convert/cr2-to-webp/batch', checkConversionLimits, uploadBatch, async (req, res) => {
+app.post('/convert/cr2-to-webp/batch', uploadBatch, async (req, res) => {
   console.log('CR2->WebP batch conversion request');
 
   const tmpDir = path.join(os.tmpdir(), `cr2-webp-batch-${Date.now()}`);
@@ -13796,7 +13838,7 @@ app.post('/convert/cr2-to-webp/batch', checkConversionLimits, uploadBatch, async
 });
 
 // EPS to ICO conversion routes
-app.post('/convert/eps-to-ico/single', checkConversionLimits, upload.single('file'), async (req, res) => {
+app.post('/convert/eps-to-ico/single', upload.single('file'), async (req, res) => {
   // Set CORS headers
   res.set({
     'Access-Control-Allow-Origin': '*',
@@ -13835,7 +13877,7 @@ app.post('/convert/eps-to-ico/single', checkConversionLimits, upload.single('fil
   }
 });
 
-app.post('/convert/eps-to-ico/batch', checkConversionLimits, uploadBatch, async (req, res) => {
+app.post('/convert/eps-to-ico/batch', uploadBatch, async (req, res) => {
   // Set CORS headers
   res.set({
     'Access-Control-Allow-Origin': '*',
@@ -13879,7 +13921,7 @@ app.post('/convert/eps-to-ico/batch', checkConversionLimits, uploadBatch, async 
 });
 
 // EPS to WebP conversion routes
-app.post('/convert/eps-to-webp/single', checkConversionLimits, upload.single('file'), async (req, res) => {
+app.post('/convert/eps-to-webp/single', upload.single('file'), async (req, res) => {
   // Set CORS headers
   res.set({
     'Access-Control-Allow-Origin': '*',
@@ -13918,7 +13960,7 @@ app.post('/convert/eps-to-webp/single', checkConversionLimits, upload.single('fi
   }
 });
 
-app.post('/convert/eps-to-webp/batch', checkConversionLimits, uploadBatch, async (req, res) => {
+app.post('/convert/eps-to-webp/batch', uploadBatch, async (req, res) => {
   // Set CORS headers
   res.set({
     'Access-Control-Allow-Origin': '*',
@@ -13962,7 +14004,7 @@ app.post('/convert/eps-to-webp/batch', checkConversionLimits, uploadBatch, async
 });
 
 // GIF to ICO conversion routes
-app.post('/convert/gif-to-ico/single', checkConversionLimits, upload.single('file'), async (req, res) => {
+app.post('/convert/gif-to-ico/single', upload.single('file'), async (req, res) => {
   // Set CORS headers
   res.set({
     'Access-Control-Allow-Origin': '*',
@@ -13996,7 +14038,7 @@ app.post('/convert/gif-to-ico/single', checkConversionLimits, upload.single('fil
   }
 });
 
-app.post('/convert/gif-to-ico/batch', checkConversionLimits, uploadBatch, async (req, res) => {
+app.post('/convert/gif-to-ico/batch', uploadBatch, async (req, res) => {
   // Set CORS headers
   res.set({
     'Access-Control-Allow-Origin': '*',
