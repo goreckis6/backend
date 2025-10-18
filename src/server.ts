@@ -11942,7 +11942,14 @@ app.post('/convert/csv-to-epub/batch', uploadBatch, async (req, res) => {
 });
 
 // Route: CSV to HTML (Single)
-app.post('/convert/csv-to-html/single', upload.single('file'), async (req, res) => {
+app.post('/convert/csv-to-html/single', checkConversionLimits, upload.single('file'), async (req, res) => {
+  // Set CORS headers
+  res.set({
+    'Access-Control-Allow-Origin': '*',
+    'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+    'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept'
+  });
+  
   console.log('CSV->HTML single conversion request');
   
   try {
@@ -11957,19 +11964,34 @@ app.post('/convert/csv-to-html/single', upload.single('file'), async (req, res) 
     res.set({
       'Content-Type': result.mime,
       'Content-Disposition': `attachment; filename="${result.filename}"`,
-      'Content-Length': result.buffer.length
+      'Content-Length': result.buffer.length,
+      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+      'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept'
     });
     
     res.send(result.buffer);
   } catch (error) {
     console.error('CSV->HTML single error:', error);
     const message = error instanceof Error ? error.message : 'Unknown error';
-    res.status(500).json({ error: message });
+    res.status(500).json({ 
+      error: message,
+      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+      'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept'
+    });
   }
 });
 
 // Route: CSV to HTML (Batch)
-app.post('/convert/csv-to-html/batch', uploadBatch, async (req, res) => {
+app.post('/convert/csv-to-html/batch', checkConversionLimits, uploadBatch, async (req, res) => {
+  // Set CORS headers
+  res.set({
+    'Access-Control-Allow-Origin': '*',
+    'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+    'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept'
+  });
+  
   console.log('CSV->HTML batch conversion request');
   
   try {
@@ -12003,7 +12025,12 @@ app.post('/convert/csv-to-html/batch', uploadBatch, async (req, res) => {
   } catch (error) {
     console.error('CSV->HTML batch error:', error);
     const message = error instanceof Error ? error.message : 'Unknown error';
-    res.status(500).json({ error: message });
+    res.status(500).json({ 
+      error: message,
+      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+      'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept'
+    });
   }
 });
 
