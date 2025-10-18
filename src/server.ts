@@ -959,6 +959,339 @@ const convertDngToIcoPython = async (
   }
 };
 
+// EPS to ICO converter using Python
+const convertEpsToIcoPython = async (
+  file: Express.Multer.File,
+  options: Record<string, string | undefined> = {},
+  persistToDisk = false
+): Promise<ConversionResult> => {
+  console.log(`=== EPS TO ICO (Python) START ===`);
+  const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'morphy-eps-ico-'));
+  const originalBase = path.basename(file.originalname, path.extname(file.originalname));
+  const sanitizedBase = sanitizeFilename(originalBase);
+  const safeBase = `${sanitizedBase}_${randomUUID()}`;
+
+  try {
+    // Write EPS file to temp directory
+    const epsPath = path.join(tmpDir, `${safeBase}.eps`);
+    await fs.writeFile(epsPath, file.buffer);
+    
+    // Verify the EPS file was written successfully
+    const epsExists = await fs.access(epsPath).then(() => true).catch(() => false);
+    if (!epsExists) {
+      throw new Error('Failed to write EPS file to temporary directory');
+    }
+    console.log('EPS file written successfully:', epsPath);
+
+    // Prepare output file
+    const outputPath = path.join(tmpDir, `${safeBase}.ico`);
+
+    // Get script path
+    const scriptPath = path.join(__dirname, '..', 'scripts', 'eps_to_ico.py');
+    const scriptExists = await fs.access(scriptPath).then(() => true).catch(() => false);
+    if (!scriptExists) {
+      throw new Error(`Python script not found: ${scriptPath}`);
+    }
+
+    // Get Python path
+    const pythonPath = process.env.PYTHON_PATH || 'python3';
+    
+    // Parse options
+    const sizes = options.sizes ? options.sizes.split(',').map(s => parseInt(s.trim())) : [16, 32, 48, 64, 128, 256];
+    const quality = options.quality || 'high';
+
+    console.log('Conversion parameters:', {
+      pythonPath,
+      scriptPath,
+      epsPath,
+      outputPath,
+      sizes,
+      quality,
+      fileSize: file.buffer.length
+    });
+
+    const args = [
+      scriptPath,
+      epsPath,
+      outputPath,
+      '--sizes', ...sizes.map(s => s.toString()),
+      '--quality', quality
+    ];
+
+    let stdout, stderr;
+    let pythonFailed = false;
+    try {
+      console.log('Executing Python script:', pythonPath, args.join(' '));
+      const result = await execFileAsync(pythonPath, args);
+      stdout = result.stdout;
+      stderr = result.stderr;
+      console.log('Python script execution completed successfully');
+    } catch (execError: any) {
+      pythonFailed = true;
+      console.error('!!! Python script execution FAILED !!!');
+      console.error('Error type:', typeof execError);
+      console.error('Error details:', execError);
+      console.error('stdout:', stdout);
+      console.error('stderr:', stderr);
+      throw new Error(`Python ICO script execution failed: ${execError.message}`);
+    }
+
+    // Check if output file was created
+    const outputExists = await fs.access(outputPath).then(() => true).catch(() => false);
+    if (!outputExists) {
+      console.error('Python ICO script did not produce output file:', outputPath);
+      console.error('Python stdout:', stdout);
+      console.error('Python stderr:', stderr);
+      throw new Error(`Python ICO script did not produce output file: ${outputPath}. Python error: ${stderr}`);
+    }
+
+    console.log('ICO file created successfully:', outputPath);
+    
+    // Read the output file
+    const outputBuffer = await fs.readFile(outputPath);
+    const downloadName = `${originalBase}.ico`;
+
+    if (persistToDisk) {
+      return await persistOutputBuffer(outputBuffer, downloadName, 'image/x-icon');
+    }
+
+    return {
+      buffer: outputBuffer,
+      filename: downloadName,
+      mime: 'image/x-icon'
+    };
+  } catch (error) {
+    console.error(`EPS->ICO conversion error:`, error);
+    const message = error instanceof Error ? error.message : `Unknown EPS->ICO error`;
+    throw new Error(`Failed to convert EPS to ICO: ${message}`);
+  } finally {
+    await fs.rm(tmpDir, { recursive: true, force: true }).catch(() => undefined);
+  }
+};
+
+// EPS to WebP converter using Python
+const convertEpsToWebpPython = async (
+  file: Express.Multer.File,
+  options: Record<string, string | undefined> = {},
+  persistToDisk = false
+): Promise<ConversionResult> => {
+  console.log(`=== EPS TO WEBP (Python) START ===`);
+  const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'morphy-eps-webp-'));
+  const originalBase = path.basename(file.originalname, path.extname(file.originalname));
+  const sanitizedBase = sanitizeFilename(originalBase);
+  const safeBase = `${sanitizedBase}_${randomUUID()}`;
+
+  try {
+    // Write EPS file to temp directory
+    const epsPath = path.join(tmpDir, `${safeBase}.eps`);
+    await fs.writeFile(epsPath, file.buffer);
+    
+    // Verify the EPS file was written successfully
+    const epsExists = await fs.access(epsPath).then(() => true).catch(() => false);
+    if (!epsExists) {
+      throw new Error('Failed to write EPS file to temporary directory');
+    }
+    console.log('EPS file written successfully:', epsPath);
+
+    // Prepare output file
+    const outputPath = path.join(tmpDir, `${safeBase}.webp`);
+
+    // Get script path
+    const scriptPath = path.join(__dirname, '..', 'scripts', 'eps_to_webp.py');
+    const scriptExists = await fs.access(scriptPath).then(() => true).catch(() => false);
+    if (!scriptExists) {
+      throw new Error(`Python script not found: ${scriptPath}`);
+    }
+
+    // Get Python path
+    const pythonPath = process.env.PYTHON_PATH || 'python3';
+    
+    // Parse options
+    const quality = parseInt(options.quality || '80');
+    const lossless = options.lossless === 'true';
+
+    console.log('Conversion parameters:', {
+      pythonPath,
+      scriptPath,
+      epsPath,
+      outputPath,
+      quality,
+      lossless,
+      fileSize: file.buffer.length
+    });
+
+    const args = [
+      scriptPath,
+      epsPath,
+      outputPath,
+      '--quality', quality.toString()
+    ];
+
+    if (lossless) {
+      args.push('--lossless');
+    }
+
+    let stdout, stderr;
+    let pythonFailed = false;
+    try {
+      console.log('Executing Python script:', pythonPath, args.join(' '));
+      const result = await execFileAsync(pythonPath, args);
+      stdout = result.stdout;
+      stderr = result.stderr;
+      console.log('Python script execution completed successfully');
+    } catch (execError: any) {
+      pythonFailed = true;
+      console.error('!!! Python script execution FAILED !!!');
+      console.error('Error type:', typeof execError);
+      console.error('Error details:', execError);
+      console.error('stdout:', stdout);
+      console.error('stderr:', stderr);
+      throw new Error(`Python WebP script execution failed: ${execError.message}`);
+    }
+
+    // Check if output file was created
+    const outputExists = await fs.access(outputPath).then(() => true).catch(() => false);
+    if (!outputExists) {
+      console.error('Python WebP script did not produce output file:', outputPath);
+      console.error('Python stdout:', stdout);
+      console.error('Python stderr:', stderr);
+      throw new Error(`Python WebP script did not produce output file: ${outputPath}. Python error: ${stderr}`);
+    }
+
+    console.log('WebP file created successfully:', outputPath);
+    
+    // Read the output file
+    const outputBuffer = await fs.readFile(outputPath);
+    const downloadName = `${originalBase}.webp`;
+
+    if (persistToDisk) {
+      return await persistOutputBuffer(outputBuffer, downloadName, 'image/webp');
+    }
+
+    return {
+      buffer: outputBuffer,
+      filename: downloadName,
+      mime: 'image/webp'
+    };
+  } catch (error) {
+    console.error(`EPS->WebP conversion error:`, error);
+    const message = error instanceof Error ? error.message : `Unknown EPS->WebP error`;
+    throw new Error(`Failed to convert EPS to WebP: ${message}`);
+  } finally {
+    await fs.rm(tmpDir, { recursive: true, force: true }).catch(() => undefined);
+  }
+};
+
+// GIF to ICO converter using Python
+const convertGifToIcoPython = async (
+  file: Express.Multer.File,
+  options: Record<string, string | undefined> = {},
+  persistToDisk = false
+): Promise<ConversionResult> => {
+  console.log(`=== GIF TO ICO (Python) START ===`);
+  const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'morphy-gif-ico-'));
+  const originalBase = path.basename(file.originalname, path.extname(file.originalname));
+  const sanitizedBase = sanitizeFilename(originalBase);
+  const safeBase = `${sanitizedBase}_${randomUUID()}`;
+
+  try {
+    // Write GIF file to temp directory
+    const gifPath = path.join(tmpDir, `${safeBase}.gif`);
+    await fs.writeFile(gifPath, file.buffer);
+    
+    // Verify the GIF file was written successfully
+    const gifExists = await fs.access(gifPath).then(() => true).catch(() => false);
+    if (!gifExists) {
+      throw new Error('Failed to write GIF file to temporary directory');
+    }
+    console.log('GIF file written successfully:', gifPath);
+
+    // Prepare output file
+    const outputPath = path.join(tmpDir, `${safeBase}.ico`);
+
+    // Get script path
+    const scriptPath = path.join(__dirname, '..', 'scripts', 'gif_to_ico.py');
+    const scriptExists = await fs.access(scriptPath).then(() => true).catch(() => false);
+    if (!scriptExists) {
+      throw new Error(`Python script not found: ${scriptPath}`);
+    }
+
+    // Get Python path
+    const pythonPath = process.env.PYTHON_PATH || 'python3';
+    
+    // Parse options
+    const sizes = options.sizes ? options.sizes.split(',').map(s => parseInt(s.trim())) : [16, 32, 48, 64, 128, 256];
+    const quality = options.quality || 'high';
+
+    console.log('Conversion parameters:', {
+      pythonPath,
+      scriptPath,
+      gifPath,
+      outputPath,
+      sizes,
+      quality,
+      fileSize: file.buffer.length
+    });
+
+    const args = [
+      scriptPath,
+      gifPath,
+      outputPath,
+      '--sizes', ...sizes.map(s => s.toString()),
+      '--quality', quality
+    ];
+
+    let stdout, stderr;
+    let pythonFailed = false;
+    try {
+      console.log('Executing Python script:', pythonPath, args.join(' '));
+      const result = await execFileAsync(pythonPath, args);
+      stdout = result.stdout;
+      stderr = result.stderr;
+      console.log('Python script execution completed successfully');
+    } catch (execError: any) {
+      pythonFailed = true;
+      console.error('!!! Python script execution FAILED !!!');
+      console.error('Error type:', typeof execError);
+      console.error('Error details:', execError);
+      console.error('stdout:', stdout);
+      console.error('stderr:', stderr);
+      throw new Error(`Python ICO script execution failed: ${execError.message}`);
+    }
+
+    // Check if output file was created
+    const outputExists = await fs.access(outputPath).then(() => true).catch(() => false);
+    if (!outputExists) {
+      console.error('Python ICO script did not produce output file:', outputPath);
+      console.error('Python stdout:', stdout);
+      console.error('Python stderr:', stderr);
+      throw new Error(`Python ICO script did not produce output file: ${outputPath}. Python error: ${stderr}`);
+    }
+
+    console.log('ICO file created successfully:', outputPath);
+    
+    // Read the output file
+    const outputBuffer = await fs.readFile(outputPath);
+    const downloadName = `${originalBase}.ico`;
+
+    if (persistToDisk) {
+      return await persistOutputBuffer(outputBuffer, downloadName, 'image/x-icon');
+    }
+
+    return {
+      buffer: outputBuffer,
+      filename: downloadName,
+      mime: 'image/x-icon'
+    };
+  } catch (error) {
+    console.error(`GIF->ICO conversion error:`, error);
+    const message = error instanceof Error ? error.message : `Unknown GIF->ICO error`;
+    throw new Error(`Failed to convert GIF to ICO: ${message}`);
+  } finally {
+    await fs.rm(tmpDir, { recursive: true, force: true }).catch(() => undefined);
+  }
+};
+
 // CSV to JSON converter using Python
 const convertCsvToJsonPython = async (
   file: Express.Multer.File,
@@ -13397,6 +13730,240 @@ app.post('/convert/cr2-to-webp/batch', checkConversionLimits, uploadBatch, async
     res.status(500).json({ error: message });
   } finally {
     await fs.rm(tmpDir, { recursive: true, force: true }).catch(() => undefined);
+  }
+});
+
+// EPS to ICO conversion routes
+app.post('/convert/eps-to-ico/single', checkConversionLimits, upload.single('file'), async (req, res) => {
+  // Set CORS headers
+  res.set({
+    'Access-Control-Allow-Origin': '*',
+    'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+    'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept'
+  });
+  
+  try {
+    const file = req.file;
+    if (!file) {
+      return res.status(400).json({ error: 'No file provided' });
+    }
+
+    const options = req.body || {};
+    const result = await convertEpsToIcoPython(file, options, false);
+    
+    res.set({
+      'Content-Type': result.mime,
+      'Content-Disposition': `attachment; filename="${result.filename}"`,
+      'Content-Length': result.buffer.length,
+      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+      'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept'
+    });
+    
+    res.send(result.buffer);
+  } catch (error) {
+    console.error('EPS->ICO single error:', error);
+    const message = error instanceof Error ? error.message : 'Unknown error';
+    res.status(500).json({ error: message });
+  }
+});
+
+app.post('/convert/eps-to-ico/batch', checkConversionLimits, uploadBatch, async (req, res) => {
+  // Set CORS headers
+  res.set({
+    'Access-Control-Allow-Origin': '*',
+    'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+    'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept'
+  });
+  
+  try {
+    const files = req.files as Express.Multer.File[] | undefined;
+    if (!files || files.length === 0) {
+      return res.status(400).json({ error: 'No files provided' });
+    }
+
+    const options = req.body || {};
+    const results = [];
+    
+    for (const file of files) {
+      try {
+        const result = await convertEpsToIcoPython(file, options, true);
+        results.push({
+          originalName: file.originalname,
+          outputFilename: result.filename,
+          success: true,
+          storedFilename: result.filename
+        });
+      } catch (error) {
+        results.push({
+          originalName: file.originalname,
+          success: false,
+          error: error instanceof Error ? error.message : 'Unknown error'
+        });
+      }
+    }
+    
+    res.json({ success: true, results });
+  } catch (error) {
+    console.error('EPS->ICO batch error:', error);
+    const message = error instanceof Error ? error.message : 'Unknown error';
+    res.status(500).json({ error: message });
+  }
+});
+
+// EPS to WebP conversion routes
+app.post('/convert/eps-to-webp/single', checkConversionLimits, upload.single('file'), async (req, res) => {
+  // Set CORS headers
+  res.set({
+    'Access-Control-Allow-Origin': '*',
+    'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+    'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept'
+  });
+  
+  try {
+    const file = req.file;
+    if (!file) {
+      return res.status(400).json({ error: 'No file provided' });
+    }
+
+    const options = req.body || {};
+    const result = await convertEpsToWebpPython(file, options, false);
+    
+    res.set({
+      'Content-Type': result.mime,
+      'Content-Disposition': `attachment; filename="${result.filename}"`,
+      'Content-Length': result.buffer.length,
+      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+      'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept'
+    });
+    
+    res.send(result.buffer);
+  } catch (error) {
+    console.error('EPS->WebP single error:', error);
+    const message = error instanceof Error ? error.message : 'Unknown error';
+    res.status(500).json({ error: message });
+  }
+});
+
+app.post('/convert/eps-to-webp/batch', checkConversionLimits, uploadBatch, async (req, res) => {
+  // Set CORS headers
+  res.set({
+    'Access-Control-Allow-Origin': '*',
+    'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+    'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept'
+  });
+  
+  try {
+    const files = req.files as Express.Multer.File[] | undefined;
+    if (!files || files.length === 0) {
+      return res.status(400).json({ error: 'No files provided' });
+    }
+
+    const options = req.body || {};
+    const results = [];
+    
+    for (const file of files) {
+      try {
+        const result = await convertEpsToWebpPython(file, options, true);
+        results.push({
+          originalName: file.originalname,
+          outputFilename: result.filename,
+          success: true,
+          storedFilename: result.filename
+        });
+      } catch (error) {
+        results.push({
+          originalName: file.originalname,
+          success: false,
+          error: error instanceof Error ? error.message : 'Unknown error'
+        });
+      }
+    }
+    
+    res.json({ success: true, results });
+  } catch (error) {
+    console.error('EPS->WebP batch error:', error);
+    const message = error instanceof Error ? error.message : 'Unknown error';
+    res.status(500).json({ error: message });
+  }
+});
+
+// GIF to ICO conversion routes
+app.post('/convert/gif-to-ico/single', checkConversionLimits, upload.single('file'), async (req, res) => {
+  // Set CORS headers
+  res.set({
+    'Access-Control-Allow-Origin': '*',
+    'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+    'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept'
+  });
+  
+  try {
+    const file = req.file;
+    if (!file) {
+      return res.status(400).json({ error: 'No file provided' });
+    }
+
+    const options = req.body || {};
+    const result = await convertGifToIcoPython(file, options, false);
+    
+    res.set({
+      'Content-Type': result.mime,
+      'Content-Disposition': `attachment; filename="${result.filename}"`,
+      'Content-Length': result.buffer.length,
+      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+      'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept'
+    });
+    
+    res.send(result.buffer);
+  } catch (error) {
+    console.error('GIF->ICO single error:', error);
+    const message = error instanceof Error ? error.message : 'Unknown error';
+    res.status(500).json({ error: message });
+  }
+});
+
+app.post('/convert/gif-to-ico/batch', checkConversionLimits, uploadBatch, async (req, res) => {
+  // Set CORS headers
+  res.set({
+    'Access-Control-Allow-Origin': '*',
+    'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+    'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept'
+  });
+  
+  try {
+    const files = req.files as Express.Multer.File[] | undefined;
+    if (!files || files.length === 0) {
+      return res.status(400).json({ error: 'No files provided' });
+    }
+
+    const options = req.body || {};
+    const results = [];
+    
+    for (const file of files) {
+      try {
+        const result = await convertGifToIcoPython(file, options, true);
+        results.push({
+          originalName: file.originalname,
+          outputFilename: result.filename,
+          success: true,
+          storedFilename: result.filename
+        });
+      } catch (error) {
+        results.push({
+          originalName: file.originalname,
+          success: false,
+          error: error instanceof Error ? error.message : 'Unknown error'
+        });
+      }
+    }
+    
+    res.json({ success: true, results });
+  } catch (error) {
+    console.error('GIF->ICO batch error:', error);
+    const message = error instanceof Error ? error.message : 'Unknown error';
+    res.status(500).json({ error: message });
   }
 });
 
