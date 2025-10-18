@@ -13777,34 +13777,14 @@ app.post('/convert/eps-to-ico/single', checkConversionLimits, upload.single('fil
     'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept'
   });
   
-  // Set timeout warning (Render.com has 30s limit on free tier)
-  let timeoutReached = false;
-  const timeoutHandler = setTimeout(() => {
-    if (!res.headersSent) {
-      timeoutReached = true;
-      res.status(408).json({ 
-        error: 'Conversion timeout. EPS files can take 1-3 minutes to process. Please try a smaller file or wait for the process to complete.',
-        timeout: true
-      });
-    }
-  }, 28000); // 28 seconds (slightly before Render's 30s limit)
-  
   try {
     const file = req.file;
     if (!file) {
-      clearTimeout(timeoutHandler);
       return res.status(400).json({ error: 'No file provided' });
     }
 
     const options = req.body || {};
     const result = await convertEpsToIcoPython(file, options, false);
-    
-    clearTimeout(timeoutHandler);
-    
-    if (timeoutReached || res.headersSent) {
-      console.log('Response already sent due to timeout, skipping send');
-      return;
-    }
     
     res.set({
       'Content-Type': result.mime,
@@ -13817,17 +13797,14 @@ app.post('/convert/eps-to-ico/single', checkConversionLimits, upload.single('fil
     
     res.send(result.buffer);
   } catch (error) {
-    clearTimeout(timeoutHandler);
-    if (!res.headersSent) {
-      console.error('EPS->ICO single error:', error);
-      const message = error instanceof Error ? error.message : 'Unknown error';
-      res.status(500).json({ 
-        error: message,
-        'Access-Control-Allow-Origin': '*',
-        'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
-        'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept'
-      });
-    }
+    console.error('EPS->ICO single error:', error);
+    const message = error instanceof Error ? error.message : 'Unknown error';
+    res.status(500).json({ 
+      error: message,
+      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+      'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept'
+    });
   }
 });
 
@@ -13883,34 +13860,14 @@ app.post('/convert/eps-to-webp/single', checkConversionLimits, upload.single('fi
     'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept'
   });
   
-  // Set timeout warning (Render.com has 30s limit on free tier)
-  let timeoutReached = false;
-  const timeoutHandler = setTimeout(() => {
-    if (!res.headersSent) {
-      timeoutReached = true;
-      res.status(408).json({ 
-        error: 'Conversion timeout. EPS files can take 1-3 minutes to process. Please try a smaller file or wait for the process to complete.',
-        timeout: true
-      });
-    }
-  }, 28000); // 28 seconds (slightly before Render's 30s limit)
-  
   try {
     const file = req.file;
     if (!file) {
-      clearTimeout(timeoutHandler);
       return res.status(400).json({ error: 'No file provided' });
     }
 
     const options = req.body || {};
     const result = await convertEpsToWebpPython(file, options, false);
-    
-    clearTimeout(timeoutHandler);
-    
-    if (timeoutReached || res.headersSent) {
-      console.log('Response already sent due to timeout, skipping send');
-      return;
-    }
     
     res.set({
       'Content-Type': result.mime,
@@ -13923,17 +13880,14 @@ app.post('/convert/eps-to-webp/single', checkConversionLimits, upload.single('fi
     
     res.send(result.buffer);
   } catch (error) {
-    clearTimeout(timeoutHandler);
-    if (!res.headersSent) {
-      console.error('EPS->WebP single error:', error);
-      const message = error instanceof Error ? error.message : 'Unknown error';
-      res.status(500).json({ 
-        error: message,
-        'Access-Control-Allow-Origin': '*',
-        'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
-        'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept'
-      });
-    }
+    console.error('EPS->WebP single error:', error);
+    const message = error instanceof Error ? error.message : 'Unknown error';
+    res.status(500).json({ 
+      error: message,
+      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+      'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept'
+    });
   }
 });
 
