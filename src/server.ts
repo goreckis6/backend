@@ -5357,6 +5357,13 @@ app.get('/health', (_req, res) => {
 
 // Route: Batch Download
 app.get('/batch-download/:filename', async (req, res) => {
+  // Set CORS headers
+  res.set({
+    'Access-Control-Allow-Origin': '*',
+    'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+    'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept'
+  });
+  
   const { filename } = req.params;
   console.log(`Batch download request for: ${filename}`);
   
@@ -5460,6 +5467,13 @@ app.use('/api/convert', (req, res, next) => {
 });
 
 app.post('/api/convert', conversionTimeout(5 * 60 * 1000), checkConversionLimits, upload.single('file'), async (req, res) => {
+  // Set CORS headers
+  res.set({
+    'Access-Control-Allow-Origin': '*',
+    'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+    'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept'
+  });
+  
   try {
     let file = req.file;
     const requestOptions = { ...(req.body as Record<string, string | undefined>) };
@@ -5935,6 +5949,13 @@ app.post('/api/convert', conversionTimeout(5 * 60 * 1000), checkConversionLimits
 });
 
 app.post('/api/convert/batch', conversionTimeout(10 * 60 * 1000), checkConversionLimits, uploadBatch, async (req, res) => {
+  // Set CORS headers
+  res.set({
+    'Access-Control-Allow-Origin': '*',
+    'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+    'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept'
+  });
+  
   const files = req.files as Express.Multer.File[] | undefined;
   const requestOptions = { ...(req.body as Record<string, string | undefined>) };
   const format = String(requestOptions.format ?? 'webp').toLowerCase();
