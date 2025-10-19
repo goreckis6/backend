@@ -5704,15 +5704,7 @@ const uploadBatchMulter = multer({
 
 const uploadBatch = uploadBatchMulter.array('files', 20);
 
-// Handle preflight OPTIONS requests
-app.options('*', (req, res) => {
-  console.log('OPTIONS preflight request received');
-  res.header('Access-Control-Allow-Origin', 'https://morphy-1-ulvv.onrender.com');
-  res.header('Access-Control-Allow-Credentials', 'true');
-  res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
-  res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization, Accept');
-  res.status(200).end();
-});
+// OPTIONS requests are now handled automatically by the CORS middleware above
 
 app.get('/health', (_req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });
@@ -5721,11 +5713,7 @@ app.get('/health', (_req, res) => {
 // Route: Batch Download
 app.get('/batch-download/:filename', async (req, res) => {
   // Set CORS headers
-  res.set({
-    'Access-Control-Allow-Origin': '*',
-    'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
-    'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept'
-  });
+  
   
   const { filename } = req.params;
   console.log(`Batch download request for: ${filename}`);
@@ -5831,11 +5819,7 @@ app.use('/api/convert', (req, res, next) => {
 
 app.post('/api/convert', conversionTimeout(5 * 60 * 1000), upload.single('file'), async (req, res) => {
   // Set CORS headers
-  res.set({
-    'Access-Control-Allow-Origin': '*',
-    'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
-    'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept'
-  });
+  
   
   try {
     let file = req.file;
@@ -5871,11 +5855,7 @@ app.post('/api/convert', conversionTimeout(5 * 60 * 1000), upload.single('file')
       }
       
       if (!file) {
-      res.set({
-        'Access-Control-Allow-Origin': '*',
-        'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
-        'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept'
-      });
+      
       return res.status(400).json({ error: 'No file uploaded' });
       }
     }
@@ -5927,11 +5907,7 @@ app.post('/api/convert', conversionTimeout(5 * 60 * 1000), upload.single('file')
             console.log('Created generic fallback filename');
           }
         } else {
-          res.set({
-            'Access-Control-Allow-Origin': '*',
-            'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
-            'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept'
-          });
+          
           return res.status(400).json({ error: 'Invalid file upload - missing filename and content' });
         }
       }
@@ -5939,11 +5915,7 @@ app.post('/api/convert', conversionTimeout(5 * 60 * 1000), upload.single('file')
 
     if (!file.buffer || file.buffer.length === 0) {
       console.log('ERROR: File has no content');
-      res.set({
-        'Access-Control-Allow-Origin': '*',
-        'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
-        'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept'
-      });
+      
       return res.status(400).json({ error: 'Invalid file upload - empty file' });
     }
 
@@ -6261,11 +6233,7 @@ app.post('/api/convert', conversionTimeout(5 * 60 * 1000), upload.single('file')
       mime: result.mime
     });
     
-    res.set({
-      'Access-Control-Allow-Origin': '*',
-      'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
-      'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept'
-    });
+    
     res.json({
       success: true,
       downloadPath: `/download/${encodeURIComponent(result.storedFilename!)}`,
@@ -6292,11 +6260,7 @@ app.post('/api/convert', conversionTimeout(5 * 60 * 1000), upload.single('file')
     const errorMessage = error instanceof Error ? error.message : 'Unknown conversion error';
     console.log('=== CONVERSION REQUEST END (ERROR) ===');
     
-    res.set({
-      'Access-Control-Allow-Origin': '*',
-      'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
-      'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept'
-    });
+    
     res.status(500).json({
       error: 'Conversion failed',
       details: errorMessage
@@ -6306,22 +6270,14 @@ app.post('/api/convert', conversionTimeout(5 * 60 * 1000), upload.single('file')
 
 app.post('/api/convert/batch', conversionTimeout(10 * 60 * 1000), uploadBatch, async (req, res) => {
   // Set CORS headers
-  res.set({
-    'Access-Control-Allow-Origin': '*',
-    'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
-    'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept'
-  });
+  
   
   const files = req.files as Express.Multer.File[] | undefined;
   const requestOptions = { ...(req.body as Record<string, string | undefined>) };
   const format = String(requestOptions.format ?? 'webp').toLowerCase();
 
   if (!files || files.length === 0) {
-    res.set({
-      'Access-Control-Allow-Origin': '*',
-      'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
-      'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept'
-    });
+    
     return res.status(400).json({
       success: false,
       processed: 0,
@@ -6331,11 +6287,7 @@ app.post('/api/convert/batch', conversionTimeout(10 * 60 * 1000), uploadBatch, a
   }
 
   if (files.length > 20) {
-    res.set({
-      'Access-Control-Allow-Origin': '*',
-      'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
-      'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept'
-    });
+    
     return res.status(400).json({
       success: false,
       processed: 0,
@@ -6465,11 +6417,7 @@ app.post('/api/convert/batch', conversionTimeout(10 * 60 * 1000), uploadBatch, a
     }
   }
 
-  res.set({
-    'Access-Control-Allow-Origin': '*',
-    'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
-    'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept'
-  });
+  
   res.json({
     success: results.every(result => result.success),
     processed,
@@ -6490,11 +6438,7 @@ app.get('/download/:filename', async (req, res) => {
     });
 
     if (!metadata) {
-      res.set({
-        'Access-Control-Allow-Origin': '*',
-        'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
-        'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept'
-      });
+      
       return res.status(404).json({ error: 'File not found or expired' });
     }
 
@@ -6502,11 +6446,7 @@ app.get('/download/:filename', async (req, res) => {
     const stat = await fs.stat(filePath).catch(() => null);
     if (!stat) {
       batchFileMetadata.delete(storedFilename);
-      res.set({
-        'Access-Control-Allow-Origin': '*',
-        'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
-        'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept'
-      });
+      
       return res.status(404).json({ error: 'File not found or expired' });
     }
 
@@ -6533,9 +6473,9 @@ app.get('/download/:filename', async (req, res) => {
       'Content-Disposition': `attachment; filename="${metadata.downloadName}"`,
       'Content-Length': stat.size.toString(),
       'Cache-Control': 'no-cache',
-      'Access-Control-Allow-Origin': '*',
-      'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
-      'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept'
+
+
+
     });
 
     const stream = (await import('node:fs')).createReadStream(filePath);
@@ -6546,11 +6486,7 @@ app.get('/download/:filename', async (req, res) => {
     stream.pipe(res);
   } catch (error) {
     console.error('Download error:', error);
-    res.set({
-      'Access-Control-Allow-Origin': '*',
-      'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
-      'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept'
-    });
+    
     res.status(500).json({ error: 'Failed to download file' });
   }
 });
@@ -10580,11 +10516,7 @@ app.post('/convert/csv-to-parquet/single', upload.single('file'), async (req, re
   console.log('CSV->Parquet single conversion request');
   
   // Set CORS headers
-  res.set({
-    'Access-Control-Allow-Origin': '*',
-    'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
-    'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept'
-  });
+  
   
   try {
     const file = req.file;
@@ -10599,9 +10531,9 @@ app.post('/convert/csv-to-parquet/single', upload.single('file'), async (req, re
       'Content-Type': result.mime,
       'Content-Disposition': `attachment; filename="${result.filename}"`,
       'Content-Length': result.buffer.length,
-      'Access-Control-Allow-Origin': '*',
-      'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
-      'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept'
+
+
+
     });
     
     res.send(result.buffer);
@@ -10617,11 +10549,7 @@ app.post('/convert/csv-to-parquet/batch', uploadBatch, async (req, res) => {
   console.log('CSV->Parquet batch conversion request');
   
   // Set CORS headers
-  res.set({
-    'Access-Control-Allow-Origin': '*',
-    'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
-    'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept'
-  });
+  
   
   try {
     const files = req.files as Express.Multer.File[];
@@ -10663,11 +10591,7 @@ app.post('/convert/csv-to-sql/single', upload.single('file'), async (req, res) =
   console.log('CSV->SQL single conversion request');
   
   // Set CORS headers
-  res.set({
-    'Access-Control-Allow-Origin': '*',
-    'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
-    'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept'
-  });
+  
   
   try {
     const file = req.file;
@@ -10682,9 +10606,9 @@ app.post('/convert/csv-to-sql/single', upload.single('file'), async (req, res) =
       'Content-Type': result.mime,
       'Content-Disposition': `attachment; filename="${result.filename}"`,
       'Content-Length': result.buffer.length,
-      'Access-Control-Allow-Origin': '*',
-      'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
-      'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept'
+
+
+
     });
     
     res.send(result.buffer);
@@ -10700,11 +10624,7 @@ app.post('/convert/csv-to-sql/batch', uploadBatch, async (req, res) => {
   console.log('CSV->SQL batch conversion request');
   
   // Set CORS headers
-  res.set({
-    'Access-Control-Allow-Origin': '*',
-    'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
-    'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept'
-  });
+  
   
   try {
     const files = req.files as Express.Multer.File[];
@@ -10746,11 +10666,7 @@ app.post('/convert/csv-to-toml/single', upload.single('file'), async (req, res) 
   console.log('CSV->TOML single conversion request');
   
   // Set CORS headers
-  res.set({
-    'Access-Control-Allow-Origin': '*',
-    'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
-    'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept'
-  });
+  
   
   try {
     const file = req.file;
@@ -10765,9 +10681,9 @@ app.post('/convert/csv-to-toml/single', upload.single('file'), async (req, res) 
       'Content-Type': result.mime,
       'Content-Disposition': `attachment; filename="${result.filename}"`,
       'Content-Length': result.buffer.length,
-      'Access-Control-Allow-Origin': '*',
-      'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
-      'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept'
+
+
+
     });
     
     res.send(result.buffer);
@@ -10783,11 +10699,7 @@ app.post('/convert/csv-to-toml/batch', uploadBatch, async (req, res) => {
   console.log('CSV->TOML batch conversion request');
   
   // Set CORS headers
-  res.set({
-    'Access-Control-Allow-Origin': '*',
-    'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
-    'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept'
-  });
+  
   
   try {
     const files = req.files as Express.Multer.File[];
@@ -10912,11 +10824,7 @@ app.post('/convert/csv-to-xml/single', upload.single('file'), async (req, res) =
   console.log('CSV->XML single conversion request');
   
   // Set CORS headers
-  res.set({
-    'Access-Control-Allow-Origin': '*',
-    'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
-    'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept'
-  });
+  
   
   try {
     const file = req.file;
@@ -10931,9 +10839,9 @@ app.post('/convert/csv-to-xml/single', upload.single('file'), async (req, res) =
       'Content-Type': result.mime,
       'Content-Disposition': `attachment; filename="${result.filename}"`,
       'Content-Length': result.buffer.length,
-      'Access-Control-Allow-Origin': '*',
-      'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
-      'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept'
+
+
+
     });
     
     res.send(result.buffer);
@@ -10949,11 +10857,7 @@ app.post('/convert/csv-to-xml/batch', uploadBatch, async (req, res) => {
   console.log('CSV->XML batch conversion request');
   
   // Set CORS headers
-  res.set({
-    'Access-Control-Allow-Origin': '*',
-    'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
-    'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept'
-  });
+  
   
   try {
     const files = req.files as Express.Multer.File[];
@@ -11084,11 +10988,7 @@ app.post('/convert/csv-to-yaml/single', upload.single('file'), async (req, res) 
   console.log('CSV->YAML single conversion request');
   
   // Set CORS headers
-  res.set({
-    'Access-Control-Allow-Origin': '*',
-    'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
-    'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept'
-  });
+  
   
   try {
     const file = req.file;
@@ -11103,9 +11003,9 @@ app.post('/convert/csv-to-yaml/single', upload.single('file'), async (req, res) 
       'Content-Type': result.mime,
       'Content-Disposition': `attachment; filename="${result.filename}"`,
       'Content-Length': result.buffer.length,
-      'Access-Control-Allow-Origin': '*',
-      'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
-      'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept'
+
+
+
     });
     
     res.send(result.buffer);
@@ -11121,11 +11021,7 @@ app.post('/convert/csv-to-yaml/batch', uploadBatch, async (req, res) => {
   console.log('CSV->YAML batch conversion request');
   
   // Set CORS headers
-  res.set({
-    'Access-Control-Allow-Origin': '*',
-    'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
-    'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept'
-  });
+  
   
   try {
     const files = req.files as Express.Multer.File[];
@@ -11925,11 +11821,7 @@ app.post('/convert/csv-to-epub/batch', uploadBatch, async (req, res) => {
 // Route: CSV to HTML (Single)
 app.post('/convert/csv-to-html/single', upload.single('file'), async (req, res) => {
   // Set CORS headers
-  res.set({
-    'Access-Control-Allow-Origin': '*',
-    'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
-    'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept'
-  });
+  
   
   console.log('CSV->HTML single conversion request');
   
@@ -11946,9 +11838,9 @@ app.post('/convert/csv-to-html/single', upload.single('file'), async (req, res) 
       'Content-Type': result.mime,
       'Content-Disposition': `attachment; filename="${result.filename}"`,
       'Content-Length': result.buffer.length,
-      'Access-Control-Allow-Origin': '*',
-      'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
-      'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept'
+
+
+
     });
     
     res.send(result.buffer);
@@ -11957,9 +11849,9 @@ app.post('/convert/csv-to-html/single', upload.single('file'), async (req, res) 
     const message = error instanceof Error ? error.message : 'Unknown error';
     res.status(500).json({ 
       error: message,
-      'Access-Control-Allow-Origin': '*',
-      'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
-      'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept'
+
+
+
     });
   }
 });
@@ -11967,11 +11859,7 @@ app.post('/convert/csv-to-html/single', upload.single('file'), async (req, res) 
 // Route: CSV to HTML (Batch)
 app.post('/convert/csv-to-html/batch', uploadBatch, async (req, res) => {
   // Set CORS headers
-  res.set({
-    'Access-Control-Allow-Origin': '*',
-    'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
-    'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept'
-  });
+  
   
   console.log('CSV->HTML batch conversion request');
   
@@ -12008,9 +11896,9 @@ app.post('/convert/csv-to-html/batch', uploadBatch, async (req, res) => {
     const message = error instanceof Error ? error.message : 'Unknown error';
     res.status(500).json({ 
       error: message,
-      'Access-Control-Allow-Origin': '*',
-      'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
-      'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept'
+
+
+
     });
   }
 });
@@ -12018,11 +11906,7 @@ app.post('/convert/csv-to-html/batch', uploadBatch, async (req, res) => {
 // Route: CSV to Markdown (Single)
 app.post('/convert/csv-to-md/single', upload.single('file'), async (req, res) => {
   // Set CORS headers
-  res.set({
-    'Access-Control-Allow-Origin': '*',
-    'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
-    'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept'
-  });
+  
   
   console.log('CSV->Markdown single conversion request');
   
@@ -12039,9 +11923,9 @@ app.post('/convert/csv-to-md/single', upload.single('file'), async (req, res) =>
       'Content-Type': result.mime,
       'Content-Disposition': `attachment; filename="${result.filename}"`,
       'Content-Length': result.buffer.length,
-      'Access-Control-Allow-Origin': '*',
-      'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
-      'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept'
+
+
+
     });
     
     res.send(result.buffer);
@@ -12050,9 +11934,9 @@ app.post('/convert/csv-to-md/single', upload.single('file'), async (req, res) =>
     const message = error instanceof Error ? error.message : 'Unknown error';
     res.status(500).json({ 
       error: message,
-      'Access-Control-Allow-Origin': '*',
-      'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
-      'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept'
+
+
+
     });
   }
 });
@@ -12060,11 +11944,7 @@ app.post('/convert/csv-to-md/single', upload.single('file'), async (req, res) =>
 // Route: CSV to Markdown (Batch)
 app.post('/convert/csv-to-md/batch', uploadBatch, async (req, res) => {
   // Set CORS headers
-  res.set({
-    'Access-Control-Allow-Origin': '*',
-    'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
-    'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept'
-  });
+  
   
   console.log('CSV->Markdown batch conversion request');
   
@@ -12101,9 +11981,9 @@ app.post('/convert/csv-to-md/batch', uploadBatch, async (req, res) => {
     const message = error instanceof Error ? error.message : 'Unknown error';
     res.status(500).json({ 
       error: message,
-      'Access-Control-Allow-Origin': '*',
-      'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
-      'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept'
+
+
+
     });
   }
 });
@@ -12111,11 +11991,7 @@ app.post('/convert/csv-to-md/batch', uploadBatch, async (req, res) => {
 // Route: CSV to MOBI (Single)
 app.post('/convert/csv-to-mobi/single', upload.single('file'), async (req, res) => {
   // Set CORS headers
-  res.set({
-    'Access-Control-Allow-Origin': '*',
-    'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
-    'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept'
-  });
+  
   
   console.log('CSV->MOBI single conversion request');
   
@@ -12132,9 +12008,9 @@ app.post('/convert/csv-to-mobi/single', upload.single('file'), async (req, res) 
       'Content-Type': result.mime,
       'Content-Disposition': `attachment; filename="${result.filename}"`,
       'Content-Length': result.buffer.length,
-      'Access-Control-Allow-Origin': '*',
-      'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
-      'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept'
+
+
+
     });
     
     res.send(result.buffer);
@@ -12143,9 +12019,9 @@ app.post('/convert/csv-to-mobi/single', upload.single('file'), async (req, res) 
     const message = error instanceof Error ? error.message : 'Unknown error';
     res.status(500).json({ 
       error: message,
-      'Access-Control-Allow-Origin': '*',
-      'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
-      'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept'
+
+
+
     });
   }
 });
@@ -12258,7 +12134,7 @@ app.post('/convert/csv-to-odp/batch', uploadBatch, async (req, res) => {
 // Initialize dotenv
 dotenv.config();
 
-// CORS configuration
+// Centralized CORS configuration
 const allowedOrigins = [
   process.env.FRONTEND_URL,
   process.env.FRONTEND_URL_ALT,
@@ -12269,16 +12145,7 @@ const allowedOrigins = [
   'http://localhost:3000', // Backend dev server
 ].filter(Boolean) as string[];
 
-// Temporary permissive CORS for debugging
-app.use(cors({
-  origin: true, // Allow all origins temporarily
-  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'Accept'],
-  credentials: true,
-}));
-
-// Original CORS configuration (commented out for debugging)
-/*
+// Single CORS configuration for all routes
 app.use(cors({
   origin: (origin, callback) => {
     console.log('CORS check - Request origin:', origin);
@@ -12303,7 +12170,6 @@ app.use(cors({
   allowedHeaders: ['Content-Type', 'Authorization', 'Accept'],
   credentials: true,
 }));
-*/
 
 // Security middleware
 app.use(helmet());
@@ -13013,11 +12879,7 @@ app.post('/convert/cr2-to-ico/single', upload.single('file'), async (req, res) =
   // Handle timeout gracefully with CORS headers
   const timeoutHandler = () => {
     console.log('CR2 to ICO: Request timeout - sending timeout response');
-    res.set({
-      'Access-Control-Allow-Origin': '*',
-      'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
-      'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept'
-    });
+    
     if (!res.headersSent) {
       res.status(408).json({ 
         error: 'Conversion timeout', 
@@ -13091,28 +12953,20 @@ app.post('/convert/cr2-to-ico/single', upload.single('file'), async (req, res) =
           res.set({
             'Content-Type': 'image/x-icon',
             'Content-Disposition': `attachment; filename="${path.basename(outputPath)}"`,
-            'Access-Control-Allow-Origin': '*',
-            'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
-            'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept'
+
+
+
           });
           res.send(outputBuffer);
           
         } else {
           console.error('CR2 to ICO conversion failed. Code:', code, 'Stderr:', stderr);
-          res.set({
-            'Access-Control-Allow-Origin': '*',
-            'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
-            'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept'
-          });
+          
           res.status(500).json({ error: 'Conversion failed', details: stderr });
         }
       } catch (error) {
         console.error('Error handling conversion result:', error);
-        res.set({
-          'Access-Control-Allow-Origin': '*',
-          'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
-          'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept'
-        });
+        
         res.status(500).json({ error: 'Conversion failed', details: error.message });
       } finally {
         await fs.rm(tmpDir, { recursive: true, force: true }).catch(() => undefined);
@@ -13121,11 +12975,7 @@ app.post('/convert/cr2-to-ico/single', upload.single('file'), async (req, res) =
   } catch (error) {
     console.error('CR2 to ICO conversion error:', error);
     const message = error instanceof Error ? error.message : 'Unknown error';
-    res.set({
-      'Access-Control-Allow-Origin': '*',
-      'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
-      'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept'
-    });
+    
     res.status(500).json({ error: message });
   }
 });
@@ -13262,11 +13112,7 @@ app.post('/convert/cr2-to-webp/single', upload.single('file'), async (req, res) 
   // Handle timeout gracefully with CORS headers
   const timeoutHandler = () => {
     console.log('CR2 to WebP: Request timeout - sending timeout response');
-    res.set({
-      'Access-Control-Allow-Origin': '*',
-      'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
-      'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept'
-    });
+    
     if (!res.headersSent) {
       res.status(408).json({ 
         error: 'Conversion timeout', 
@@ -13340,28 +13186,20 @@ app.post('/convert/cr2-to-webp/single', upload.single('file'), async (req, res) 
           res.set({
             'Content-Type': 'image/webp',
             'Content-Disposition': `attachment; filename="${path.basename(outputPath)}"`,
-            'Access-Control-Allow-Origin': '*',
-            'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
-            'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept'
+
+
+
           });
           res.send(outputBuffer);
           
         } else {
           console.error('CR2 to WebP conversion failed. Code:', code, 'Stderr:', stderr);
-          res.set({
-            'Access-Control-Allow-Origin': '*',
-            'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
-            'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept'
-          });
+          
           res.status(500).json({ error: 'Conversion failed', details: stderr });
         }
       } catch (error) {
         console.error('Error handling conversion result:', error);
-        res.set({
-          'Access-Control-Allow-Origin': '*',
-          'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
-          'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept'
-        });
+        
         res.status(500).json({ error: 'Conversion failed', details: error.message });
       } finally {
         await fs.rm(tmpDir, { recursive: true, force: true }).catch(() => undefined);
@@ -13370,11 +13208,7 @@ app.post('/convert/cr2-to-webp/single', upload.single('file'), async (req, res) 
   } catch (error) {
     console.error('CR2 to WebP conversion error:', error);
     const message = error instanceof Error ? error.message : 'Unknown error';
-    res.set({
-      'Access-Control-Allow-Origin': '*',
-      'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
-      'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept'
-    });
+    
     res.status(500).json({ error: message });
   }
 });
@@ -13503,11 +13337,7 @@ app.post('/convert/cr2-to-webp/batch', uploadBatch, async (req, res) => {
 // EPS to ICO conversion routes
 app.post('/convert/eps-to-ico/single', upload.single('file'), async (req, res) => {
   // Set CORS headers
-  res.set({
-    'Access-Control-Allow-Origin': '*',
-    'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
-    'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept'
-  });
+  
   
   try {
     const file = req.file;
@@ -13522,9 +13352,9 @@ app.post('/convert/eps-to-ico/single', upload.single('file'), async (req, res) =
       'Content-Type': result.mime,
       'Content-Disposition': `attachment; filename="${result.filename}"`,
       'Content-Length': result.buffer.length,
-      'Access-Control-Allow-Origin': '*',
-      'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
-      'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept'
+
+
+
     });
     
     res.send(result.buffer);
@@ -13533,20 +13363,16 @@ app.post('/convert/eps-to-ico/single', upload.single('file'), async (req, res) =
     const message = error instanceof Error ? error.message : 'Unknown error';
     res.status(500).json({ 
       error: message,
-      'Access-Control-Allow-Origin': '*',
-      'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
-      'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept'
+
+
+
     });
   }
 });
 
 app.post('/convert/eps-to-ico/batch', uploadBatch, async (req, res) => {
   // Set CORS headers
-  res.set({
-    'Access-Control-Allow-Origin': '*',
-    'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
-    'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept'
-  });
+  
   
   try {
     const files = req.files as Express.Multer.File[] | undefined;
@@ -13586,11 +13412,7 @@ app.post('/convert/eps-to-ico/batch', uploadBatch, async (req, res) => {
 // EPS to WebP conversion routes
 app.post('/convert/eps-to-webp/single', upload.single('file'), async (req, res) => {
   // Set CORS headers
-  res.set({
-    'Access-Control-Allow-Origin': '*',
-    'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
-    'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept'
-  });
+  
   
   try {
     const file = req.file;
@@ -13605,9 +13427,9 @@ app.post('/convert/eps-to-webp/single', upload.single('file'), async (req, res) 
       'Content-Type': result.mime,
       'Content-Disposition': `attachment; filename="${result.filename}"`,
       'Content-Length': result.buffer.length,
-      'Access-Control-Allow-Origin': '*',
-      'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
-      'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept'
+
+
+
     });
     
     res.send(result.buffer);
@@ -13616,20 +13438,16 @@ app.post('/convert/eps-to-webp/single', upload.single('file'), async (req, res) 
     const message = error instanceof Error ? error.message : 'Unknown error';
     res.status(500).json({ 
       error: message,
-      'Access-Control-Allow-Origin': '*',
-      'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
-      'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept'
+
+
+
     });
   }
 });
 
 app.post('/convert/eps-to-webp/batch', uploadBatch, async (req, res) => {
   // Set CORS headers
-  res.set({
-    'Access-Control-Allow-Origin': '*',
-    'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
-    'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept'
-  });
+  
   
   try {
     const files = req.files as Express.Multer.File[] | undefined;
@@ -13669,11 +13487,7 @@ app.post('/convert/eps-to-webp/batch', uploadBatch, async (req, res) => {
 // GIF to ICO conversion routes
 app.post('/convert/gif-to-ico/single', upload.single('file'), async (req, res) => {
   // Set CORS headers
-  res.set({
-    'Access-Control-Allow-Origin': '*',
-    'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
-    'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept'
-  });
+  
   
   try {
     const file = req.file;
@@ -13688,9 +13502,9 @@ app.post('/convert/gif-to-ico/single', upload.single('file'), async (req, res) =
       'Content-Type': result.mime,
       'Content-Disposition': `attachment; filename="${result.filename}"`,
       'Content-Length': result.buffer.length,
-      'Access-Control-Allow-Origin': '*',
-      'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
-      'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept'
+
+
+
     });
     
     res.send(result.buffer);
@@ -13703,11 +13517,7 @@ app.post('/convert/gif-to-ico/single', upload.single('file'), async (req, res) =
 
 app.post('/convert/gif-to-ico/batch', uploadBatch, async (req, res) => {
   // Set CORS headers
-  res.set({
-    'Access-Control-Allow-Origin': '*',
-    'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
-    'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept'
-  });
+  
   
   try {
     const files = req.files as Express.Multer.File[] | undefined;
