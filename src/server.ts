@@ -5648,7 +5648,16 @@ const convertCsvToOdpPython = async (
 
 // Initialize Express app
 const app = express();
-const PORT = parseInt(process.env.PORT || '3000', 10);
+const DEFAULT_PORT = 3000;
+const parsedPort = Number.parseInt(process.env.PORT ?? '', 10);
+const PORT = Number.isInteger(parsedPort) && parsedPort > 0 && parsedPort < 65536
+  ? parsedPort
+  : DEFAULT_PORT;
+
+if (PORT !== parsedPort) {
+  console.warn('Invalid PORT environment variable detected:', process.env.PORT);
+  console.warn(`Falling back to default port ${DEFAULT_PORT}`);
+}
 
 // Rate limiting to prevent abuse
 const limiter = rateLimit({
