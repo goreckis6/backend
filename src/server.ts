@@ -5662,7 +5662,42 @@ app.use(helmet({
   contentSecurityPolicy: false, // Disable CSP for file uploads
   crossOriginEmbedderPolicy: false
 }));
-// CORS configuration is handled later in the file
+// Centralized CORS configuration
+const allowedOrigins = [
+  process.env.FRONTEND_URL,
+  process.env.FRONTEND_URL_ALT,
+  'https://morphyimg.com',
+  'https://morphy-1-ulvv.onrender.com',
+  'https://morphy-2-n2tb.onrender.com',
+  'http://localhost:5173', // Frontend dev server
+  'http://localhost:3000', // Backend dev server
+].filter(Boolean) as string[];
+
+// Single CORS configuration for all routes
+app.use(cors({
+  origin: (origin, callback) => {
+    console.log('CORS check - Request origin:', origin);
+    console.log('CORS check - Allowed origins:', allowedOrigins);
+    
+    // Allow requests with no origin (like mobile apps or curl requests)
+    if (!origin) {
+      console.log('CORS check - No origin, allowing request');
+      return callback(null, true);
+    }
+    
+    if (allowedOrigins.indexOf(origin) === -1) {
+      const msg = `The CORS policy for this site does not allow access from the specified Origin: ${origin}`;
+      console.log('CORS check - Origin not allowed:', origin);
+      return callback(new Error(msg), false);
+    }
+    
+    console.log('CORS check - Origin allowed:', origin);
+    return callback(null, true);
+  },
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'Accept'],
+  credentials: true,
+}));
 
 app.use('/api/', limiter);
 
@@ -12134,42 +12169,7 @@ app.post('/convert/csv-to-odp/batch', uploadBatch, async (req, res) => {
 // Initialize dotenv
 dotenv.config();
 
-// Centralized CORS configuration
-const allowedOrigins = [
-  process.env.FRONTEND_URL,
-  process.env.FRONTEND_URL_ALT,
-  'https://morphyimg.com',
-  'https://morphy-1-ulvv.onrender.com',
-  'https://morphy-2-n2tb.onrender.com',
-  'http://localhost:5173', // Frontend dev server
-  'http://localhost:3000', // Backend dev server
-].filter(Boolean) as string[];
-
-// Single CORS configuration for all routes
-app.use(cors({
-  origin: (origin, callback) => {
-    console.log('CORS check - Request origin:', origin);
-    console.log('CORS check - Allowed origins:', allowedOrigins);
-    
-    // Allow requests with no origin (like mobile apps or curl requests)
-    if (!origin) {
-      console.log('CORS check - No origin, allowing request');
-      return callback(null, true);
-    }
-    
-    if (allowedOrigins.indexOf(origin) === -1) {
-      const msg = `The CORS policy for this site does not allow access from the specified Origin: ${origin}`;
-      console.log('CORS check - Origin not allowed:', origin);
-      return callback(new Error(msg), false);
-    }
-    
-    console.log('CORS check - Origin allowed:', origin);
-    return callback(null, true);
-  },
-  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'Accept'],
-  credentials: true,
-}));
+// CORS configuration is now handled earlier in the file
 
 // Security middleware
 app.use(helmet());
