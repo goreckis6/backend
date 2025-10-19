@@ -1967,7 +1967,7 @@ interface CommandResult {
   stderr: string;
 }
 
-const execLibreOffice = async (args: string[]): Promise<CommandResult> => {
+const execLibreOffice = async (args: string[], customEnv?: Record<string, string>): Promise<CommandResult> => {
   let lastError: unknown;
   for (const binary of LIBREOFFICE_CANDIDATES) {
     try {
@@ -1975,7 +1975,8 @@ const execLibreOffice = async (args: string[]): Promise<CommandResult> => {
         env: {
           ...process.env,
           HOME: process.env.HOME || os.homedir(),
-          USERPROFILE: process.env.USERPROFILE || os.homedir()
+          USERPROFILE: process.env.USERPROFILE || os.homedir(),
+          ...customEnv
         }
       });
       return result;
@@ -4780,13 +4781,30 @@ const convertBufferWithLibreOffice = async (
       '--nodefault',
       '--nologo',
       '--nofirststartwizard',
+      '--invisible',
+      '--norestore',
       ...buildLibreOfficeFilterArgs(options),
       '--convert-to', conversion.convertTo,
       '--outdir', tmpDir,
       inputPath
     ];
 
-    const { stdout, stderr } = await execLibreOffice(args);
+    // Try with additional environment variables to prevent DeploymentException
+    const env = {
+      ...process.env,
+      HOME: process.env.HOME || os.homedir(),
+      USERPROFILE: process.env.USERPROFILE || os.homedir(),
+      LIBREOFFICE_USER_PROFILE: path.join(os.tmpdir(), 'lo-profile'),
+      LIBREOFFICE_USER_CONFIG: path.join(os.tmpdir(), 'lo-config'),
+      LIBREOFFICE_USER_DATA: path.join(os.tmpdir(), 'lo-data')
+    };
+    
+    // Create LibreOffice profile directories
+    await fs.mkdir(env.LIBREOFFICE_USER_PROFILE, { recursive: true }).catch(() => {});
+    await fs.mkdir(env.LIBREOFFICE_USER_CONFIG, { recursive: true }).catch(() => {});
+    await fs.mkdir(env.LIBREOFFICE_USER_DATA, { recursive: true }).catch(() => {});
+
+    const { stdout, stderr } = await execLibreOffice(args, env);
     if (stdout.trim().length > 0) {
       console.log('LibreOffice post-process stdout:', stdout.trim());
     }
@@ -4815,11 +4833,56 @@ const convertBufferWithLibreOffice = async (
     };
   } catch (error) {
     console.error('LibreOffice post-processing failed:', error);
+    
+    // Check if it's a DeploymentException (common in containers)
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    const isDeploymentException = errorMessage.includes('DeploymentException') || 
+                                 errorMessage.includes('Unspecified Application Error');
+    
+    if (isDeploymentException) {
+      console.log('LibreOffice DeploymentException detected, attempting fallback...');
+      
+      // For RTF conversion, try a simpler approach or return the text as-is
+      if (targetFormat === 'rtf') {
+        console.log('Falling back to basic RTF conversion for DeploymentException');
+        try {
+          const textContent = buffer.toString('utf-8');
+          const rtfContent = convertTextToRtf(textContent);
+          const rtfBuffer = Buffer.from(rtfContent, 'utf-8');
+          const downloadName = `${sanitizedBase}.rtf`;
+          
+          if (persistToDisk) {
+            return persistOutputBuffer(rtfBuffer, downloadName, 'application/rtf');
+          }
+          
+          return {
+            buffer: rtfBuffer,
+            filename: downloadName,
+            mime: 'application/rtf'
+          };
+        } catch (fallbackError) {
+          console.error('RTF fallback also failed:', fallbackError);
+        }
+      }
+    }
+    
     const message = error instanceof Error ? error.message : 'Unknown LibreOffice error';
     throw new Error(`Failed to post-process with LibreOffice: ${message}`);
   } finally {
     await fs.rm(tmpDir, { recursive: true, force: true }).catch(() => undefined);
   }
+};
+
+const convertTextToRtf = (text: string): string => {
+  // Basic RTF conversion - escape special characters and wrap in RTF format
+  const escapedText = text
+    .replace(/\\/g, '\\\\')  // Escape backslashes
+    .replace(/\{/g, '\\{')   // Escape opening braces
+    .replace(/\}/g, '\\}')   // Escape closing braces
+    .replace(/\n/g, '\\par ') // Convert newlines to paragraph breaks
+    .replace(/\r/g, '');     // Remove carriage returns
+  
+  return `{\\rtf1\\ansi\\deff0 {\\fonttbl {\\f0 Times New Roman;}} \\f0\\fs24 ${escapedText}}`;
 };
 
 const postProcessToSpreadsheet = async (
