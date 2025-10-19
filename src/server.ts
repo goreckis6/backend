@@ -4946,12 +4946,60 @@ const convertTxtToPresentation = async (
       ['--headless','--nolockcheck','--nodefault','--nologo','--nofirststartwizard','--convert-to', targetFormat,'--outdir', tmpDir, pptxPath]
     ];
     let stdout = ''; let stderr = ''; let ok = false;
+    
+    // Try with additional environment variables to prevent DeploymentException
+    const env = {
+      ...process.env,
+      HOME: process.env.HOME || os.homedir(),
+      USERPROFILE: process.env.USERPROFILE || os.homedir(),
+      LIBREOFFICE_USER_PROFILE: path.join(os.tmpdir(), 'lo-profile'),
+      LIBREOFFICE_USER_CONFIG: path.join(os.tmpdir(), 'lo-config'),
+      LIBREOFFICE_USER_DATA: path.join(os.tmpdir(), 'lo-data')
+    };
+
+    // Create LibreOffice profile directories
+    await fs.mkdir(env.LIBREOFFICE_USER_PROFILE, { recursive: true }).catch(() => {});
+    await fs.mkdir(env.LIBREOFFICE_USER_CONFIG, { recursive: true }).catch(() => {});
+    await fs.mkdir(env.LIBREOFFICE_USER_DATA, { recursive: true }).catch(() => {});
+    
     for (const variant of variants2) {
       console.log('LibreOffice PPTX->presentation args:', variant);
       try {
-        const res = await execLibreOffice(variant);
+        const res = await execLibreOffice(variant, env);
         stdout = res.stdout; stderr = res.stderr; ok = true; break;
-      } catch (e) { console.warn('LibreOffice PPTX conversion attempt failed, trying fallback...', e); }
+      } catch (e) { 
+        console.warn('LibreOffice PPTX conversion attempt failed, trying fallback...', e);
+        
+        // Check if it's a DeploymentException and try a simpler approach
+        const errorMessage = e instanceof Error ? e.message : String(e);
+        const isDeploymentException = errorMessage.includes('DeploymentException') ||
+                                     errorMessage.includes('Unspecified Application Error');
+        
+        if (isDeploymentException) {
+          console.log('LibreOffice DeploymentException detected for presentation conversion, trying fallback...');
+          // For presentation conversion, we can fall back to returning the original PPTX
+          if (targetFormat === 'pptx') {
+            console.log('Target is already PPTX, returning generated file directly');
+            const outputBuffer = await fs.readFile(pptxPath);
+            const downloadName = `${sanitizedBase}.pptx`;
+            const mime = 'application/vnd.openxmlformats-officedocument.presentationml.presentation';
+            if (persistToDisk) {
+              return persistOutputBuffer(outputBuffer, downloadName, mime);
+            }
+            return { buffer: outputBuffer, filename: downloadName, mime };
+          } else {
+            console.log(`LibreOffice failed to convert to ${targetFormat}, falling back to PPTX format`);
+            // Fall back to PPTX format when LibreOffice fails
+            const outputBuffer = await fs.readFile(pptxPath);
+            const downloadName = `${sanitizedBase}.pptx`;
+            const mime = 'application/vnd.openxmlformats-officedocument.presentationml.presentation';
+            if (persistToDisk) {
+              return persistOutputBuffer(outputBuffer, downloadName, mime);
+            }
+            return { buffer: outputBuffer, filename: downloadName, mime };
+          }
+        }
+      }
     }
     if (!ok) throw new Error('LibreOffice failed converting PPTX to presentation format');
     if (stdout.trim()) console.log('LibreOffice presentation stdout:', stdout.trim());
