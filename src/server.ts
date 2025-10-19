@@ -5664,14 +5664,22 @@ app.use(helmet({
 }));
 // Centralized CORS configuration
 const allowedOrigins = [
-  process.env.FRONTEND_URL,
-  process.env.FRONTEND_URL_ALT,
   'https://morphyimg.com',
   'https://morphy-1-ulvv.onrender.com',
   'https://morphy-2-n2tb.onrender.com',
   'http://localhost:5173', // Frontend dev server
   'http://localhost:3000', // Backend dev server
-].filter(Boolean) as string[];
+];
+
+// Add environment variables if they exist
+if (process.env.FRONTEND_URL) {
+  allowedOrigins.push(process.env.FRONTEND_URL);
+}
+if (process.env.FRONTEND_URL_ALT) {
+  allowedOrigins.push(process.env.FRONTEND_URL_ALT);
+}
+
+console.log('CORS - Allowed origins:', allowedOrigins);
 
 // Single CORS configuration for all routes
 app.use(cors({
