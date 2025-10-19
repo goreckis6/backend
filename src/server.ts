@@ -19,11 +19,6 @@ import { Document, Packer, Paragraph, Table, TableCell, TableRow, WidthType } fr
 import { fileURLToPath } from 'url';
 import { dirname } from 'path';
 import dotenv from 'dotenv';
-import { initializeDatabase, closeDatabase, Conversion, User, sequelize, AnonymousConversion } from './database/index.js';
-import { DatabaseService } from './services/databaseService.js';
-import { AnonymousConversionService } from './services/anonymousConversionService.js';
-import authRoutes from './routes/auth.js';
-import { checkConversionLimits, recordConversion, getConversionStatus } from './middleware/conversionLimits.js';
 
 // ES module compatibility: define __dirname
 const __filename = fileURLToPath(import.meta.url);
@@ -5834,7 +5829,7 @@ app.use('/api/convert', (req, res, next) => {
   next();
 });
 
-app.post('/api/convert', conversionTimeout(5 * 60 * 1000), checkConversionLimits, upload.single('file'), async (req, res) => {
+app.post('/api/convert', conversionTimeout(5 * 60 * 1000), upload.single('file'), async (req, res) => {
   // Set CORS headers
   res.set({
     'Access-Control-Allow-Origin': '*',
@@ -6278,13 +6273,6 @@ app.post('/api/convert', conversionTimeout(5 * 60 * 1000), checkConversionLimits
       size: result.buffer.length
     });
     
-    // Record conversion for anonymous users (IP-based limits)
-    try {
-      await recordConversion(req, res, () => {});
-    } catch (recordError) {
-      console.warn('Failed to record conversion:', recordError);
-      // Don't fail the request if recording fails
-    }
     
     console.log('=== CONVERSION REQUEST END (SUCCESS) ===');
   } catch (error) {
@@ -6316,7 +6304,7 @@ app.post('/api/convert', conversionTimeout(5 * 60 * 1000), checkConversionLimits
   }
 });
 
-app.post('/api/convert/batch', conversionTimeout(10 * 60 * 1000), checkConversionLimits, uploadBatch, async (req, res) => {
+app.post('/api/convert/batch', conversionTimeout(10 * 60 * 1000), uploadBatch, async (req, res) => {
   // Set CORS headers
   res.set({
     'Access-Control-Allow-Origin': '*',
@@ -6488,13 +6476,6 @@ app.post('/api/convert/batch', conversionTimeout(10 * 60 * 1000), checkConversio
     results
   });
   
-  // Record conversion for anonymous users (IP-based limits) - batch counts as 1 conversion
-  try {
-    await recordConversion(req, res, () => {});
-  } catch (recordError) {
-    console.warn('Failed to record batch conversion:', recordError);
-    // Don't fail the request if recording fails
-  }
 });
 
 app.get('/download/:filename', async (req, res) => {
@@ -12350,290 +12331,14 @@ app.get('/health', (req, res) => {
   });
 });
 
-// Authentication routes
-app.use('/api/auth', authRoutes);
 
-// Conversion limits endpoint
-app.get('/api/conversion-status', getConversionStatus);
 
-// Debug endpoint to check anonymous conversions
-app.get('/api/debug/anonymous-conversions', async (req, res) => {
-  try {
-    const clientIP = req.ip || req.connection.remoteAddress || req.socket.remoteAddress || '127.0.0.1';
-    console.log('🔍 Debug: Checking anonymous conversions for IP:', clientIP);
-    
-    // Get all anonymous conversion records
-    const allRecords = await AnonymousConversion.findAll({
-      order: [['createdAt', 'DESC']],
-      limit: 10
-    });
-    
-    // Get specific record for this IP
-    const ipRecord = await AnonymousConversion.findOne({
-      where: { ipAddress: clientIP }
-    });
-    
-    res.json({
-      success: true,
-      clientIP,
-      ipRecord,
-      allRecords: allRecords.map(record => ({
-        id: record.id,
-        ipAddress: record.ipAddress,
-        conversionCount: record.conversionCount,
-        lastConversionAt: record.lastConversionAt,
-        createdAt: record.createdAt
-      })),
-      totalRecords: allRecords.length
-    });
-  } catch (error) {
-    console.error('Error getting anonymous conversions debug info:', error);
-    res.status(500).json({
-      success: false,
-      error: 'Failed to get debug info'
-    });
-  }
-});
 
-// Reset conversion limits endpoint (for testing)
-app.post('/api/conversion-reset', async (req, res) => {
-  try {
-    const clientIP = req.ip || req.connection.remoteAddress || req.socket.remoteAddress || '127.0.0.1';
-    console.log('🔍 Resetting conversion count for IP:', clientIP);
-    
-    const result = await AnonymousConversionService.resetConversionsForIP(clientIP);
-    
-    if (result) {
-      res.json({
-        success: true,
-        message: 'Conversion count reset successfully',
-        ip: clientIP
-      });
-    } else {
-      res.json({
-        success: false,
-        message: 'No conversion record found for this IP',
-        ip: clientIP
-      });
-    }
-  } catch (error) {
-    console.error('Error resetting conversions:', error);
-    res.status(500).json({
-      success: false,
-      error: 'Failed to reset conversion count'
-    });
-  }
-});
 
-// Reset all expired conversions (12+ hours old)
-app.post('/api/conversion-reset-expired', async (req, res) => {
-  try {
-    console.log('🔍 Resetting all expired conversions (12+ hours old)...');
-    
-    const resetCount = await AnonymousConversionService.resetExpiredConversions();
-    
-    res.json({
-      success: true,
-      message: `Reset ${resetCount} expired conversion records`,
-      resetCount
-    });
-  } catch (error) {
-    console.error('Error resetting expired conversions:', error);
-    res.status(500).json({
-      success: false,
-      error: 'Failed to reset expired conversions'
-    });
-  }
-});
 
-// Record mock conversion for AVRO converters (no actual file processing)
-app.post('/api/record-mock-conversion', checkConversionLimits, async (req, res) => {
-  try {
-    const { format, filename } = req.body;
-    const clientIP = req.ip || req.connection.remoteAddress || req.socket.remoteAddress || '127.0.0.1';
-    const userAgent = req.headers['user-agent'];
 
-    console.log('🔍 Recording mock conversion:', {
-      format,
-      filename,
-      clientIP,
-      userAgent: userAgent ? userAgent.substring(0, 50) + '...' : 'unknown'
-    });
 
-    // Record the conversion for anonymous users
-    await AnonymousConversionService.recordConversion(clientIP, userAgent);
 
-    res.json({
-      success: true,
-      message: 'Mock conversion recorded successfully',
-      format,
-      filename
-    });
-  } catch (error) {
-    console.error('Error recording mock conversion:', error);
-    res.status(500).json({
-      success: false,
-      error: 'Failed to record mock conversion'
-    });
-  }
-});
-
-// Test user creation endpoint
-app.post('/api/test-user', async (req, res) => {
-  try {
-    console.log('🔍 Testing user creation...');
-    
-    // Try to create a test user
-    const testUser = await User.create({
-      email: 'test@example.com',
-      password: 'testpassword',
-      name: 'Test User'
-    });
-    
-    console.log('✅ Test user created:', testUser.id);
-    
-    // Clean up - delete the test user
-    await testUser.destroy();
-    console.log('✅ Test user deleted');
-    
-    res.json({
-      success: true,
-      message: 'User creation test successful',
-      timestamp: new Date().toISOString()
-    });
-  } catch (error) {
-    console.error('❌ User creation test failed:', error);
-    res.status(500).json({
-      success: false,
-      error: error instanceof Error ? error.message : 'Unknown error',
-      timestamp: new Date().toISOString()
-    });
-  }
-});
-
-// Database checker endpoint
-app.get('/api/dbchecker', async (req, res) => {
-  try {
-    const startTime = Date.now();
-    
-    // Test database connection
-    await sequelize.authenticate();
-    const connectionTime = Date.now() - startTime;
-    
-    // Get database info
-    const dbInfo = {
-      host: process.env.DB_HOST || 'Not configured',
-      port: process.env.DB_PORT || 'Not configured',
-      database: process.env.DB_NAME || 'Not configured',
-      user: process.env.DB_USER || 'Not configured',
-      ssl: process.env.DB_SSL === 'true',
-      connectionTime: `${connectionTime}ms`
-    };
-    
-    // Get table counts
-    const tableStats = await sequelize.getQueryInterface().showAllTables();
-    
-    let userCount = 0;
-    let conversionCount = 0;
-    
-    try {
-      userCount = await User.count();
-    } catch (e) {
-      console.log('Users table not found or error:', e instanceof Error ? e.message : 'Unknown error');
-    }
-    
-    try {
-      conversionCount = await Conversion.count();
-    } catch (e) {
-      console.log('Conversions table not found or error:', e instanceof Error ? e.message : 'Unknown error');
-    }
-    
-    // Get recent errors from logs
-    let recentErrors: any[] = [];
-    try {
-      recentErrors = await Conversion.findAll({
-        where: { status: 'failed' },
-        order: [['updatedAt', 'DESC']],
-        limit: 10,
-        attributes: ['id', 'originalFilename', 'errorMessage', 'updatedAt']
-      });
-    } catch (e) {
-      console.log('Conversions table not found for error query:', e instanceof Error ? e.message : 'Unknown error');
-    }
-    
-    res.json({
-      status: 'connected',
-      timestamp: new Date().toISOString(),
-      database: dbInfo,
-      tables: tableStats,
-      stats: {
-        users: userCount,
-        conversions: conversionCount,
-        totalTables: tableStats.length
-      },
-      recentErrors: recentErrors,
-      environment: {
-        nodeEnv: process.env.NODE_ENV,
-        port: process.env.PORT
-      }
-    });
-    
-  } catch (error: any) {
-    console.error('Database check error:', error);
-    
-    res.status(500).json({
-      status: 'disconnected',
-      timestamp: new Date().toISOString(),
-      error: {
-        message: error instanceof Error ? error.message : 'Unknown error',
-        code: error.code || 'UNKNOWN',
-        detail: error.detail || 'No additional details'
-      },
-      database: {
-        host: process.env.DB_HOST || 'Not configured',
-        port: process.env.DB_PORT || 'Not configured',
-        database: process.env.DB_NAME || 'Not configured',
-        user: process.env.DB_USER || 'Not configured',
-        ssl: process.env.DB_SSL === 'true'
-      },
-      environment: {
-        nodeEnv: process.env.NODE_ENV,
-        port: process.env.PORT
-      }
-    });
-  }
-});
-
-// Database analytics endpoints
-app.get('/api/analytics/conversions', async (req, res) => {
-  try {
-    const stats = await DatabaseService.getConversionStats();
-    res.json(stats);
-  } catch (error) {
-    console.error('Analytics error:', error);
-    res.status(500).json({ error: 'Failed to fetch conversion statistics' });
-  }
-});
-
-app.get('/api/analytics/formats', async (req, res) => {
-  try {
-    const formats = await DatabaseService.getPopularFormats(10);
-    res.json(formats);
-  } catch (error) {
-    console.error('Analytics error:', error);
-    res.status(500).json({ error: 'Failed to fetch format statistics' });
-  }
-});
-
-app.get('/api/analytics/recent', async (req, res) => {
-  try {
-    const recentConversions = await DatabaseService.getRecentConversions();
-    res.json(recentConversions);
-  } catch (error) {
-    console.error('Analytics error:', error);
-    res.status(500).json({ error: 'Failed to fetch recent conversions' });
-  }
-});
 
 // ==================== IMAGE CONVERSION ROUTES ====================
 
@@ -13158,13 +12863,6 @@ app.post('/convert/bmp-to-webp/single', upload.single('file'), async (req, res) 
           });
           res.send(outputBuffer);
           
-          // Record conversion for anonymous users (IP-based limits)
-          try {
-            await recordConversion(req, res, () => {});
-          } catch (recordError) {
-            console.warn('Failed to record conversion:', recordError);
-            // Don't fail the request if recording fails
-          }
         } else {
           console.error('BMP to WebP conversion failed. Code:', code, 'Stderr:', stderr);
           res.status(500).json({ error: 'Conversion failed', details: stderr });
@@ -13295,13 +12993,6 @@ app.post('/convert/bmp-to-webp/batch', uploadBatch, async (req, res) => {
 
     res.json({ success: true, results });
     
-    // Record conversion for anonymous users (IP-based limits)
-    try {
-      await recordConversion(req, res, () => {});
-    } catch (recordError) {
-      console.warn('Failed to record conversion:', recordError);
-      // Don't fail the request if recording fails
-    }
   } catch (error) {
     console.error('BMP to WebP batch conversion error:', error);
     const message = error instanceof Error ? error.message : 'Unknown error';
@@ -13406,13 +13097,6 @@ app.post('/convert/cr2-to-ico/single', upload.single('file'), async (req, res) =
           });
           res.send(outputBuffer);
           
-          // Record conversion for anonymous users (IP-based limits)
-          try {
-            await recordConversion(req, res, () => {});
-          } catch (recordError) {
-            console.warn('Failed to record conversion:', recordError);
-            // Don't fail the request if recording fails
-          }
         } else {
           console.error('CR2 to ICO conversion failed. Code:', code, 'Stderr:', stderr);
           res.set({
@@ -13558,13 +13242,6 @@ app.post('/convert/cr2-to-ico/batch', uploadBatch, async (req, res) => {
 
     res.json({ success: true, results });
     
-    // Record conversion for anonymous users (IP-based limits)
-    try {
-      await recordConversion(req, res, () => {});
-    } catch (recordError) {
-      console.warn('Failed to record conversion:', recordError);
-      // Don't fail the request if recording fails
-    }
   } catch (error) {
     console.error('CR2 to ICO batch conversion error:', error);
     const message = error instanceof Error ? error.message : 'Unknown error';
@@ -13669,13 +13346,6 @@ app.post('/convert/cr2-to-webp/single', upload.single('file'), async (req, res) 
           });
           res.send(outputBuffer);
           
-          // Record conversion for anonymous users (IP-based limits)
-          try {
-            await recordConversion(req, res, () => {});
-          } catch (recordError) {
-            console.warn('Failed to record conversion:', recordError);
-            // Don't fail the request if recording fails
-          }
         } else {
           console.error('CR2 to WebP conversion failed. Code:', code, 'Stderr:', stderr);
           res.set({
@@ -13821,13 +13491,6 @@ app.post('/convert/cr2-to-webp/batch', uploadBatch, async (req, res) => {
 
     res.json({ success: true, results });
     
-    // Record conversion for anonymous users (IP-based limits)
-    try {
-      await recordConversion(req, res, () => {});
-    } catch (recordError) {
-      console.warn('Failed to record conversion:', recordError);
-      // Don't fail the request if recording fails
-    }
   } catch (error) {
     console.error('CR2 to WebP batch conversion error:', error);
     const message = error instanceof Error ? error.message : 'Unknown error';
@@ -14081,51 +13744,29 @@ app.post('/convert/gif-to-ico/batch', uploadBatch, async (req, res) => {
   }
 });
 
-// Start server with database initialization
-const startServer = async () => {
-  try {
-    // Initialize database
-    await initializeDatabase();
-    
-    // Set server timeout for large file processing
-    const server = app.listen(PORT, '0.0.0.0', () => {
-      console.log(`Morpy backend running on port ${PORT}`);
-      console.log('✅ Database connected and server started successfully');
-    });
-    
-    // Increase timeout for large file processing (10 minutes for CR2/RAW files)
-    server.timeout = 10 * 60 * 1000; // 10 minutes
-    server.keepAliveTimeout = 10 * 60 * 1000; // 10 minutes
-    server.headersTimeout = 10 * 60 * 1000 + 1000; // 10 minutes + 1 second
-    
-    // Graceful shutdown
-    const gracefulShutdown = async (signal: string) => {
-      console.log(`\n${signal} received. Shutting down gracefully...`);
-      
-      server.close(async () => {
-        console.log('✅ HTTP server closed');
-        
-        try {
-          await closeDatabase();
-          console.log('✅ Database connection closed');
-          process.exit(0);
-        } catch (error) {
-          console.error('❌ Error during shutdown:', error);
-          process.exit(1);
-        }
-      });
-    };
-    
-    process.on('SIGINT', () => gracefulShutdown('SIGINT'));
-    process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
-    
-  } catch (error) {
-    console.error('❌ Failed to start server:', error);
-    process.exit(1);
-  }
+// Start server
+const server = app.listen(PORT, '0.0.0.0', () => {
+  console.log(`Morpy backend running on port ${PORT}`);
+  console.log('✅ Server started successfully');
+});
+
+// Increase timeout for large file processing (10 minutes for CR2/RAW files)
+server.timeout = 10 * 60 * 1000; // 10 minutes
+server.keepAliveTimeout = 10 * 60 * 1000; // 10 minutes
+server.headersTimeout = 10 * 60 * 1000 + 1000; // 10 minutes + 1 second
+
+// Graceful shutdown
+const gracefulShutdown = (signal: string) => {
+  console.log(`\n${signal} received. Shutting down gracefully...`);
+  
+  server.close(() => {
+    console.log('✅ HTTP server closed');
+    process.exit(0);
+  });
 };
 
-startServer();
+process.on('SIGINT', () => gracefulShutdown('SIGINT'));
+process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
 
 export default app;
 
