@@ -4556,34 +4556,6 @@ const convertWithCalibre = async (
   
   console.log(`Using conversion config:`, conversion);
 
-  // Validate EPUB file before processing
-  if (file.originalname.toLowerCase().endsWith('.epub') || file.mimetype === 'application/epub+zip') {
-    console.log('Validating EPUB file...');
-    
-    // Check MIME type
-    const isEpubMime = file.mimetype === 'application/epub+zip';
-    console.log('EPUB MIME type check:', { mimetype: file.mimetype, isEpubMime });
-    
-    // Check ZIP signature (EPUB files are ZIP archives)
-    const isZipSignature = file.buffer && file.buffer.length >= 4 && 
-      file.buffer[0] === 0x50 && file.buffer[1] === 0x4B && 
-      file.buffer[2] === 0x03 && file.buffer[3] === 0x04;
-    console.log('ZIP signature check:', { 
-      hasBuffer: !!file.buffer, 
-      bufferLength: file.buffer?.length,
-      first4Bytes: file.buffer ? Array.from(file.buffer.slice(0, 4)).map(b => '0x' + b.toString(16).padStart(2, '0')).join(' ') : 'none',
-      isZipSignature 
-    });
-    
-    if (!isEpubMime || !isZipSignature) {
-      const errorMsg = 'Invalid EPUB file. Please upload a valid EPUB file. EPUB files must be ZIP archives with proper MIME type.';
-      console.error('EPUB validation failed:', { isEpubMime, isZipSignature, mimetype: file.mimetype });
-      throw new Error(errorMsg);
-    }
-    
-    console.log('EPUB validation passed');
-  }
-
   const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'morphy-calibre-'));
   const originalBase = path.basename(file.originalname, path.extname(file.originalname));
   const sanitizedBase = sanitizeFilename(originalBase);
@@ -4736,6 +4708,16 @@ const convertWithCalibre = async (
     });
     
     const message = error instanceof Error ? error.message : 'Unknown Calibre error';
+    
+    // Check for specific EPUB-related errors and provide user-friendly messages
+    if (message.includes('Not a ZIP file') || message.includes('BadZipfile') || message.includes('File is not a zip file')) {
+      throw new Error(`Invalid EPUB file: "${file.originalname}" appears to be corrupted or is not a valid EPUB format. Please check that the file is not damaged and try uploading a different EPUB file.`);
+    }
+    
+    if (message.includes('ValueError') && message.includes('ZIP')) {
+      throw new Error(`Invalid EPUB file: "${file.originalname}" is not a proper EPUB format. EPUB files must be valid ZIP archives. Please verify the file is a genuine EPUB and try again.`);
+    }
+    
     throw new Error(`Failed to convert ${file.originalname} (${targetFormat}): ${message}`);
   } finally {
     await fs.rm(tmpDir, { recursive: true, force: true }).catch(() => undefined);
@@ -5855,9 +5837,6 @@ app.get('/health', (_req, res) => {
 
 // Route: Batch Download
 app.get('/batch-download/:filename', async (req, res) => {
-  // Set CORS headers
-  
-  
   const { filename } = req.params;
   console.log(`Batch download request for: ${filename}`);
   
