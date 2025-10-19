@@ -4555,6 +4555,34 @@ const convertWithCalibre = async (
   
   console.log(`Using conversion config:`, conversion);
 
+  // Validate EPUB file before processing
+  if (file.originalname.toLowerCase().endsWith('.epub') || file.mimetype === 'application/epub+zip') {
+    console.log('Validating EPUB file...');
+    
+    // Check MIME type
+    const isEpubMime = file.mimetype === 'application/epub+zip';
+    console.log('EPUB MIME type check:', { mimetype: file.mimetype, isEpubMime });
+    
+    // Check ZIP signature (EPUB files are ZIP archives)
+    const isZipSignature = file.buffer && file.buffer.length >= 4 && 
+      file.buffer[0] === 0x50 && file.buffer[1] === 0x4B && 
+      file.buffer[2] === 0x03 && file.buffer[3] === 0x04;
+    console.log('ZIP signature check:', { 
+      hasBuffer: !!file.buffer, 
+      bufferLength: file.buffer?.length,
+      first4Bytes: file.buffer ? Array.from(file.buffer.slice(0, 4)).map(b => '0x' + b.toString(16).padStart(2, '0')).join(' ') : 'none',
+      isZipSignature 
+    });
+    
+    if (!isEpubMime || !isZipSignature) {
+      const errorMsg = 'Invalid EPUB file. Please upload a valid EPUB file. EPUB files must be ZIP archives with proper MIME type.';
+      console.error('EPUB validation failed:', { isEpubMime, isZipSignature, mimetype: file.mimetype });
+      throw new Error(errorMsg);
+    }
+    
+    console.log('EPUB validation passed');
+  }
+
   const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'morphy-calibre-'));
   const originalBase = path.basename(file.originalname, path.extname(file.originalname));
   const sanitizedBase = sanitizeFilename(originalBase);
