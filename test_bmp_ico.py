@@ -57,3 +57,4 @@ if __name__ == "__main__":
     success = test_bmp_conversion()
     sys.exit(0 if success else 1)
 
+

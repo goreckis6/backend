@@ -4978,26 +4978,15 @@ const convertTxtToPresentation = async (
         if (isDeploymentException) {
           console.log('LibreOffice DeploymentException detected for presentation conversion, trying fallback...');
           // For presentation conversion, we can fall back to returning the original PPTX
-          if (targetFormat === 'pptx') {
-            console.log('Target is already PPTX, returning generated file directly');
-            const outputBuffer = await fs.readFile(pptxPath);
-            const downloadName = `${sanitizedBase}.pptx`;
-            const mime = 'application/vnd.openxmlformats-officedocument.presentationml.presentation';
-            if (persistToDisk) {
-              return persistOutputBuffer(outputBuffer, downloadName, mime);
-            }
-            return { buffer: outputBuffer, filename: downloadName, mime };
-          } else {
-            console.log(`LibreOffice failed to convert to ${targetFormat}, falling back to PPTX format`);
-            // Fall back to PPTX format when LibreOffice fails
-            const outputBuffer = await fs.readFile(pptxPath);
-            const downloadName = `${sanitizedBase}.pptx`;
-            const mime = 'application/vnd.openxmlformats-officedocument.presentationml.presentation';
-            if (persistToDisk) {
-              return persistOutputBuffer(outputBuffer, downloadName, mime);
-            }
-            return { buffer: outputBuffer, filename: downloadName, mime };
+          console.log(`LibreOffice failed to convert to ${targetFormat}, falling back to PPTX format`);
+          // Fall back to PPTX format when LibreOffice fails
+          const outputBuffer = await fs.readFile(pptxPath);
+          const downloadName = `${sanitizedBase}.pptx`;
+          const mime = 'application/vnd.openxmlformats-officedocument.presentationml.presentation';
+          if (persistToDisk) {
+            return persistOutputBuffer(outputBuffer, downloadName, mime);
           }
+          return { buffer: outputBuffer, filename: downloadName, mime };
         }
       }
     }

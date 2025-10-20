@@ -59,3 +59,4 @@ print(f"Original lines: {len(lines)}")
 print(f"New lines: {len(new_lines)}")
 print(f"Lines removed: {len(lines) - len(new_lines)}")
 
+
