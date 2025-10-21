@@ -13029,9 +13029,8 @@ app.post('/convert/cr2-to-ico/single', upload.single('file'), async (req, res) =
       return res.status(400).json({ error: 'No file uploaded' });
     }
     
-    // Extract iconSize parameter
-    const iconSize = req.body.iconSize || 'original';
-    console.log('CR2 to ICO: Icon size requested:', iconSize);
+    // Always use original size for CR2 to ICO conversion
+    console.log('CR2 to ICO: Using original image size (simplified approach)');
     
     await fs.mkdir(tmpDir, { recursive: true });
 
