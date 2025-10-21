@@ -132,13 +132,8 @@ jobs:
             # Setup Traefik for SSL and routing
             echo "Setting up Traefik..."
             
-            # Create Traefik directory
+            # Ensure Traefik directory exists (files already in repo)
             sudo mkdir -p /opt/backend/traefik
-            
-            # Copy Traefik configuration files
-            cp traefik/traefik.yml /opt/backend/traefik/
-            cp traefik/dynamic.yml /opt/backend/traefik/
-            cp traefik-only.yml /opt/backend/docker-compose.yml
             
             # Start Traefik
             cd /opt/backend
