@@ -62,10 +62,16 @@ def create_doc_from_csv_optimized(csv_file, output_file, title="CSV Data", autho
         chunk_size (int): Number of rows to process at once
         use_multiprocessing (bool): Whether to use multiprocessing for parallel processing
     """
+    print("=" * 50)
+    print("CSV TO DOC CONVERSION STARTED")
+    print("=" * 50)
     print(f"Starting optimized CSV to DOC conversion...")
     print(f"Input: {csv_file}")
     print(f"Output: {output_file}")
     print(f"Chunk size: {chunk_size}")
+    print(f"Multiprocessing enabled: {use_multiprocessing}")
+    print(f"Python process ID: {os.getpid()}")
+    print("=" * 50)
     
     try:
         # Read CSV file with optimizations
@@ -87,6 +93,9 @@ def create_doc_from_csv_optimized(csv_file, output_file, title="CSV Data", autho
         )
         
         print(f"CSV loaded: {len(df)} rows, {len(df.columns)} columns")
+        print("=" * 50)
+        print("CSV READING COMPLETED - STARTING PROCESSING")
+        print("=" * 50)
         
         # Create DOCX document
         print("Creating optimized DOCX document...")
