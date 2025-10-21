@@ -162,3 +162,8 @@ jobs:
             # Test Traefik routing
             echo "Testing Traefik routing..."
             curl -f https://api.morphyimg.com/health || echo "Traefik routing failed"
+            
+            # Test Python environment
+            echo "Testing Python environment..."
+            /opt/venv/bin/python -c "import rawpy; print('rawpy OK')" || echo "rawpy import failed"
+            /opt/venv/bin/python -c "import PIL; print('Pillow OK')" || echo "Pillow import failed"
