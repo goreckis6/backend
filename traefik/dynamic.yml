@@ -1,0 +1,10 @@
+http:
+  middlewares:
+    default-headers:
+      headers:
+        frameDeny: true
+        contentTypeNosniff: true
+        browserXssFilter: true
+        referrerPolicy: "no-referrer-when-downgrade"
+        customRequestHeaders:
+          X-Forwarded-Proto: "https"

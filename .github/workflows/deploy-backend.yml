@@ -78,19 +78,28 @@ jobs:
             
             echo "VPS environment setup complete!"
 
-      - name: Set up Node.js
-        uses: actions/setup-node@v4
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
         with:
-          node-version: '20'
-          cache: 'npm'
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Install dependencies
-        run: npm ci
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: Dockerfile
+          platforms: linux/amd64
+          push: true
+          tags: |
+            ghcr.io/${{ github.repository_owner }}/morphy-backend:${{ github.sha }}
+            ghcr.io/${{ github.repository_owner }}/morphy-backend:latest
 
-      - name: Build application
-        run: npm run build
-
-      - name: Deploy Application
+      - name: Deploy via SSH
         uses: appleboy/ssh-action@v1.0.3
         with:
           host: ${{ secrets.BACKEND_VPS_HOST }}
@@ -99,30 +108,28 @@ jobs:
           script: |
             set -euo pipefail
             
-            echo "Deploying application..."
-            cd /home/debian/morphy-backend
+            echo "Deploying backend with Docker and Traefik..."
+            cd /opt/backend
             
-            # Pull latest changes
-            git pull origin main
+            # Create directory if it doesn't exist
+            sudo mkdir -p /opt/backend
+            sudo chown -R debian:debian /opt/backend
+            cd /opt/backend
             
-            # Install dependencies
-            npm ci
+            # Clone repository if it doesn't exist, otherwise pull
+            if [ ! -d ".git" ]; then
+              echo "Cloning repository..."
+              git clone https://github.com/goreckis6/backend.git .
+            else
+              echo "Pulling latest changes..."
+              git pull origin main
+            fi
             
-            # Build application
-            npm run build
+            # Pull latest Docker image
+            docker compose pull
             
-            # Stop existing PM2 process if running
-            pm2 stop morphy-backend 2>/dev/null || true
-            pm2 delete morphy-backend 2>/dev/null || true
+            # Start services
+            docker compose up -d --remove-orphans
             
-            # Start application with PM2
-            pm2 start ecosystem.config.cjs
-            
-            # Save PM2 configuration
-            pm2 save
-            
-            # Setup PM2 to start on boot
-            pm2 startup | grep -E '^sudo' | bash || true
-            
-            echo "Application deployed successfully!"
-            pm2 status
+            echo "Backend deployed successfully!"
+            docker compose ps
