@@ -1,19 +1,21 @@
 # Backend Dockerfile
-FROM node:20-alpine
+FROM node:20-slim
 
 WORKDIR /app
 
 # Install system dependencies for file conversions
-RUN apk add --no-cache \
+RUN apt-get update && apt-get install -y \
     libreoffice \
     imagemagick \
     ghostscript \
     calibre \
     python3 \
-    py3-pip \
+    python3-pip \
     dcraw \
     exiftool \
-    && pip3 install rawpy
+    && pip3 install rawpy \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/*
 
 # Copy package files first for better caching
 COPY package*.json ./
