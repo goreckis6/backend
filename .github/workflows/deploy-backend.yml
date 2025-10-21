@@ -135,10 +135,19 @@ jobs:
             # Ensure Traefik directory exists (files already in repo)
             sudo mkdir -p /opt/backend/traefik
             
+            # Test backend is running
+            echo "Testing backend connectivity..."
+            curl -f http://localhost:3000/health || echo "Backend not accessible on localhost:3000"
+            netstat -tlnp | grep :3000 || echo "Port 3000 not listening"
+            
             # Restart Traefik using repo compose file
             docker compose -f traefik-only.yml down || true
             docker compose -f traefik-only.yml up -d --remove-orphans
-            
+
             echo "Backend deployed successfully!"
             pm2 status
             docker compose -f traefik-only.yml ps
+            
+            # Test Traefik routing
+            echo "Testing Traefik routing..."
+            curl -f https://api.morphyimg.com/health || echo "Traefik routing failed"
