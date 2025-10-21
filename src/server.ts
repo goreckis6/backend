@@ -5784,8 +5784,8 @@ app.use(helmet({
 // Centralized CORS configuration
 const allowedOrigins = [
   'https://morphyimg.com',
-  'https://morphy-1-ulvv.onrender.com',
-  'https://morphy-2-n2tb.onrender.com',
+  'https://www.morphyimg.com',
+  'https://api.morphyimg.com',
   'http://localhost:5173', // Frontend dev server
   'http://localhost:3000', // Backend dev server
 ];

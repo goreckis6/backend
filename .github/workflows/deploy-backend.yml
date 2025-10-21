@@ -1,0 +1,57 @@
+name: Deploy Backend
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Test SSH Connection
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.BACKEND_VPS_HOST }}
+          username: ${{ secrets.BACKEND_VPS_USERNAME }}
+          key: ${{ secrets.BACKEND_VPS_SSH_KEY }}
+          script: |
+            echo "Testing SSH connection..."
+            hostname
+            whoami
+            uptime
+            echo "SSH connection successful!"
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build application
+        run: npm run build
+
+      - name: Deploy via SSH
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.BACKEND_VPS_HOST }}
+          username: ${{ secrets.BACKEND_VPS_USERNAME }}
+          key: ${{ secrets.BACKEND_VPS_SSH_KEY }}
+          script: |
+            set -euo pipefail
+            cd /home/debian/morphy-backend
+            git pull origin main
+            npm ci
+            npm run build
+            pm2 restart morphy-backend || pm2 start ecosystem.config.js
