@@ -78,26 +78,17 @@ jobs:
             
             echo "VPS environment setup complete!"
 
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-
-      - name: Log in to GitHub Container Registry
-        uses: docker/login-action@v3
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
         with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
+          node-version: '20'
+          cache: 'npm'
 
-      - name: Build and push Docker image
-        uses: docker/build-push-action@v6
-        with:
-          context: .
-          file: Dockerfile
-          platforms: linux/amd64
-          push: true
-          tags: |
-            ghcr.io/${{ github.repository_owner }}/morphy-backend:${{ github.sha }}
-            ghcr.io/${{ github.repository_owner }}/morphy-backend:latest
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build application
+        run: npm run build
 
       - name: Deploy via SSH
         uses: appleboy/ssh-action@v1.0.3
@@ -108,7 +99,7 @@ jobs:
           script: |
             set -euo pipefail
             
-            echo "Deploying backend with Docker and Traefik..."
+            echo "Deploying backend with Traefik (no Docker)..."
             cd /opt/backend
             
             # Create directory if it doesn't exist
@@ -125,11 +116,19 @@ jobs:
               git pull origin main
             fi
             
-            # Pull latest Docker image
-            docker compose pull
+            # Install dependencies and build
+            npm ci
+            npm run build
             
-            # Start services
-            docker compose up -d --remove-orphans
+            # Stop existing PM2 process if running
+            pm2 stop morphy-backend 2>/dev/null || true
+            pm2 delete morphy-backend 2>/dev/null || true
+            
+            # Start application with PM2
+            pm2 start ecosystem.config.cjs
+            
+            # Save PM2 configuration
+            pm2 save
             
             echo "Backend deployed successfully!"
-            docker compose ps
+            pm2 status

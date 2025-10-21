@@ -8,3 +8,18 @@ http:
         referrerPolicy: "no-referrer-when-downgrade"
         customRequestHeaders:
           X-Forwarded-Proto: "https"
+
+  routers:
+    api:
+      rule: "Host(`api.morphyimg.com`)"
+      service: "backend"
+      tls:
+        certResolver: "letsencrypt"
+      middlewares:
+        - "default-headers"
+
+  services:
+    backend:
+      loadBalancer:
+        servers:
+          - url: "http://host.docker.internal:3000"
