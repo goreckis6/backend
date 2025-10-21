@@ -122,6 +122,8 @@ jobs:
             # Install Python and create virtual environment for image processing
             sudo apt update
             sudo apt install -y python3 python3-pip python3-venv
+            sudo mkdir -p /opt/venv
+            sudo chown -R debian:debian /opt/venv
             python3 -m venv /opt/venv
             /opt/venv/bin/pip install Pillow
             
