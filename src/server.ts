@@ -5808,26 +5808,38 @@ app.use(cors({
   origin: (origin, callback) => {
     console.log('CORS check - Request origin:', origin);
     console.log('CORS check - Allowed origins:', allowedOrigins);
-    
-    // Allow requests with no origin (like mobile apps or curl requests)
+
+    // Allow requests with no origin (like mobile apps or curl requests)        
     if (!origin) {
       console.log('CORS check - No origin, allowing request');
       return callback(null, true);
     }
-    
+
     if (allowedOrigins.indexOf(origin) === -1) {
-      const msg = `The CORS policy for this site does not allow access from the specified Origin: ${origin}`;
+      const msg = `The CORS policy for this site does not allow access from the specified Origin: ${origin}`;                                                   
       console.log('CORS check - Origin not allowed:', origin);
       return callback(new Error(msg), false);
     }
-    
+
     console.log('CORS check - Origin allowed:', origin);
     return callback(null, true);
   },
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'Accept'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'Accept', 'X-Requested-With'],
   credentials: true,
 }));
+
+// Manual CORS headers as backup
+app.use((req, res, next) => {
+  const origin = req.headers.origin;
+  if (allowedOrigins.includes(origin as string)) {
+    res.header('Access-Control-Allow-Origin', origin as string);
+  }
+  res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
+  res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization, Accept, X-Requested-With');
+  res.header('Access-Control-Allow-Credentials', 'true');
+  next();
+});
 
 app.use('/api/', limiter);
 
