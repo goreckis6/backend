@@ -13029,6 +13029,15 @@ app.post('/convert/cr2-to-ico/single', upload.single('file'), async (req, res) =
       return res.status(500).json({ error: 'Conversion script not found' });
     }
 
+    // Check if Python environment exists
+    try {
+      await fs.access('/opt/venv/bin/python');
+      console.log('CR2 to ICO: Python environment exists');
+    } catch (error) {
+      console.error('CR2 to ICO: Python environment not found at /opt/venv/bin/python');
+      return res.status(500).json({ error: 'Python environment not found. Please check deployment.' });
+    }
+
     const python = spawn('/opt/venv/bin/python', [
       scriptPath,
       inputPath,
