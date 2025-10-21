@@ -11,6 +11,30 @@ import traceback
 import rawpy
 from PIL import Image
 import numpy as np
+import struct
+
+def create_ico_file(png_data, width, height):
+    """
+    Create a simple ICO file from PNG data
+    """
+    # ICO header (6 bytes)
+    ico_header = struct.pack('<HHH', 0, 1, 1)  # Reserved, Type (1=ICO), Count (1)
+    
+    # Directory entry (16 bytes)
+    entry = struct.pack('<BBBBHHII', 
+        width if width < 256 else 0,  # Width (0 if >= 256)
+        height if height < 256 else 0,  # Height (0 if >= 256)
+        0,  # Color palette (0 for PNG)
+        0,  # Reserved
+        1,  # Color planes
+        32,  # Bits per pixel
+        len(png_data),  # Image data size
+        22  # Offset to image data (6 + 16)
+    )
+    
+    # Combine header, entry, and PNG data
+    ico_data = ico_header + entry + png_data
+    return ico_data
 
 def convert_cr2_to_ico(cr2_file, output_file, sizes=[16, 32, 48, 64, 128, 256], quality=95):
     """
@@ -115,26 +139,31 @@ def convert_cr2_to_ico(cr2_file, output_file, sizes=[16, 32, 48, 64, 128, 256], 
             for i, img in enumerate(ico_images):
                 print(f"  Image {i}: {img.size[0]}x{img.size[1]} mode={img.mode}")
             
-            # Save the ICO with proper format
-            # First try to save as ICO
+            # Save as PNG first (reliable), then convert to ICO
+            png_file = output_file.replace('.ico', '.png')
+            ico_images[0].save(png_file, format='PNG')
+            print(f"Saved as PNG: {png_file}")
+            
+            # Now create a proper ICO file
             try:
-                ico_images[0].save(
-                    output_file,
-                    format='ICO',
-                    sizes=[(img.width, img.height) for img in ico_images],
-                    quality=quality
-                )
-                print("ICO saved successfully")
+                # Create ICO with the PNG data
+                with open(png_file, 'rb') as png_data:
+                    png_bytes = png_data.read()
+                
+                # Create a simple ICO file structure
+                ico_data = create_ico_file(png_bytes, ico_images[0].size[0], ico_images[0].size[1])
+                
+                with open(output_file, 'wb') as ico_file:
+                    ico_file.write(ico_data)
+                
+                print(f"Created ICO file: {output_file}")
+                
             except Exception as e:
-                print(f"Error saving as ICO: {e}")
-                # Fallback: save as PNG and rename
-                png_file = output_file.replace('.ico', '.png')
-                ico_images[0].save(png_file, format='PNG')
-                print(f"Saved as PNG fallback: {png_file}")
-                # Copy PNG to ICO file
+                print(f"Error creating ICO: {e}")
+                # Fallback: just copy PNG as ICO
                 import shutil
                 shutil.copy2(png_file, output_file)
-                print(f"Copied PNG to ICO file")
+                print(f"Fallback: copied PNG as ICO")
             
             # Verify the saved ICO
             try:
