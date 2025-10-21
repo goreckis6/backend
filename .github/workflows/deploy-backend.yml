@@ -129,5 +129,21 @@ jobs:
             # Save PM2 configuration
             pm2 save
             
+            # Setup Traefik for SSL and routing
+            echo "Setting up Traefik..."
+            
+            # Create Traefik directory
+            sudo mkdir -p /opt/backend/traefik
+            
+            # Copy Traefik configuration files
+            cp traefik/traefik.yml /opt/backend/traefik/
+            cp traefik/dynamic.yml /opt/backend/traefik/
+            cp traefik-only.yml /opt/backend/docker-compose.yml
+            
+            # Start Traefik
+            cd /opt/backend
+            docker compose up -d
+            
             echo "Backend deployed successfully!"
             pm2 status
+            docker compose ps
