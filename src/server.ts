@@ -3424,8 +3424,8 @@ const convertCsvToDocPython = async (
       '--author', options.author || 'Unknown',
       '--chunk-size', chunkSize.toString()
     ], {
-      timeout: 300000, // 5 minutes timeout for large files
-      maxBuffer: 10 * 1024 * 1024 // 10MB buffer for large outputs
+      // No timeout limit - let it run as long as needed
+      maxBuffer: 50 * 1024 * 1024 // 50MB buffer for very large outputs
     });
 
     if (stdout.trim().length > 0) console.log('Python stdout:', stdout.trim());
@@ -3519,8 +3519,8 @@ const convertCsvToDocxPython = async (
       '--author', options.author || 'Unknown',
       '--chunk-size', chunkSize.toString()
     ], {
-      timeout: 300000, // 5 minutes timeout for large files
-      maxBuffer: 10 * 1024 * 1024 // 10MB buffer for large outputs
+      // No timeout limit - let it run as long as needed
+      maxBuffer: 50 * 1024 * 1024 // 50MB buffer for very large outputs
     });
 
     if (stdout.trim().length > 0) console.log('Python stdout:', stdout.trim());
@@ -3615,8 +3615,8 @@ const convertCsvToEpubPython = async (
       '--author', options.author || 'Unknown',
       '--chunk-size', chunkSize.toString()
     ].concat(options.includeToc === 'false' ? ['--no-toc'] : []), {
-      timeout: 300000, // 5 minutes timeout for large files
-      maxBuffer: 10 * 1024 * 1024 // 10MB buffer for large outputs
+      // No timeout limit - let it run as long as needed
+      maxBuffer: 50 * 1024 * 1024 // 50MB buffer for very large outputs
     });
 
     if (stdout.trim().length > 0) console.log('Python stdout:', stdout.trim());
@@ -4275,8 +4275,8 @@ const convertCsvToHtmlPython = async (
       '--table-class', options.tableClass || 'simple',
       '--chunk-size', chunkSize.toString()
     ].concat(options.includeHeaders === 'false' ? ['--no-headers'] : []), {
-      timeout: 300000, // 5 minutes timeout for large files
-      maxBuffer: 10 * 1024 * 1024 // 10MB buffer for large outputs
+      // No timeout limit - let it run as long as needed
+      maxBuffer: 50 * 1024 * 1024 // 50MB buffer for very large outputs
     });
 
     if (stdout.trim().length > 0) console.log('Python stdout:', stdout.trim());
@@ -5516,8 +5516,8 @@ const convertCsvToMdPython = async (
       '--table-alignment', options.tableAlignment || 'left',
       '--chunk-size', chunkSize.toString()
     ].concat(options.includeHeaders === 'false' ? ['--no-headers'] : []), {
-      timeout: 300000, // 5 minutes timeout for large files
-      maxBuffer: 10 * 1024 * 1024 // 10MB buffer for large outputs
+      // No timeout limit - let it run as long as needed
+      maxBuffer: 50 * 1024 * 1024 // 50MB buffer for very large outputs
     });
 
     if (stdout.trim().length > 0) console.log('Python stdout:', stdout.trim());
@@ -5612,8 +5612,8 @@ const convertCsvToMobiPython = async (
       '--author', options.author || 'CSV Converter',
       '--chunk-size', chunkSize.toString()
     ].concat(options.includeHeaders === 'false' ? ['--no-headers'] : []), {
-      timeout: 300000, // 5 minutes timeout for large files
-      maxBuffer: 10 * 1024 * 1024 // 10MB buffer for large outputs
+      // No timeout limit - let it run as long as needed
+      maxBuffer: 50 * 1024 * 1024 // 50MB buffer for very large outputs
     });
 
     if (stdout.trim().length > 0) console.log('Python stdout:', stdout.trim());
@@ -5710,8 +5710,8 @@ const convertCsvToOdpPython = async (
       '--slide-layout', options.slideLayout || 'table',
       '--chunk-size', chunkSize.toString()
     ].concat(options.includeHeaders === 'false' ? ['--no-headers'] : []), {
-      timeout: 300000, // 5 minutes timeout for large files
-      maxBuffer: 10 * 1024 * 1024 // 10MB buffer for large outputs
+      // No timeout limit - let it run as long as needed
+      maxBuffer: 50 * 1024 * 1024 // 50MB buffer for very large outputs
     });
 
     if (stdout.trim().length > 0) console.log('Python stdout:', stdout.trim());
