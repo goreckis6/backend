@@ -13010,6 +13010,8 @@ app.post('/convert/bmp-to-webp/batch', uploadBatch, async (req, res) => {
 // Route: CR2 to ICO (Single)
 app.post('/convert/cr2-to-ico/single', upload.single('file'), async (req, res) => {
   console.log('CR2->ICO single conversion request');
+  console.log('CR2->ICO request origin:', req.headers.origin);
+  console.log('CR2->ICO request headers:', req.headers);
 
   // No timeout limits for CR2 processing - let it run as long as needed
 
@@ -13018,6 +13020,12 @@ app.post('/convert/cr2-to-ico/single', upload.single('file'), async (req, res) =
   try {
     const file = req.file;
     if (!file) {
+      res.set({
+        'Access-Control-Allow-Origin': req.headers.origin || '*',
+        'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+        'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept, X-Requested-With',
+        'Access-Control-Allow-Credentials': 'true'
+      });
       return res.status(400).json({ error: 'No file uploaded' });
     }
     await fs.mkdir(tmpDir, { recursive: true });
@@ -13082,20 +13090,33 @@ app.post('/convert/cr2-to-ico/single', upload.single('file'), async (req, res) =
           res.set({
             'Content-Type': 'image/x-icon',
             'Content-Disposition': `attachment; filename="${path.basename(outputPath)}"`,
-
-
-
+            'Access-Control-Allow-Origin': req.headers.origin || '*',
+            'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+            'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept, X-Requested-With',
+            'Access-Control-Allow-Credentials': 'true'
           });
           res.send(outputBuffer);
           
         } else {
           console.error('CR2 to ICO conversion failed. Code:', code, 'Stderr:', stderr);
           
+          res.set({
+            'Access-Control-Allow-Origin': req.headers.origin || '*',
+            'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+            'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept, X-Requested-With',
+            'Access-Control-Allow-Credentials': 'true'
+          });
           res.status(500).json({ error: 'Conversion failed', details: stderr });
         }
       } catch (error) {
         console.error('Error handling conversion result:', error);
         
+        res.set({
+          'Access-Control-Allow-Origin': req.headers.origin || '*',
+          'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+          'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept, X-Requested-With',
+          'Access-Control-Allow-Credentials': 'true'
+        });
         res.status(500).json({ error: 'Conversion failed', details: error.message });
       } finally {
         await fs.rm(tmpDir, { recursive: true, force: true }).catch(() => undefined);
@@ -13105,6 +13126,12 @@ app.post('/convert/cr2-to-ico/single', upload.single('file'), async (req, res) =
     console.error('CR2 to ICO conversion error:', error);
     const message = error instanceof Error ? error.message : 'Unknown error';
     
+    res.set({
+      'Access-Control-Allow-Origin': req.headers.origin || '*',
+      'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+      'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept, X-Requested-With',
+      'Access-Control-Allow-Credentials': 'true'
+    });
     res.status(500).json({ error: message });
   }
 });
@@ -13662,6 +13689,22 @@ app.post('/convert/gif-to-ico/batch', uploadBatch, async (req, res) => {
     const message = error instanceof Error ? error.message : 'Unknown error';
     res.status(500).json({ error: message });
   }
+});
+
+// Health check endpoint
+app.get('/health', (req, res) => {
+  res.set({
+    'Access-Control-Allow-Origin': req.headers.origin || '*',
+    'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+    'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept, X-Requested-With',
+    'Access-Control-Allow-Credentials': 'true'
+  });
+  res.json({ 
+    status: 'healthy', 
+    timestamp: new Date().toISOString(),
+    uptime: process.uptime(),
+    version: process.env.npm_package_version || '1.0.0'
+  });
 });
 
 // Start server
