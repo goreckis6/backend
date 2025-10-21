@@ -125,7 +125,7 @@ jobs:
             sudo mkdir -p /opt/venv
             sudo chown -R debian:debian /opt/venv
             python3 -m venv /opt/venv
-            /opt/venv/bin/pip install Pillow
+            /opt/venv/bin/pip install Pillow rawpy
             
             # Stop existing PM2 process if running
             pm2 stop morphy-backend 2>/dev/null || true
