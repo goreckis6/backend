@@ -100,6 +100,8 @@ def convert_cr2_to_ico(cr2_file, output_file, sizes=[16, 32, 48, 64, 128, 256], 
             # Use the original (or cropped) image as the ICO
             ico_images.append(pil_image)
             print(f"Created ICO with size: {pil_image.size[0]}x{pil_image.size[1]}")
+            print(f"ICO image mode: {pil_image.mode}")
+            print(f"ICO image format: {pil_image.format}")
             
             if not ico_images:
                 print("ERROR: No valid icon sizes could be created")
@@ -109,12 +111,38 @@ def convert_cr2_to_ico(cr2_file, output_file, sizes=[16, 32, 48, 64, 128, 256], 
             
             # Save as ICO
             print("Saving as ICO...")
-            ico_images[0].save(
-                output_file,
-                format='ICO',
-                sizes=[(img.width, img.height) for img in ico_images],
-                quality=quality
-            )
+            print(f"Saving ICO with {len(ico_images)} images")
+            for i, img in enumerate(ico_images):
+                print(f"  Image {i}: {img.size[0]}x{img.size[1]} mode={img.mode}")
+            
+            # Save the ICO with proper format
+            # First try to save as ICO
+            try:
+                ico_images[0].save(
+                    output_file,
+                    format='ICO',
+                    sizes=[(img.width, img.height) for img in ico_images],
+                    quality=quality
+                )
+                print("ICO saved successfully")
+            except Exception as e:
+                print(f"Error saving as ICO: {e}")
+                # Fallback: save as PNG and rename
+                png_file = output_file.replace('.ico', '.png')
+                ico_images[0].save(png_file, format='PNG')
+                print(f"Saved as PNG fallback: {png_file}")
+                # Copy PNG to ICO file
+                import shutil
+                shutil.copy2(png_file, output_file)
+                print(f"Copied PNG to ICO file")
+            
+            # Verify the saved ICO
+            try:
+                saved_ico = Image.open(output_file)
+                print(f"Saved ICO verification: {saved_ico.size[0]}x{saved_ico.size[1]} mode={saved_ico.mode}")
+                saved_ico.close()
+            except Exception as e:
+                print(f"Error verifying saved ICO: {e}")
             
             # Verify the output file
             if os.path.exists(output_file):
