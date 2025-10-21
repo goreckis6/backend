@@ -76,6 +76,9 @@ def create_doc_from_csv_optimized(csv_file, output_file, title="CSV Data", autho
     try:
         # Read CSV file with optimizations
         print("Reading CSV file with optimizations...")
+        print(f"File exists: {os.path.exists(csv_file)}")
+        print(f"File readable: {os.access(csv_file, os.R_OK)}")
+        print(f"File size: {os.path.getsize(csv_file)} bytes")
         
         # Get file size for progress tracking
         file_size = os.path.getsize(csv_file)
