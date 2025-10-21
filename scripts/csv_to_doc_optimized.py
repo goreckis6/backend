@@ -75,12 +75,15 @@ def create_doc_from_csv_optimized(csv_file, output_file, title="CSV Data", autho
         file_size = os.path.getsize(csv_file)
         print(f"File size: {file_size / (1024*1024):.2f} MB")
         
-        # Read CSV with optimized settings
+        # Read CSV with optimized settings for large files
+        print("Reading large CSV file with memory optimizations...")
         df = pd.read_csv(
             csv_file,
             dtype=str,  # Read all as strings to avoid type inference overhead
             na_filter=False,  # Disable NaN filtering for speed
-            low_memory=False  # Use more memory for speed
+            low_memory=False,  # Use more memory for speed
+            chunksize=None,  # Read entire file at once for processing
+            engine='c'  # Use C engine for better performance
         )
         
         print(f"CSV loaded: {len(df)} rows, {len(df.columns)} columns")
@@ -234,6 +237,10 @@ def create_doc_from_csv_optimized(csv_file, output_file, title="CSV Data", autho
         doc.add_paragraph()
         summary_para = doc.add_paragraph(f"Total: {len(df)} rows × {len(df.columns)} columns")
         summary_para.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        
+        # Memory cleanup for large files
+        print("Cleaning up memory...")
+        del df  # Free up memory from the large DataFrame
         
         # Save document with optimizations
         print(f"Saving DOCX document...")
