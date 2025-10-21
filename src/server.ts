@@ -13063,20 +13063,14 @@ app.post('/convert/cr2-to-ico/single', upload.single('file'), async (req, res) =
       return res.status(500).json({ error: 'Python environment not found. Please check deployment.' });
     }
 
-    // Prepare Python arguments
+    // Prepare Python arguments - always use original size approach
     const pythonArgs = [
       scriptPath,
       inputPath,
       outputPath,
-      '--quality', '95'
+      '--quality', '95',
+      '--original-size'
     ];
-    
-    // Add icon size parameter
-    if (iconSize === 'original') {
-      pythonArgs.push('--original-size');
-    } else {
-      pythonArgs.push('--sizes', iconSize);
-    }
     
     console.log('CR2 to ICO: Python arguments:', pythonArgs);
     
