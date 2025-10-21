@@ -135,10 +135,10 @@ jobs:
             # Ensure Traefik directory exists (files already in repo)
             sudo mkdir -p /opt/backend/traefik
             
-            # Start Traefik
-            cd /opt/backend
-            docker compose up -d
+            # Restart Traefik using repo compose file
+            docker compose -f traefik-only.yml down || true
+            docker compose -f traefik-only.yml up -d --remove-orphans
             
             echo "Backend deployed successfully!"
             pm2 status
-            docker compose ps
+            docker compose -f traefik-only.yml ps
