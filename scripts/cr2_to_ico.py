@@ -85,8 +85,6 @@ def convert_cr2_to_ico(cr2_file, output_file, sizes=[16, 32, 48, 64, 128, 256], 
             # Handle original size case
             if sizes == ['original']:
                 print(f"Using original image size: {pil_image.size[0]}x{pil_image.size[1]}")
-                # Use the original image size
-                original_size = min(pil_image.size[0], pil_image.size[1])
                 
                 # Convert to RGBA if not already
                 if pil_image.mode != 'RGBA':
@@ -101,8 +99,12 @@ def convert_cr2_to_ico(cr2_file, output_file, sizes=[16, 32, 48, 64, 128, 256], 
                     right = left + size
                     bottom = top + size
                     pil_image = pil_image.crop((left, top, right, bottom))
+                    print(f"Cropped to square: {pil_image.size[0]}x{pil_image.size[1]}")
                 
+                # Create ICO with the original size as the primary size
+                # ICO format works best with the original size as the main size
                 ico_images.append(pil_image)
+                print(f"Created ICO with original size: {pil_image.size[0]}x{pil_image.size[1]}")
             else:
                 # Handle multiple sizes
                 for size in sizes:
@@ -182,8 +184,8 @@ def main():
         print("ERROR: Quality must be between 1 and 100")
         sys.exit(1)
     
-    # Validate sizes
-    if not args.sizes or any(size <= 0 for size in args.sizes):
+    # Validate sizes (skip validation for original size)
+    if args.sizes != ['original'] and (not args.sizes or any(size <= 0 for size in args.sizes)):
         print("ERROR: All sizes must be positive integers")
         sys.exit(1)
     
