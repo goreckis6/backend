@@ -13139,12 +13139,20 @@ app.post('/convert/cr2-to-ico/single', upload.single('file'), async (req, res) =
 // Route: CR2 to ICO (Batch)
 app.post('/convert/cr2-to-ico/batch', uploadBatch, async (req, res) => {
   console.log('CR2->ICO batch conversion request');
+  console.log('CR2->ICO batch request origin:', req.headers.origin);
+  console.log('CR2->ICO batch request headers:', req.headers);
 
   const tmpDir = path.join(os.tmpdir(), `cr2-ico-batch-${Date.now()}`);
 
   try {
     const files = req.files as Express.Multer.File[];
     if (!files || files.length === 0) {
+      res.set({
+        'Access-Control-Allow-Origin': req.headers.origin || '*',
+        'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+        'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept, X-Requested-With',
+        'Access-Control-Allow-Credentials': 'true'
+      });
       return res.status(400).json({ error: 'No files uploaded' });
     }
     await fs.mkdir(tmpDir, { recursive: true });
@@ -13246,11 +13254,24 @@ app.post('/convert/cr2-to-ico/batch', uploadBatch, async (req, res) => {
       }
     }
 
+    res.set({
+      'Access-Control-Allow-Origin': req.headers.origin || '*',
+      'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+      'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept, X-Requested-With',
+      'Access-Control-Allow-Credentials': 'true'
+    });
     res.json({ success: true, results });
     
   } catch (error) {
     console.error('CR2 to ICO batch conversion error:', error);
     const message = error instanceof Error ? error.message : 'Unknown error';
+    
+    res.set({
+      'Access-Control-Allow-Origin': req.headers.origin || '*',
+      'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+      'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept, X-Requested-With',
+      'Access-Control-Allow-Credentials': 'true'
+    });
     res.status(500).json({ error: message });
   } finally {
     await fs.rm(tmpDir, { recursive: true, force: true }).catch(() => undefined);
