@@ -54,7 +54,14 @@ jobs:
             git reset --hard origin/main
             git clean -fd
             
-            # Install/Update Node.js dependencies
+            # Clear Node.js cache and old builds
+            echo "🧹 Cleaning cache and old builds..."
+            rm -rf node_modules/.cache
+            rm -rf dist
+            rm -rf .npm
+            npm cache clean --force
+            
+            # Install/Update Node.js dependencies (fresh install)
             echo "📦 Installing Node.js dependencies..."
             npm ci --production=false
             
@@ -96,15 +103,26 @@ jobs:
               $VENV_DIR/bin/pip install --upgrade --force-reinstall Pillow rawpy
             fi
             
-            # Restart PM2 process
-            echo "🔄 Restarting PM2 process..."
-            pm2 reload ecosystem.config.cjs --update-env || pm2 start ecosystem.config.cjs
-            pm2 save
+            # Clear PM2 logs and dump before restart
+            echo "🧹 Clearing PM2 logs and cache..."
+            pm2 flush  # Clear all logs
+            pm2 cleardump  # Clear PM2 dump file
             
-            # Restart Traefik (ensure latest routing)
+            # Stop PM2 process completely (not reload)
+            echo "⏹️ Stopping PM2 process..."
+            pm2 stop morphy-backend 2>/dev/null || true
+            pm2 delete morphy-backend 2>/dev/null || true
+            
+            # Start fresh PM2 process
+            echo "▶️ Starting fresh PM2 process..."
+            pm2 start ecosystem.config.cjs
+            pm2 save --force
+            
+            # Restart Traefik with force-recreate
             echo "🔄 Restarting Traefik..."
             docker compose -f traefik-only.yml down
-            docker compose -f traefik-only.yml up -d --remove-orphans
+            docker compose -f traefik-only.yml pull
+            docker compose -f traefik-only.yml up -d --force-recreate --remove-orphans
             
             # Wait for services to be ready
             echo "⏳ Waiting for services to start..."
