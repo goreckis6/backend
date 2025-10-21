@@ -11,8 +11,8 @@ import sys
 from datetime import datetime
 import traceback
 from io import StringIO
-import threading
-from concurrent.futures import ThreadPoolExecutor, as_completed
+import multiprocessing as mp
+from concurrent.futures import ProcessPoolExecutor, as_completed
 import psutil
 
 try:
@@ -27,20 +27,20 @@ except ImportError as e:
     print("Please install python-docx: pip install python-docx")
     sys.exit(1)
 
-def process_chunk_threaded(chunk_df, chunk_info):
+def process_chunk_multiprocess(chunk_df, chunk_info):
     """
-    Process a chunk of data using threading.
+    Process a chunk of data using true multiprocessing.
     Returns processed data ready for DOC insertion.
     """
     try:
-        print(f"Thread processing chunk {chunk_info}: {len(chunk_df)} rows")
+        print(f"Process {os.getpid()} processing chunk {chunk_info}: {len(chunk_df)} rows")
         
         # Convert chunk to list of lists for DOC table
         chunk_rows = []
         for _, row in chunk_df.iterrows():
             chunk_rows.append(row.tolist())
         
-        print(f"Thread completed chunk {chunk_info}: {len(chunk_rows)} rows processed")
+        print(f"Process {os.getpid()} completed chunk {chunk_info}: {len(chunk_rows)} rows processed")
         return {
             'chunk_info': chunk_info,
             'rows': chunk_rows,
@@ -133,12 +133,12 @@ def create_doc_from_csv_optimized(csv_file, output_file, title="CSV Data", autho
         
         total_rows = len(df)
         
-        # Use threading for better CPU utilization
-        if use_multiprocessing and total_rows > 100:  # Reasonable threshold for threading
+        # Use true multiprocessing for better CPU utilization
+        if use_multiprocessing and total_rows > 100:  # Reasonable threshold for multiprocessing
             try:
                 cpu_count = psutil.cpu_count(logical=True)
-                max_workers = min(cpu_count * 3, 24)  # Use more threads for I/O bound tasks
-                print(f"Using threading with {max_workers} workers (CPU cores: {cpu_count})")
+                max_workers = min(cpu_count, 8)  # Use actual CPU cores for multiprocessing
+                print(f"Using multiprocessing with {max_workers} workers (CPU cores: {cpu_count})")
                 
                 # Split data into chunks for parallel processing
                 chunk_data = []
@@ -147,14 +147,14 @@ def create_doc_from_csv_optimized(csv_file, output_file, title="CSV Data", autho
                     chunk_df = df.iloc[chunk_start:chunk_end]
                     chunk_data.append((chunk_df, chunk_start))
                 
-                # Process chunks in parallel using threads
-                print(f"Starting threaded processing of {len(chunk_data)} chunks...")
+                # Process chunks in parallel using processes
+                print(f"Starting multiprocessing of {len(chunk_data)} chunks...")
                 processed_chunks = []
-                with ThreadPoolExecutor(max_workers=max_workers) as executor:
-                    print(f"ThreadPoolExecutor created with {max_workers} workers")
+                with ProcessPoolExecutor(max_workers=max_workers) as executor:
+                    print(f"ProcessPoolExecutor created with {max_workers} workers")
                     # Submit all chunks
                     future_to_chunk = {
-                        executor.submit(process_chunk_threaded, chunk_df, i): i 
+                        executor.submit(process_chunk_multiprocess, chunk_df, i): i 
                         for i, (chunk_df, _) in enumerate(chunk_data)
                     }
                     
@@ -191,10 +191,10 @@ def create_doc_from_csv_optimized(csv_file, output_file, title="CSV Data", autho
                                     paragraph.alignment = WD_ALIGN_PARAGRAPH.LEFT
                 
             except Exception as e:
-                print(f"Error with threading: {e}, falling back to single-threaded")
+                print(f"Error with multiprocessing: {e}, falling back to single-threaded")
                 use_multiprocessing = False
         
-        # Single-threaded processing (for small datasets or when threading fails)
+        # Single-threaded processing (for small datasets or when multiprocessing fails)
         if not (use_multiprocessing and total_rows > 100):
             print("Using single-threaded processing...")
             print(f"Reason: use_multiprocessing={use_multiprocessing}, total_rows={total_rows}, threshold=100")
