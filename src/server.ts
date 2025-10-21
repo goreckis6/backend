@@ -5781,6 +5781,9 @@ app.use(helmet({
   contentSecurityPolicy: false, // Disable CSP for file uploads
   crossOriginEmbedderPolicy: false
 }));
+
+// Trust proxy for rate limiting behind Traefik
+app.set('trust proxy', 1);
 // Centralized CORS configuration
 const allowedOrigins = [
   'https://morphyimg.com',

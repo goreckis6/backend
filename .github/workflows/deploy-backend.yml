@@ -119,6 +119,12 @@ jobs:
             npm ci
             npm run build
             
+            # Install Python and create virtual environment for image processing
+            sudo apt update
+            sudo apt install -y python3 python3-pip python3-venv
+            python3 -m venv /opt/venv
+            /opt/venv/bin/pip install Pillow
+            
             # Stop existing PM2 process if running
             pm2 stop morphy-backend 2>/dev/null || true
             pm2 delete morphy-backend 2>/dev/null || true
