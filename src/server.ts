@@ -13028,6 +13028,11 @@ app.post('/convert/cr2-to-ico/single', upload.single('file'), async (req, res) =
       });
       return res.status(400).json({ error: 'No file uploaded' });
     }
+    
+    // Extract iconSize parameter
+    const iconSize = req.body.iconSize || 'original';
+    console.log('CR2 to ICO: Icon size requested:', iconSize);
+    
     await fs.mkdir(tmpDir, { recursive: true });
 
     const inputPath = path.join(tmpDir, file.originalname);
@@ -13058,12 +13063,24 @@ app.post('/convert/cr2-to-ico/single', upload.single('file'), async (req, res) =
       return res.status(500).json({ error: 'Python environment not found. Please check deployment.' });
     }
 
-    const python = spawn('/opt/venv/bin/python', [
+    // Prepare Python arguments
+    const pythonArgs = [
       scriptPath,
       inputPath,
       outputPath,
       '--quality', '95'
-    ]);
+    ];
+    
+    // Add icon size parameter
+    if (iconSize === 'original') {
+      pythonArgs.push('--original-size');
+    } else {
+      pythonArgs.push('--sizes', iconSize);
+    }
+    
+    console.log('CR2 to ICO: Python arguments:', pythonArgs);
+    
+    const python = spawn('/opt/venv/bin/python', pythonArgs);
 
     let stdout = '';
     let stderr = '';

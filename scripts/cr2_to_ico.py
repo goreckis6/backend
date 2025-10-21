@@ -82,18 +82,41 @@ def convert_cr2_to_ico(cr2_file, output_file, sizes=[16, 32, 48, 64, 128, 256], 
             print("Creating ICO with multiple sizes...")
             ico_images = []
             
-            for size in sizes:
-                if size <= pil_image.size[0] and size <= pil_image.size[1]:
-                    print(f"Creating {size}x{size} icon...")
-                    resized = pil_image.resize((size, size), Image.Resampling.LANCZOS)
-                    
-                    # Convert to RGBA if not already
-                    if resized.mode != 'RGBA':
-                        resized = resized.convert('RGBA')
-                    
-                    ico_images.append(resized)
-                else:
-                    print(f"Skipping {size}x{size} (larger than original image)")
+            # Handle original size case
+            if sizes == ['original']:
+                print(f"Using original image size: {pil_image.size[0]}x{pil_image.size[1]}")
+                # Use the original image size
+                original_size = min(pil_image.size[0], pil_image.size[1])
+                
+                # Convert to RGBA if not already
+                if pil_image.mode != 'RGBA':
+                    pil_image = pil_image.convert('RGBA')
+                
+                # If the image is not square, crop it to square
+                if pil_image.size[0] != pil_image.size[1]:
+                    # Crop to square from center
+                    size = min(pil_image.size[0], pil_image.size[1])
+                    left = (pil_image.size[0] - size) // 2
+                    top = (pil_image.size[1] - size) // 2
+                    right = left + size
+                    bottom = top + size
+                    pil_image = pil_image.crop((left, top, right, bottom))
+                
+                ico_images.append(pil_image)
+            else:
+                # Handle multiple sizes
+                for size in sizes:
+                    if size <= pil_image.size[0] and size <= pil_image.size[1]:
+                        print(f"Creating {size}x{size} icon...")
+                        resized = pil_image.resize((size, size), Image.Resampling.LANCZOS)
+                        
+                        # Convert to RGBA if not already
+                        if resized.mode != 'RGBA':
+                            resized = resized.convert('RGBA')
+                        
+                        ico_images.append(resized)
+                    else:
+                        print(f"Skipping {size}x{size} (larger than original image)")
             
             if not ico_images:
                 print("ERROR: No valid icon sizes could be created")
@@ -131,6 +154,8 @@ def main():
     parser.add_argument('output_file', help='Output ICO file path')
     parser.add_argument('--sizes', nargs='+', type=int, default=[16, 32, 48, 64, 128, 256], 
                        help='Icon sizes to include (default: 16 32 48 64 128 256)')
+    parser.add_argument('--original-size', action='store_true', 
+                       help='Use original image size as the primary icon size')
     parser.add_argument('--quality', type=int, default=95, help='ICO quality 1-100 (default: 95)')
     
     args = parser.parse_args()
@@ -162,8 +187,14 @@ def main():
         print("ERROR: All sizes must be positive integers")
         sys.exit(1)
     
-    # Sort sizes for better ICO creation
-    args.sizes = sorted(set(args.sizes))
+    # Handle original size case
+    if args.original_size:
+        print("Using original image size as primary icon size")
+        # We'll determine the original size during conversion
+        args.sizes = ['original']
+    else:
+        # Sort sizes for better ICO creation
+        args.sizes = sorted(set(args.sizes))
     
     output_dir = os.path.dirname(args.output_file)
     if output_dir and not os.path.exists(output_dir):
@@ -185,4 +216,5 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
