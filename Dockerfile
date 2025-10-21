@@ -3,13 +3,27 @@ FROM node:20-slim
 
 WORKDIR /app
 
-# Install system dependencies for file conversions
+# Install system dependencies for file conversions and npm packages
 RUN apt-get update && apt-get install -y \
     libreoffice \
     imagemagick \
     ghostscript \
     python3 \
     python3-pip \
+    libvips-dev \
+    libglib2.0-dev \
+    libcairo2-dev \
+    libpango1.0-dev \
+    libgdk-pixbuf2.0-dev \
+    libffi-dev \
+    libjpeg-dev \
+    libpng-dev \
+    libtiff-dev \
+    libwebp-dev \
+    libexif-dev \
+    liblcms2-dev \
+    libheif-dev \
+    libraw-dev \
     && pip3 install rawpy \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
