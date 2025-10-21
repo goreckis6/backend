@@ -100,7 +100,6 @@ jobs:
             set -euo pipefail
             
             echo "Deploying backend with Traefik (no Docker)..."
-            cd /opt/backend
             
             # Create directory if it doesn't exist
             sudo mkdir -p /opt/backend
