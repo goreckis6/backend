@@ -12999,26 +12999,7 @@ app.post('/convert/bmp-to-webp/batch', uploadBatch, async (req, res) => {
 app.post('/convert/cr2-to-ico/single', upload.single('file'), async (req, res) => {
   console.log('CR2->ICO single conversion request');
 
-  // Set longer timeout for CR2 processing (10 minutes)
-  req.setTimeout(10 * 60 * 1000);
-  res.setTimeout(10 * 60 * 1000);
-  
-  // Handle timeout gracefully with CORS headers
-  const timeoutHandler = () => {
-    console.log('CR2 to ICO: Request timeout - sending timeout response');
-    
-    if (!res.headersSent) {
-      res.status(408).json({ 
-        error: 'Conversion timeout', 
-        message: 'CR2 to ICO conversion is taking longer than expected. Please try with a smaller file or contact support.',
-        timeout: true
-      });
-    }
-  };
-  
-  // Set timeout handler
-  req.on('timeout', timeoutHandler);
-  res.on('timeout', timeoutHandler);
+  // No timeout limits for CR2 processing - let it run as long as needed
 
   const tmpDir = path.join(os.tmpdir(), `cr2-ico-${Date.now()}`);
 
@@ -13232,26 +13213,7 @@ app.post('/convert/cr2-to-ico/batch', uploadBatch, async (req, res) => {
 app.post('/convert/cr2-to-webp/single', upload.single('file'), async (req, res) => {
   console.log('CR2->WebP single conversion request');
 
-  // Set longer timeout for CR2 processing (10 minutes)
-  req.setTimeout(10 * 60 * 1000);
-  res.setTimeout(10 * 60 * 1000);
-  
-  // Handle timeout gracefully with CORS headers
-  const timeoutHandler = () => {
-    console.log('CR2 to WebP: Request timeout - sending timeout response');
-    
-    if (!res.headersSent) {
-      res.status(408).json({ 
-        error: 'Conversion timeout', 
-        message: 'CR2 to WebP conversion is taking longer than expected. Please try with a smaller file or contact support.',
-        timeout: true
-      });
-    }
-  };
-  
-  // Set timeout handler
-  req.on('timeout', timeoutHandler);
-  res.on('timeout', timeoutHandler);
+  // No timeout limits for CR2 processing - let it run as long as needed
 
   const tmpDir = path.join(os.tmpdir(), `cr2-webp-${Date.now()}`);
 
