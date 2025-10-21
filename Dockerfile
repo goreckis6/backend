@@ -35,11 +35,11 @@ RUN apt-get install -y \
     libffi-dev
 
 # Install Python packages for RAW processing and CSV conversion
-RUN pip3 install --no-cache-dir rawpy Pillow pandas python-docx openpyxl xlsxwriter psutil
+RUN pip3 install --no-cache-dir rawpy Pillow pandas python-docx openpyxl xlsxwriter psutil ebooklib
 
 # Create Python virtual environment for consistency
 RUN python3 -m venv /opt/venv
-RUN /opt/venv/bin/pip install --no-cache-dir rawpy Pillow pandas python-docx openpyxl xlsxwriter psutil
+RUN /opt/venv/bin/pip install --no-cache-dir rawpy Pillow pandas python-docx openpyxl xlsxwriter psutil ebooklib
 
 # Clean up
 RUN apt-get clean && rm -rf /var/lib/apt/lists/*
