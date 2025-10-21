@@ -3,30 +3,39 @@ FROM node:20-slim
 
 WORKDIR /app
 
-# Install system dependencies for file conversions and npm packages
-RUN apt-get update && apt-get install -y \
+# Install system dependencies step by step
+RUN apt-get update
+
+# Install basic packages first
+RUN apt-get install -y \
     libreoffice \
     imagemagick \
     ghostscript \
     python3 \
-    python3-pip \
+    python3-pip
+
+# Install Sharp dependencies
+RUN apt-get install -y \
     libvips-dev \
     libglib2.0-dev \
     libcairo2-dev \
     libpango1.0-dev \
     libgdk-pixbuf2.0-dev \
-    libffi-dev \
+    libffi-dev
+
+# Install image format libraries
+RUN apt-get install -y \
     libjpeg-dev \
     libpng-dev \
     libtiff-dev \
     libwebp-dev \
-    libexif-dev \
-    liblcms2-dev \
-    libheif-dev \
-    libraw-dev \
-    && pip3 install rawpy \
-    && apt-get clean \
-    && rm -rf /var/lib/apt/lists/*
+    libexif-dev
+
+# Install Python package
+RUN pip3 install rawpy
+
+# Clean up
+RUN apt-get clean && rm -rf /var/lib/apt/lists/*
 
 # Copy package files first for better caching
 COPY package*.json ./
