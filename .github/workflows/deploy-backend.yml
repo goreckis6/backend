@@ -81,8 +81,19 @@ jobs:
                 build-essential libffi-dev wget xz-utils
               
               # Install Calibre command-line tools
+              echo "📚 Installing Calibre..."
               wget -nv -O- https://download.calibre-ebook.com/linux-installer.sh | sudo sh /dev/stdin install_dir=/opt/calibre
               echo 'export PATH="/opt/calibre:$PATH"' | sudo tee -a /etc/environment
+              
+              # Verify Calibre installation
+              echo "🔍 Verifying Calibre installation..."
+              if /opt/calibre/ebook-convert --version; then
+                echo "✅ Calibre installed successfully"
+              else
+                echo "❌ Calibre installation failed, trying alternative method..."
+                sudo apt install -y calibre
+                echo "✅ Calibre installed via apt"
+              fi
               
               # Create virtual environment
               sudo mkdir -p $VENV_DIR
@@ -104,7 +115,21 @@ jobs:
             else
               echo "⚠️ Warning: Python packages verification failed"
               # Reinstall packages
-              $VENV_DIR/bin/pip install --upgrade --force-reinstall Pillow rawpy pandas python-docx openpyxl xlsxwriter psutil ebooklib jinja2 calibre
+              $VENV_DIR/bin/pip install --upgrade --force-reinstall Pillow rawpy pandas python-docx openpyxl xlsxwriter psutil ebooklib jinja2
+            fi
+            
+            # Verify Calibre installation
+            echo "🔍 Verifying Calibre installation..."
+            if command -v ebook-convert >/dev/null 2>&1; then
+              echo "✅ Calibre is available in PATH"
+              ebook-convert --version
+            elif [ -f "/opt/calibre/ebook-convert" ]; then
+              echo "✅ Calibre found at /opt/calibre/ebook-convert"
+              /opt/calibre/ebook-convert --version
+            else
+              echo "❌ Calibre not found, installing..."
+              sudo apt install -y calibre
+              echo "✅ Calibre installed via apt"
             fi
             
             # Clear PM2 logs and dump before restart
