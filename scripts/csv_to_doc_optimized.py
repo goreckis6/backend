@@ -71,6 +71,10 @@ def create_doc_from_csv_optimized(csv_file, output_file, title="CSV Data", autho
         print("CSV READING COMPLETED - STARTING PROCESSING")
         print("=" * 50)
         
+        # Estimate processing time
+        estimated_time = len(df) / 1000  # Rough estimate: 1000 rows per second
+        print(f"Estimated processing time: {estimated_time:.1f} seconds for {len(df)} rows")
+        
         # Create DOCX document
         print("Creating optimized DOCX document...")
         doc = Document()
@@ -113,29 +117,30 @@ def create_doc_from_csv_optimized(csv_file, output_file, title="CSV Data", autho
         
         total_rows = len(df)
         
+        # Pre-allocate table rows for much better performance
+        print(f"Pre-allocating {total_rows} table rows...")
+        for _ in range(total_rows):
+            table.add_row()
+        
+        print("Pre-allocation complete, now filling data...")
+        
         # Process data in chunks (single-threaded for reliability)
         for chunk_start in range(0, total_rows, chunk_size):
             chunk_end = min(chunk_start + chunk_size, total_rows)
             chunk_df = df.iloc[chunk_start:chunk_end]
             
-            print(f"Processing rows {chunk_start + 1}-{chunk_end} of {total_rows}")
+            print(f"Processing rows {chunk_start + 1}-{chunk_end} of {total_rows} ({(chunk_end/total_rows*100):.1f}%)")
             
+            # Process chunk data more efficiently
             for idx, (_, row) in enumerate(chunk_df.iterrows()):
-                table.add_row()
-                row_cells = table.rows[-1].cells
+                row_index = chunk_start + idx
+                row_cells = table.rows[row_index + 1].cells  # +1 because header is row 0
                 
-                # Process cells with minimal styling
+                # Process cells with minimal styling - no individual cell styling for speed
                 for i, value in enumerate(row):
                     # Convert to string efficiently
                     cell_value = str(value) if value else ""
                     row_cells[i].text = cell_value
-                    
-                    # Minimal cell styling (only for first few rows to save time)
-                    if chunk_start < 100:  # Only style first 100 rows
-                        for paragraph in row_cells[i].paragraphs:
-                            for run in paragraph.runs:
-                                run.font.size = Pt(8)  # Smaller font
-                            paragraph.alignment = WD_ALIGN_PARAGRAPH.LEFT
         
         # Add minimal summary
         print("Adding document summary...")
