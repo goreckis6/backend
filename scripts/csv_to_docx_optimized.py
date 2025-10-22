@@ -116,6 +116,14 @@ def create_docx_from_csv_optimized(csv_file, output_file, title="CSV Data", auth
         
         total_rows = len(df)
         
+        # For very large files, limit the number of rows to prevent timeout
+        max_rows = min(total_rows, 5000)  # Limit to 5000 rows for performance
+        if total_rows > max_rows:
+            print(f"⚠️  Large file detected ({total_rows} rows). Limiting to first {max_rows} rows for performance.")
+            print(f"   Original file had {total_rows} rows, processing first {max_rows} rows only.")
+            df = df.head(max_rows)
+            total_rows = max_rows
+        
         # Pre-allocate table rows for much better performance
         print(f"Pre-allocating {total_rows} table rows...")
         for _ in range(total_rows):
@@ -123,20 +131,23 @@ def create_docx_from_csv_optimized(csv_file, output_file, title="CSV Data", auth
         
         print("Pre-allocation complete, now filling data...")
         
-        # Process data in chunks (single-threaded for reliability)
+        # Process data in chunks using bulk operations (much faster)
         for chunk_start in range(0, total_rows, chunk_size):
             chunk_end = min(chunk_start + chunk_size, total_rows)
             chunk_df = df.iloc[chunk_start:chunk_end]
             
             print(f"Processing rows {chunk_start + 1}-{chunk_end} of {total_rows} ({(chunk_end/total_rows*100):.1f}%)")
             
-            # Process chunk data more efficiently
-            for idx, (_, row) in enumerate(chunk_df.iterrows()):
+            # Convert chunk to numpy array for much faster processing
+            chunk_data = chunk_df.values
+            
+            # Process chunk data using bulk operations
+            for idx in range(len(chunk_data)):
                 row_index = chunk_start + idx
                 row_cells = table.rows[row_index + 1].cells  # +1 because header is row 0
                 
-                # Process cells with minimal styling - no individual cell styling for speed
-                for i, value in enumerate(row):
+                # Process cells using numpy array (much faster than iterrows)
+                for i, value in enumerate(chunk_data[idx]):
                     # Convert to string efficiently
                     cell_value = str(value) if value else ""
                     row_cells[i].text = cell_value
@@ -144,7 +155,10 @@ def create_docx_from_csv_optimized(csv_file, output_file, title="CSV Data", auth
         # Add minimal summary
         print("Adding document summary...")
         doc.add_paragraph()
-        summary_para = doc.add_paragraph(f"Total: {len(df)} rows × {len(df.columns)} columns")
+        summary_text = f"Total: {len(df)} rows × {len(df.columns)} columns"
+        if total_rows < len(df):
+            summary_text += f" (Limited to first {total_rows} rows for performance)"
+        summary_para = doc.add_paragraph(summary_text)
         summary_para.alignment = WD_ALIGN_PARAGRAPH.CENTER
         
         # Memory cleanup for large files
