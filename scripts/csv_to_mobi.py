@@ -213,13 +213,15 @@ def convert_csv_to_mobi(csv_path, output_path, book_title=None, author=None, inc
             ebook_convert_paths = [
                 'ebook-convert',
                 '/opt/calibre/ebook-convert',
+                '/opt/calibre/bin/ebook-convert',
                 '/usr/bin/ebook-convert',
                 '/usr/local/bin/ebook-convert',
-                '/opt/calibre/bin/ebook-convert',
                 '/usr/bin/calibre-ebook-convert',
                 '/usr/local/bin/calibre-ebook-convert',
                 '/usr/bin/calibre',
-                '/usr/local/bin/calibre'
+                '/usr/local/bin/calibre',
+                '/home/calibre/.local/bin/ebook-convert',
+                '/root/.local/bin/ebook-convert'
             ]
             
             ebook_convert = None
@@ -308,40 +310,75 @@ def convert_csv_to_mobi(csv_path, output_path, book_title=None, author=None, inc
                 
                 logger.error("ebook-convert not found. Cannot convert to MOBI format.")
                 
-                # Fallback: Create HTML file instead of MOBI
-                logger.warning("Creating HTML fallback since Calibre is not available...")
-                html_output_path = output_path.replace('.mobi', '.html')
-                
-                # Copy the EPUB content to HTML (EPUB is basically HTML in a ZIP)
-                import zipfile
-                import shutil
-                
+                # Try to install Calibre if we have the necessary permissions
+                logger.info("Attempting to install Calibre...")
                 try:
-                    # Extract EPUB content to temporary directory
-                    with tempfile.TemporaryDirectory() as temp_dir:
-                        with zipfile.ZipFile(epub_path, 'r') as epub_zip:
-                            epub_zip.extractall(temp_dir)
-                        
-                        # Find the main HTML file
-                        html_files = []
-                        for root, dirs, files in os.walk(temp_dir):
-                            for file in files:
-                                if file.endswith('.xhtml') or file.endswith('.html'):
-                                    html_files.append(os.path.join(root, file))
-                        
-                        if html_files:
-                            # Use the first HTML file found
-                            main_html = html_files[0]
-                            shutil.copy2(main_html, html_output_path)
-                            logger.info(f"Created HTML fallback: {html_output_path}")
-                            print(f"Successfully converted {csv_path} to HTML (Calibre not available)")
-                            return True
-                        else:
-                            raise RuntimeError("No HTML content found in EPUB file")
+                    # Try to install Calibre using the official installer
+                    install_cmd = [
+                        'wget', '-nv', '-O-', 
+                        'https://download.calibre-ebook.com/linux-installer.sh'
+                    ]
+                    result = subprocess.run(install_cmd, capture_output=True, text=True, timeout=30)
+                    if result.returncode == 0:
+                        # Run the installer
+                        install_script = result.stdout
+                        install_result = subprocess.run(
+                            ['sh', '-c', f'echo "{install_script}" | sh /dev/stdin install_dir=/opt/calibre'],
+                            capture_output=True, text=True, timeout=120
+                        )
+                        if install_result.returncode == 0:
+                            logger.info("Calibre installed successfully, trying conversion again...")
+                            # Try to find ebook-convert again
+                            for path in ['/opt/calibre/ebook-convert', '/opt/calibre/bin/ebook-convert']:
+                                if os.path.exists(path):
+                                    ebook_convert = path
+                                    logger.info(f"Found ebook-convert after installation: {path}")
+                                    break
                             
+                            if ebook_convert:
+                                # Continue with conversion
+                                convert_cmd = [
+                                    ebook_convert,
+                                    epub_path,
+                                    output_path,
+                                    '--title', book_title,
+                                    '--authors', author,
+                                    '--language', 'en',
+                                    '--mobi-file-type', 'old',
+                                    '--disable-font-rescaling'
+                                ]
+                                
+                                logger.info(f"Running command: {' '.join(convert_cmd)}")
+                                result = subprocess.run(convert_cmd, capture_output=True, text=True, timeout=300)
+                                
+                                if result.returncode != 0:
+                                    logger.error(f"ebook-convert failed with return code {result.returncode}")
+                                    logger.error(f"stderr: {result.stderr}")
+                                    raise RuntimeError(f"ebook-convert failed: {result.stderr}")
+                                
+                                logger.info("MOBI conversion completed successfully after installation")
+                                # Clean up temporary EPUB file
+                                try:
+                                    os.unlink(epub_path)
+                                    logger.info("Cleaned up temporary EPUB file")
+                                except OSError:
+                                    logger.warning("Failed to clean up temporary EPUB file")
+                                
+                                # Verify output file was created
+                                if not os.path.exists(output_path):
+                                    raise RuntimeError("MOBI file was not created")
+                                
+                                file_size = os.path.getsize(output_path)
+                                logger.info(f"MOBI file created successfully: {output_path} ({file_size} bytes)")
+                                return True
+                        else:
+                            logger.error(f"Calibre installation failed: {install_result.stderr}")
+                    else:
+                        logger.error(f"Failed to download Calibre installer: {result.stderr}")
                 except Exception as e:
-                    logger.error(f"HTML fallback failed: {e}")
-                    raise RuntimeError("ebook-convert not found and HTML fallback failed. Please ensure Calibre is installed and available on the PATH.")
+                    logger.error(f"Failed to install Calibre: {e}")
+                
+                raise RuntimeError("ebook-convert not found and installation failed. Please ensure Calibre is installed and available on the PATH.")
             
             # Convert EPUB to MOBI
             convert_cmd = [
