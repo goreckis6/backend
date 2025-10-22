@@ -2,6 +2,7 @@
 """
 CSV to MOBI Converter
 Converts CSV files to MOBI format using pandas, ebooklib, and Calibre
+Optimized for fast conversion of large CSV files
 """
 
 import sys
@@ -13,6 +14,7 @@ import tempfile
 import subprocess
 import logging
 from ebooklib import epub
+import html as html_escape
 
 # Configure logging first
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -154,7 +156,9 @@ def convert_csv_to_mobi(csv_path, output_path, book_title=None, author=None, inc
             html_content += "            </tr>\n        </thead>\n"
         
         # Add table body
-        html_content += "        <tbody>\n"
+        # Use list comprehension for faster HTML generation
+        html_rows = []
+        html_rows.append("        <tbody>\n")
         
         # Process data in chunks for large files
         total_rows = len(df)
@@ -164,19 +168,24 @@ def convert_csv_to_mobi(csv_path, output_path, book_title=None, author=None, inc
             end_idx = min(start_idx + chunk_size, total_rows)
             chunk_df = df.iloc[start_idx:end_idx]
             
-            for _, row in chunk_df.iterrows():
-                html_content += "            <tr>\n"
-                for value in row:
-                    # Handle NaN values and escape HTML
+            # Use vectorized operations and list comprehension for much faster performance
+            for row_values in chunk_df.values:
+                cells = []
+                for value in row_values:
+                    # Handle NaN values and escape HTML using built-in function (faster)
                     if pd.isna(value):
                         cell_value = ""
                     else:
-                        cell_value = str(value).replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
-                    html_content += f"                <td>{cell_value}</td>\n"
-                html_content += "            </tr>\n"
+                        cell_value = html_escape.escape(str(value))
+                    cells.append(f"                <td>{cell_value}</td>")
+                html_rows.append("            <tr>\n" + "\n".join(cells) + "\n            </tr>\n")
             
             processed_rows += len(chunk_df)
-            logger.info(f"Processed {processed_rows}/{total_rows} rows")
+            if processed_rows % 5000 == 0 or processed_rows == total_rows:
+                logger.info(f"Processed {processed_rows}/{total_rows} rows")
+        
+        # Join all rows at once (much faster than repeated concatenation)
+        html_content += "".join(html_rows)
         
         html_content += """        </tbody>
     </table>
@@ -363,7 +372,8 @@ def convert_csv_to_mobi(csv_path, output_path, book_title=None, author=None, inc
             ]
             
             logger.info(f"Running command: {' '.join(convert_cmd)}")
-            result = subprocess.run(convert_cmd, capture_output=True, text=True, timeout=300)
+            # Increased timeout to 30 minutes for very large files
+            result = subprocess.run(convert_cmd, capture_output=True, text=True, timeout=1800)
             
             if result.returncode != 0:
                 logger.error(f"ebook-convert failed with return code {result.returncode}")

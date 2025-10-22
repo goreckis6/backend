@@ -3253,7 +3253,11 @@ const convertCsvToMobiPython = async (
       '--title', options.title || sanitizedBase,
       '--author', options.author || 'Unknown',
       '--chunk-size', '1000'
-    ]);
+    ], {
+      // No timeout limit - let it run as long as needed (up to 30 minutes for very large files)
+      timeout: 30 * 60 * 1000, // 30 minutes timeout
+      maxBuffer: 500 * 1024 * 1024 // 500MB buffer for very large files (100MB+)
+    });
 
     if (stdout.trim().length > 0) console.log('Python stdout:', stdout.trim());
     if (stderr.trim().length > 0) console.warn('Python stderr:', stderr.trim());
