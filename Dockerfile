@@ -12,7 +12,8 @@ RUN apt-get install -y \
     imagemagick \
     ghostscript \
     python3 \
-    python3-pip
+    python3-pip \
+    calibre
 
 # Install Sharp dependencies
 RUN apt-get install -y \

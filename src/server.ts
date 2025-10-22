@@ -3586,9 +3586,9 @@ const convertCsvToEpubPython = async (
     // Prepare output file
     const outputPath = path.join(tmpDir, `${safeBase}.epub`);
     
-    // Use Python script for EPUB (Calibre version)
+    // Use Python script for EPUB (hybrid approach)
     const pythonPath = '/opt/venv/bin/python3';
-    const scriptPath = path.join(__dirname, '../scripts/csv_to_epub_calibre.py');
+    const scriptPath = path.join(__dirname, '../scripts/csv_to_epub_hybrid.py');
     
     // Determine chunk size based on file size for optimal performance
     const fileSizeMB = file.buffer.length / (1024 * 1024);
