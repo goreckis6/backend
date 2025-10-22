@@ -14,9 +14,6 @@ from io import StringIO
 import zipfile
 import tempfile
 import shutil
-import multiprocessing as mp
-from concurrent.futures import ProcessPoolExecutor, as_completed
-import psutil
 
 try:
     from ebooklib import epub
@@ -26,32 +23,9 @@ except ImportError as e:
     print("Please install ebooklib: pip install ebooklib")
     sys.exit(1)
 
-def process_chunk_multiprocess(chunk_df, chunk_info):
+def create_epub_from_csv(csv_file, output_file, title="CSV Data", author="Unknown", include_toc=True, chunk_size=1000):
     """
-    Process a chunk of data using true multiprocessing.
-    Returns processed data ready for EPUB insertion.
-    """
-    try:
-        print(f"Process {os.getpid()} processing chunk {chunk_info}: {len(chunk_df)} rows")
-        
-        # Convert chunk to list of lists for EPUB content
-        chunk_rows = []
-        for _, row in chunk_df.iterrows():
-            chunk_rows.append(row.tolist())
-        
-        print(f"Process {os.getpid()} completed chunk {chunk_info}: {len(chunk_rows)} rows processed")
-        return {
-            'chunk_info': chunk_info,
-            'rows': chunk_rows,
-            'columns': chunk_df.columns.tolist()
-        }
-    except Exception as e:
-        print(f"Error processing chunk {chunk_info}: {e}")
-        return None
-
-def create_epub_from_csv(csv_file, output_file, title="CSV Data", author="Unknown", include_toc=True, chunk_size=500, use_multiprocessing=True):
-    """
-    Convert CSV file to EPUB format with performance optimizations and multiprocessing.
+    Convert CSV file to EPUB format with performance optimizations.
     
     Args:
         csv_file (str): Path to input CSV file
@@ -60,7 +34,6 @@ def create_epub_from_csv(csv_file, output_file, title="CSV Data", author="Unknow
         author (str): Book author
         include_toc (bool): Whether to include table of contents
         chunk_size (int): Number of rows to process at once
-        use_multiprocessing (bool): Whether to use multiprocessing for parallel processing
     """
     print("=" * 50)
     print("CSV TO EPUB CONVERSION STARTED")
@@ -71,8 +44,6 @@ def create_epub_from_csv(csv_file, output_file, title="CSV Data", author="Unknow
     print(f"Title: {title}")
     print(f"Author: {author}")
     print(f"Chunk size: {chunk_size}")
-    print(f"Multiprocessing enabled: {use_multiprocessing}")
-    print(f"Python process ID: {os.getpid()}")
     print("=" * 50)
     
     try:
@@ -264,89 +235,22 @@ def create_epub_from_csv(csv_file, output_file, title="CSV Data", author="Unknow
             data_html += f"<th>{col}</th>"
         data_html += "</tr></thead><tbody>"
         
-        # Add table data with multiprocessing optimization
+        # Add table data (limit to first 1000 rows for performance)
         print(f"Adding table data (first {min(1000, len(df))} rows)...")
-        print(f"Threading enabled: {use_multiprocessing}")
-        print(f"Total rows: {len(df)}")
-        print(f"Estimated processing time: {len(df) // 1000} seconds for large file")
-        
         max_rows = min(1000, len(df))
-        total_rows = len(df)
-        
-        # Use true multiprocessing for better CPU utilization
-        if use_multiprocessing and total_rows > 100:  # Reasonable threshold for multiprocessing
-            try:
-                cpu_count = psutil.cpu_count(logical=True)
-                max_workers = min(cpu_count, 8)  # Use actual CPU cores for multiprocessing
-                print(f"Using multiprocessing with {max_workers} workers (CPU cores: {cpu_count})")
-                
-                # Split data into chunks for parallel processing
-                chunk_data = []
-                for chunk_start in range(0, max_rows, chunk_size):
-                    chunk_end = min(chunk_start + chunk_size, max_rows)
-                    chunk_df = df.iloc[chunk_start:chunk_end]
-                    chunk_data.append((chunk_df, chunk_start))
-                
-                # Process chunks in parallel using processes
-                print(f"Starting multiprocessing of {len(chunk_data)} chunks...")
-                processed_chunks = []
-                with ProcessPoolExecutor(max_workers=max_workers) as executor:
-                    print(f"ProcessPoolExecutor created with {max_workers} workers")
-                    # Submit all chunks
-                    future_to_chunk = {
-                        executor.submit(process_chunk_multiprocess, chunk_df, i): i 
-                        for i, (chunk_df, _) in enumerate(chunk_data)
-                    }
-                    
-                    # Collect results as they complete
-                    for future in as_completed(future_to_chunk):
-                        chunk_idx = future_to_chunk[future]
-                        try:
-                            result = future.result()
-                            if result:
-                                processed_chunks.append((chunk_idx, result))
-                                print(f"Completed chunk {chunk_idx}")
-                        except Exception as e:
-                            print(f"Chunk {chunk_idx} failed: {e}")
-                
-                # Sort chunks by index to maintain order
-                processed_chunks.sort(key=lambda x: x[0])
-                
-                # Add processed data to HTML
-                print("Adding processed data to HTML...")
-                for chunk_idx, chunk_result in processed_chunks:
-                    for row_data in chunk_result['rows']:
-                        data_html += "<tr>"
-                        for value in row_data:
-                            # Escape HTML and handle long text
-                            cell_value = str(value) if value else ""
-                            if len(cell_value) > 100:
-                                cell_value = cell_value[:97] + "..."
-                            data_html += f"<td>{cell_value}</td>"
-                        data_html += "</tr>"
-                
-            except Exception as e:
-                print(f"Error with multiprocessing: {e}, falling back to single-threaded")
-                use_multiprocessing = False
-        
-        # Single-threaded processing (for small datasets or when multiprocessing fails)
-        if not (use_multiprocessing and total_rows > 100):
-            print("Using single-threaded processing...")
-            print(f"Reason: use_multiprocessing={use_multiprocessing}, total_rows={total_rows}, threshold=100")
+        for idx in range(max_rows):
+            if idx % 100 == 0:
+                print(f"Processing row {idx + 1}/{max_rows}")
             
-            for idx in range(max_rows):
-                if idx % 100 == 0:
-                    print(f"Processing row {idx + 1}/{max_rows}")
-                
-                row = df.iloc[idx]
-                data_html += "<tr>"
-                for value in row:
-                    # Escape HTML and handle long text
-                    cell_value = str(value) if value else ""
-                    if len(cell_value) > 100:
-                        cell_value = cell_value[:97] + "..."
-                    data_html += f"<td>{cell_value}</td>"
-                data_html += "</tr>"
+            row = df.iloc[idx]
+            data_html += "<tr>"
+            for value in row:
+                # Escape HTML and handle long text
+                cell_value = str(value) if value else ""
+                if len(cell_value) > 100:
+                    cell_value = cell_value[:97] + "..."
+                data_html += f"<td>{cell_value}</td>"
+            data_html += "</tr>"
         
         data_html += """
             </tbody></table>
@@ -418,8 +322,7 @@ def main():
     parser.add_argument('--title', default='CSV Data', help='Book title')
     parser.add_argument('--author', default='Unknown', help='Book author')
     parser.add_argument('--no-toc', action='store_true', help='Do not include table of contents')
-    parser.add_argument('--chunk-size', type=int, default=500, help='Chunk size for processing large files')
-    parser.add_argument('--no-multiprocessing', action='store_true', help='Disable multiprocessing for debugging')
+    parser.add_argument('--chunk-size', type=int, default=1000, help='Chunk size for processing large files')
     
     args = parser.parse_args()
     
@@ -460,8 +363,7 @@ def main():
         args.title,
         args.author,
         not args.no_toc,
-        args.chunk_size,
-        not args.no_multiprocessing
+        args.chunk_size
     )
     
     if success:
