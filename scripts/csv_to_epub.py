@@ -271,6 +271,34 @@ def create_epub_from_csv(csv_file, output_file, title="CSV Data", author="Unknow
         
         # Add navigation
         if include_toc:
+            print("Adding table of contents...")
+            # Create TOC page
+            toc_html = f"""
+            <html>
+            <head>
+                <title>Table of Contents</title>
+                <style>
+                    body {{ font-family: Arial, sans-serif; padding: 20px; line-height: 1.6; }}
+                    h1 {{ color: #333; border-bottom: 2px solid #667eea; padding-bottom: 10px; }}
+                    ul {{ list-style-type: none; padding: 0; }}
+                    li {{ margin: 10px 0; }}
+                    a {{ text-decoration: none; color: #667eea; font-size: 1.1em; }}
+                    a:hover {{ color: #764ba2; }}
+                </style>
+            </head>
+            <body>
+                <h1>Table of Contents</h1>
+                <ul>
+                    <li><a href="cover.xhtml">Cover</a></li>
+                    <li><a href="data.xhtml">Data Table</a></li>
+                </ul>
+            </body>
+            </html>
+            """
+            toc_page = epub.EpubHtml(title='Table of Contents', file_name='toc.xhtml', lang='en')
+            toc_page.content = toc_html
+            book.add_item(toc_page)
+            
             book.toc = [
                 epub.Link('cover.xhtml', 'Cover', 'cover'),
                 epub.Link('toc.xhtml', 'Table of Contents', 'toc'),
@@ -297,14 +325,46 @@ def create_epub_from_csv(csv_file, output_file, title="CSV Data", author="Unknow
         print("Cleaning up memory...")
         del df  # Free up memory from the large DataFrame
         
-        # Save EPUB file
+        # Save EPUB file with proper options
         print(f"Saving EPUB file to {output_file}...")
-        epub.write_epub(output_file, book, {})
+        try:
+            # Create EPUB with proper options
+            epub.write_epub(output_file, book, {
+                'epub2_guide': True,
+                'epub3_landmark': True
+            })
+            print("EPUB file saved successfully")
+        except Exception as e:
+            print(f"Error saving EPUB: {e}")
+            # Try with minimal options
+            epub.write_epub(output_file, book, {})
+            print("EPUB file saved with fallback method")
         
-        # Verify file was created
+        # Verify file was created and is valid
         if os.path.exists(output_file):
             file_size = os.path.getsize(output_file)
             print(f"EPUB file created successfully: {file_size / (1024*1024):.2f} MB")
+            
+            # Basic validation - check if it's a valid ZIP file (EPUB is a ZIP)
+            try:
+                with zipfile.ZipFile(output_file, 'r') as zip_file:
+                    file_list = zip_file.namelist()
+                    print(f"EPUB contains {len(file_list)} files")
+                    
+                    # Check for required EPUB files
+                    required_files = ['META-INF/container.xml', 'OEBPS/content.opf']
+                    missing_files = [f for f in required_files if f not in file_list]
+                    if missing_files:
+                        print(f"WARNING: Missing required EPUB files: {missing_files}")
+                    else:
+                        print("EPUB structure validation passed")
+                        
+            except zipfile.BadZipFile:
+                print("ERROR: Generated file is not a valid ZIP/EPUB file")
+                return False
+            except Exception as e:
+                print(f"WARNING: Could not validate EPUB structure: {e}")
+            
             return True
         else:
             print("ERROR: EPUB file was not created")
