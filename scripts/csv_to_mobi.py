@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 CSV to MOBI Converter
-Converts CSV files to MOBI format using pandas and ebooklib
+Converts CSV files to MOBI format using pandas, ebooklib, and Calibre
 """
 
 import sys
@@ -12,6 +12,7 @@ from pathlib import Path
 import tempfile
 import subprocess
 import logging
+from ebooklib import epub
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -20,7 +21,10 @@ logger = logging.getLogger(__name__)
 
 def convert_csv_to_mobi(csv_path, output_path, book_title=None, author=None, include_headers=True, chunk_size=1000):
     """
-    Convert CSV file to MOBI format
+    Convert CSV file to MOBI format using the correct approach:
+    1. Read CSV with pandas
+    2. Generate EPUB with ebooklib
+    3. Convert EPUB → MOBI using ebook-convert (from Calibre)
     
     Args:
         csv_path (str): Path to input CSV file
@@ -33,8 +37,8 @@ def convert_csv_to_mobi(csv_path, output_path, book_title=None, author=None, inc
     try:
         logger.info(f"Starting CSV to MOBI conversion: {csv_path} -> {output_path}")
         
-        # Read CSV file
-        logger.info("Reading CSV file...")
+        # Step 1: Read CSV with pandas
+        logger.info("Step 1: Reading CSV file with pandas...")
         df = pd.read_csv(csv_path)
         
         if df.empty:
@@ -48,112 +52,97 @@ def convert_csv_to_mobi(csv_path, output_path, book_title=None, author=None, inc
         if not author:
             author = "CSV Converter"
         
-        # Create temporary HTML file for intermediate conversion
-        with tempfile.NamedTemporaryFile(mode='w', suffix='.html', delete=False, encoding='utf-8') as html_file:
-            html_path = html_file.name
-            
-            # Write HTML content
-            html_file.write(f"""<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>{book_title}</title>
-    <style>
-        body {{
-            font-family: Arial, sans-serif;
-            line-height: 1.6;
-            margin: 20px;
-            color: #333;
-        }}
-        h1 {{
-            color: #2c3e50;
-            border-bottom: 2px solid #3498db;
-            padding-bottom: 10px;
-        }}
-        h2 {{
-            color: #34495e;
-            margin-top: 30px;
-        }}
-        table {{
-            width: 100%;
-            border-collapse: collapse;
-            margin: 20px 0;
-            font-size: 14px;
-        }}
-        th, td {{
-            border: 1px solid #ddd;
-            padding: 8px;
-            text-align: left;
-        }}
-        th {{
-            background-color: #f2f2f2;
-            font-weight: bold;
-        }}
-        tr:nth-child(even) {{
-            background-color: #f9f9f9;
-        }}
-        .header {{
-            text-align: center;
-            margin-bottom: 30px;
-        }}
-        .author {{
-            color: #7f8c8d;
-            font-style: italic;
-        }}
-    </style>
-</head>
-<body>
-    <div class="header">
-        <h1>{book_title}</h1>
-        <p class="author">by {author}</p>
-    </div>
-    
-    <h2>Data Table</h2>
-    <table>
-""")
-            
-            # Add table headers if requested
-            if include_headers and not df.columns.empty:
-                html_file.write("        <thead>\n            <tr>\n")
-                for col in df.columns:
-                    html_file.write(f"                <th>{col}</th>\n")
-                html_file.write("            </tr>\n        </thead>\n")
-            
-            # Add table body
-            html_file.write("        <tbody>\n")
-            
-            # Process data in chunks for large files
-            total_rows = len(df)
-            processed_rows = 0
-            
-            for start_idx in range(0, total_rows, chunk_size):
-                end_idx = min(start_idx + chunk_size, total_rows)
-                chunk_df = df.iloc[start_idx:end_idx]
-                
-                for _, row in chunk_df.iterrows():
-                    html_file.write("            <tr>\n")
-                    for value in row:
-                        # Handle NaN values and escape HTML
-                        if pd.isna(value):
-                            cell_value = ""
-                        else:
-                            cell_value = str(value).replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
-                        html_file.write(f"                <td>{cell_value}</td>\n")
-                    html_file.write("            </tr>\n")
-                
-                processed_rows += len(chunk_df)
-                logger.info(f"Processed {processed_rows}/{total_rows} rows")
-            
-            html_file.write("""        </tbody>
-    </table>
-</body>
-</html>""")
+        # Step 2: Generate EPUB with ebooklib
+        logger.info("Step 2: Generating EPUB with ebooklib...")
+        epub_path = output_path.replace('.mobi', '.epub')
         
-        logger.info(f"Created HTML file: {html_path}")
+        # Create EPUB book
+        book = epub.EpubBook()
+        book.set_identifier(f"csv-{Path(csv_path).stem}")
+        book.set_title(book_title)
+        book.set_language('en')
+        book.add_author(author)
         
-        # Convert HTML to MOBI using ebook-convert (Calibre)
-        logger.info("Converting HTML to MOBI using ebook-convert...")
+        # Create table of contents
+        toc = []
+        
+        # Create main content chapter
+        chapter = epub.EpubHtml(title='Data Table', file_name='data_table.xhtml', lang='en')
+        
+        # Generate HTML content for the table
+        html_content = f"""
+        <html>
+        <head>
+            <title>{book_title}</title>
+            <style>
+                body {{ font-family: Arial, sans-serif; line-height: 1.6; margin: 20px; color: #333; }}
+                h1 {{ color: #2c3e50; border-bottom: 2px solid #3498db; padding-bottom: 10px; }}
+                h2 {{ color: #34495e; margin-top: 30px; }}
+                table {{ width: 100%; border-collapse: collapse; margin: 20px 0; font-size: 14px; }}
+                th, td {{ border: 1px solid #ddd; padding: 8px; text-align: left; }}
+                th {{ background-color: #f2f2f2; font-weight: bold; }}
+                tr:nth-child(even) {{ background-color: #f9f9f9; }}
+            </style>
+        </head>
+        <body>
+            <h1>{book_title}</h1>
+            <p><em>by {author}</em></p>
+            <h2>Data Table</h2>
+            <table>
+"""
+        
+        # Add table headers if requested
+        if include_headers and not df.columns.empty:
+            html_content += "                <thead>\n                    <tr>\n"
+            for col in df.columns:
+                html_content += f"                        <th>{col}</th>\n"
+            html_content += "                    </tr>\n                </thead>\n"
+        
+        # Add table body
+        html_content += "                <tbody>\n"
+        
+        # Process data in chunks for large files
+        total_rows = len(df)
+        processed_rows = 0
+        
+        for start_idx in range(0, total_rows, chunk_size):
+            end_idx = min(start_idx + chunk_size, total_rows)
+            chunk_df = df.iloc[start_idx:end_idx]
+            
+            for _, row in chunk_df.iterrows():
+                html_content += "                    <tr>\n"
+                for value in row:
+                    # Handle NaN values and escape HTML
+                    if pd.isna(value):
+                        cell_value = ""
+                    else:
+                        cell_value = str(value).replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
+                    html_content += f"                        <td>{cell_value}</td>\n"
+                html_content += "                    </tr>\n"
+            
+            processed_rows += len(chunk_df)
+            logger.info(f"Processed {processed_rows}/{total_rows} rows")
+        
+        html_content += """                </tbody>
+            </table>
+        </body>
+        </html>"""
+        
+        chapter.content = html_content
+        book.add_item(chapter)
+        toc.append(chapter)
+        
+        # Add table of contents
+        book.toc = toc
+        book.add_item(epub.EpubNcx())
+        book.add_item(epub.EpubNav())
+        
+        # Write EPUB file
+        epub.write_epub(epub_path, book, {})
+        logger.info(f"Created EPUB file: {epub_path}")
+        
+        # Step 3: Convert EPUB → MOBI using ebook-convert (from Calibre)
+        logger.info("Step 3: Converting EPUB to MOBI using ebook-convert...")
         
         # Try to find ebook-convert
         ebook_convert_paths = [
@@ -199,19 +188,13 @@ def convert_csv_to_mobi(csv_path, output_path, book_title=None, author=None, inc
                 logger.debug(f"Error checking calibre installation: {e}")
         
         if not ebook_convert:
-            logger.warning("ebook-convert not found. Creating HTML file instead...")
-            # Fallback: create HTML file with .html extension
-            html_output_path = output_path.replace('.mobi', '.html')
-            import shutil
-            shutil.copy2(html_path, html_output_path)
-            logger.info(f"Created HTML file as fallback: {html_output_path}")
-            print(f"Successfully converted {csv_path} to HTML (Calibre not available)")
-            return True
+            logger.error("ebook-convert not found. Cannot convert to MOBI format.")
+            raise RuntimeError("ebook-convert not found. Please ensure Calibre is installed and available on the PATH.")
         
-        # Convert HTML to MOBI
+        # Convert EPUB to MOBI
         convert_cmd = [
             ebook_convert,
-            html_path,
+            epub_path,
             output_path,
             '--title', book_title,
             '--authors', author,
@@ -230,12 +213,12 @@ def convert_csv_to_mobi(csv_path, output_path, book_title=None, author=None, inc
         
         logger.info("MOBI conversion completed successfully")
         
-        # Clean up temporary HTML file
+        # Clean up temporary EPUB file
         try:
-            os.unlink(html_path)
-            logger.info("Cleaned up temporary HTML file")
+            os.unlink(epub_path)
+            logger.info("Cleaned up temporary EPUB file")
         except OSError:
-            logger.warning("Failed to clean up temporary HTML file")
+            logger.warning("Failed to clean up temporary EPUB file")
         
         # Verify output file was created
         if not os.path.exists(output_path):
