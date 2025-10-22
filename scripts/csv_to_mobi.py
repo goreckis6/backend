@@ -14,9 +14,43 @@ import subprocess
 import logging
 from ebooklib import epub
 
+# Try to import Calibre Python API
+try:
+    from calibre.ebooks.conversion import convert
+    from calibre.ebooks.conversion.cli import main as calibre_main
+    CALIBRE_AVAILABLE = True
+except ImportError:
+    CALIBRE_AVAILABLE = False
+
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
+
+
+def convert_epub_to_mobi_python_api(epub_path, mobi_path, book_title, author):
+    """
+    Convert EPUB to MOBI using Calibre Python API
+    """
+    try:
+        logger.info("Using Calibre Python API for conversion...")
+        
+        # Set up conversion options
+        options = {
+            'mobi_file_type': 'old',
+            'disable_font_rescaling': True,
+            'title': book_title,
+            'authors': [author],
+            'language': 'en'
+        }
+        
+        # Convert using Calibre Python API
+        convert(epub_path, mobi_path, options)
+        logger.info("EPUB to MOBI conversion completed using Python API")
+        return True
+        
+    except Exception as e:
+        logger.error(f"Calibre Python API conversion failed: {e}")
+        return False
 
 
 def convert_csv_to_mobi(csv_path, output_path, book_title=None, author=None, include_headers=True, chunk_size=1000):
@@ -141,77 +175,136 @@ def convert_csv_to_mobi(csv_path, output_path, book_title=None, author=None, inc
         epub.write_epub(epub_path, book, {})
         logger.info(f"Created EPUB file: {epub_path}")
         
-        # Step 3: Convert EPUB → MOBI using ebook-convert (from Calibre)
-        logger.info("Step 3: Converting EPUB to MOBI using ebook-convert...")
+        # Step 3: Convert EPUB → MOBI using Calibre
+        logger.info("Step 3: Converting EPUB to MOBI using Calibre...")
         
-        # Try to find ebook-convert
-        ebook_convert_paths = [
-            'ebook-convert',
-            '/usr/bin/ebook-convert',
-            '/usr/local/bin/ebook-convert',
-            '/opt/calibre/bin/ebook-convert',
-            '/usr/bin/calibre-ebook-convert',
-            '/usr/local/bin/calibre-ebook-convert'
-        ]
+        # Try Python API first if available
+        if CALIBRE_AVAILABLE:
+            logger.info("Calibre Python API is available, trying that first...")
+            if convert_epub_to_mobi_python_api(epub_path, output_path, book_title, author):
+                logger.info("MOBI conversion completed successfully using Python API")
+            else:
+                logger.warning("Python API failed, falling back to command line...")
+                CALIBRE_AVAILABLE = False  # Force fallback
         
-        ebook_convert = None
-        for path in ebook_convert_paths:
-            try:
-                result = subprocess.run([path, '--version'], capture_output=True, check=True, timeout=10)
-                logger.info(f"Found ebook-convert at: {path}")
-                ebook_convert = path
-                break
-            except (subprocess.CalledProcessError, FileNotFoundError, subprocess.TimeoutExpired):
-                logger.debug(f"ebook-convert not found at: {path}")
-                continue
-        
-        if not ebook_convert:
-            # Check if calibre is installed but ebook-convert is not in PATH
-            try:
-                result = subprocess.run(['which', 'calibre'], capture_output=True, text=True)
-                if result.returncode == 0:
-                    calibre_path = result.stdout.strip()
-                    logger.info(f"Calibre found at: {calibre_path}")
-                    # Try to find ebook-convert in calibre directory
-                    calibre_dir = os.path.dirname(calibre_path)
-                    ebook_convert_candidates = [
-                        os.path.join(calibre_dir, 'ebook-convert'),
-                        os.path.join(calibre_dir, 'calibre-ebook-convert'),
-                        os.path.join(os.path.dirname(calibre_dir), 'bin', 'ebook-convert')
-                    ]
-                    for candidate in ebook_convert_candidates:
-                        if os.path.exists(candidate):
-                            ebook_convert = candidate
-                            logger.info(f"Found ebook-convert at: {candidate}")
+        # Fallback to command line if Python API failed or not available
+        if not CALIBRE_AVAILABLE:
+            logger.info("Using command line ebook-convert...")
+            
+            # Try to find ebook-convert
+            ebook_convert_paths = [
+                'ebook-convert',
+                '/usr/bin/ebook-convert',
+                '/usr/local/bin/ebook-convert',
+                '/opt/calibre/bin/ebook-convert',
+                '/usr/bin/calibre-ebook-convert',
+                '/usr/local/bin/calibre-ebook-convert',
+                '/usr/bin/calibre',
+                '/usr/local/bin/calibre'
+            ]
+            
+            ebook_convert = None
+            for path in ebook_convert_paths:
+                try:
+                    result = subprocess.run([path, '--version'], capture_output=True, check=True, timeout=10)
+                    logger.info(f"Found ebook-convert at: {path}")
+                    ebook_convert = path
+                    break
+                except (subprocess.CalledProcessError, FileNotFoundError, subprocess.TimeoutExpired):
+                    logger.debug(f"ebook-convert not found at: {path}")
+                    continue
+            
+            if not ebook_convert:
+                # Check if calibre is installed but ebook-convert is not in PATH
+                logger.info("ebook-convert not found in standard paths, searching for Calibre installation...")
+                
+                # Check common Calibre installation locations
+                calibre_locations = [
+                    '/usr/bin/calibre',
+                    '/usr/local/bin/calibre',
+                    '/opt/calibre/bin/calibre',
+                    '/usr/share/calibre/bin/calibre'
+                ]
+                
+                for calibre_path in calibre_locations:
+                    if os.path.exists(calibre_path):
+                        logger.info(f"Calibre found at: {calibre_path}")
+                        # Try to find ebook-convert in calibre directory
+                        calibre_dir = os.path.dirname(calibre_path)
+                        ebook_convert_candidates = [
+                            os.path.join(calibre_dir, 'ebook-convert'),
+                            os.path.join(calibre_dir, 'calibre-ebook-convert'),
+                            os.path.join(os.path.dirname(calibre_dir), 'bin', 'ebook-convert'),
+                            os.path.join(calibre_dir, '..', 'bin', 'ebook-convert')
+                        ]
+                        for candidate in ebook_convert_candidates:
+                            if os.path.exists(candidate):
+                                ebook_convert = candidate
+                                logger.info(f"Found ebook-convert at: {candidate}")
+                                break
+                        if ebook_convert:
                             break
-            except Exception as e:
-                logger.debug(f"Error checking calibre installation: {e}")
-        
-        if not ebook_convert:
-            logger.error("ebook-convert not found. Cannot convert to MOBI format.")
-            raise RuntimeError("ebook-convert not found. Please ensure Calibre is installed and available on the PATH.")
-        
-        # Convert EPUB to MOBI
-        convert_cmd = [
-            ebook_convert,
-            epub_path,
-            output_path,
-            '--title', book_title,
-            '--authors', author,
-            '--language', 'en',
-            '--mobi-file-type', 'old',
-            '--disable-font-rescaling'
-        ]
-        
-        logger.info(f"Running command: {' '.join(convert_cmd)}")
-        result = subprocess.run(convert_cmd, capture_output=True, text=True, timeout=300)
-        
-        if result.returncode != 0:
-            logger.error(f"ebook-convert failed with return code {result.returncode}")
-            logger.error(f"stderr: {result.stderr}")
-            raise RuntimeError(f"ebook-convert failed: {result.stderr}")
-        
-        logger.info("MOBI conversion completed successfully")
+                
+                # Also try using 'which' command as fallback
+                if not ebook_convert:
+                    try:
+                        result = subprocess.run(['which', 'calibre'], capture_output=True, text=True)
+                        if result.returncode == 0:
+                            calibre_path = result.stdout.strip()
+                            logger.info(f"Calibre found via which at: {calibre_path}")
+                            # Try to find ebook-convert in calibre directory
+                            calibre_dir = os.path.dirname(calibre_path)
+                            ebook_convert_candidates = [
+                                os.path.join(calibre_dir, 'ebook-convert'),
+                                os.path.join(calibre_dir, 'calibre-ebook-convert'),
+                                os.path.join(os.path.dirname(calibre_dir), 'bin', 'ebook-convert')
+                            ]
+                            for candidate in ebook_convert_candidates:
+                                if os.path.exists(candidate):
+                                    ebook_convert = candidate
+                                    logger.info(f"Found ebook-convert at: {candidate}")
+                                    break
+                    except Exception as e:
+                        logger.debug(f"Error checking calibre installation with which: {e}")
+            
+            if not ebook_convert:
+                # Debug: List what's available in common directories
+                logger.error("ebook-convert not found. Debugging system...")
+                debug_dirs = ['/usr/bin', '/usr/local/bin', '/opt/calibre/bin', '/usr/share/calibre/bin']
+                for debug_dir in debug_dirs:
+                    if os.path.exists(debug_dir):
+                        try:
+                            files = os.listdir(debug_dir)
+                            calibre_files = [f for f in files if 'calibre' in f.lower() or 'ebook' in f.lower()]
+                            if calibre_files:
+                                logger.info(f"Files in {debug_dir}: {calibre_files}")
+                        except Exception as e:
+                            logger.debug(f"Could not list {debug_dir}: {e}")
+                
+                logger.error("ebook-convert not found. Cannot convert to MOBI format.")
+                raise RuntimeError("ebook-convert not found. Please ensure Calibre is installed and available on the PATH.")
+            
+            # Convert EPUB to MOBI
+            convert_cmd = [
+                ebook_convert,
+                epub_path,
+                output_path,
+                '--title', book_title,
+                '--authors', author,
+                '--language', 'en',
+                '--mobi-file-type', 'old',
+                '--disable-font-rescaling'
+            ]
+            
+            logger.info(f"Running command: {' '.join(convert_cmd)}")
+            result = subprocess.run(convert_cmd, capture_output=True, text=True, timeout=300)
+            
+            if result.returncode != 0:
+                logger.error(f"ebook-convert failed with return code {result.returncode}")
+                logger.error(f"stderr: {result.stderr}")
+                raise RuntimeError(f"ebook-convert failed: {result.stderr}")
+            
+            logger.info("MOBI conversion completed successfully using command line")
         
         # Clean up temporary EPUB file
         try:
