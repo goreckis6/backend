@@ -235,9 +235,14 @@ def create_epub_from_csv(csv_file, output_file, title="CSV Data", author="Unknow
             data_html += f"<th>{col}</th>"
         data_html += "</tr></thead><tbody>"
         
-        # Add table data (limit to first 1000 rows for performance)
-        print(f"Adding table data (first {min(1000, len(df))} rows)...")
-        max_rows = min(1000, len(df))
+        # Add table data (include more rows for better file size)
+        # For files with < 5000 rows, include all data; otherwise limit to 5000 for performance
+        max_rows = min(5000, len(df))
+        print(f"Adding table data (first {max_rows} rows out of {len(df)} total)...")
+        print(f"DataFrame shape: {df.shape}")
+        print(f"DataFrame columns: {list(df.columns)}")
+        
+        rows_added = 0
         for idx in range(max_rows):
             if idx % 100 == 0:
                 print(f"Processing row {idx + 1}/{max_rows}")
@@ -251,6 +256,9 @@ def create_epub_from_csv(csv_file, output_file, title="CSV Data", author="Unknow
                     cell_value = cell_value[:97] + "..."
                 data_html += f"<td>{cell_value}</td>"
             data_html += "</tr>"
+            rows_added += 1
+        
+        print(f"Successfully added {rows_added} rows to HTML table")
         
         data_html += """
             </tbody></table>
@@ -262,12 +270,20 @@ def create_epub_from_csv(csv_file, output_file, title="CSV Data", author="Unknow
         data_page.content = data_html
         book.add_item(data_page)
         
+        print(f"Data HTML content size: {len(data_html)} characters")
+        print(f"Data HTML preview (first 200 chars): {data_html[:200]}...")
+        
         # Create spine (reading order)
         print("Creating book spine...")
         book.spine = ['cover']
         if include_toc:
             book.spine.append('toc')
         book.spine.append('data')
+        
+        # Add navigation (NCX) for better compatibility
+        print("Adding navigation (NCX)...")
+        book.add_item(epub.EpubNcx())
+        book.add_item(epub.EpubNav())
         
         # Add navigation
         if include_toc:
@@ -328,28 +344,43 @@ def create_epub_from_csv(csv_file, output_file, title="CSV Data", author="Unknow
         # Save EPUB file with proper options
         print(f"Saving EPUB file to {output_file}...")
         try:
-            # Create EPUB with proper options
+            # Create EPUB with proper options for better compatibility
             epub.write_epub(output_file, book, {
                 'epub2_guide': True,
-                'epub3_landmark': True
+                'epub3_landmark': True,
+                'epub3_nav': True
             })
-            print("EPUB file saved successfully")
+            print("EPUB file saved successfully with full options")
         except Exception as e:
-            print(f"Error saving EPUB: {e}")
-            # Try with minimal options
-            epub.write_epub(output_file, book, {})
-            print("EPUB file saved with fallback method")
+            print(f"Error saving EPUB with full options: {e}")
+            try:
+                # Try with basic options
+                epub.write_epub(output_file, book, {
+                    'epub2_guide': True
+                })
+                print("EPUB file saved with basic options")
+            except Exception as e2:
+                print(f"Error saving EPUB with basic options: {e2}")
+                # Try with minimal options
+                epub.write_epub(output_file, book, {})
+                print("EPUB file saved with minimal options")
         
         # Verify file was created and is valid
         if os.path.exists(output_file):
             file_size = os.path.getsize(output_file)
             print(f"EPUB file created successfully: {file_size / (1024*1024):.2f} MB")
             
+            # Check if file is too small (less than 10KB is suspicious)
+            if file_size < 10240:  # 10KB
+                print(f"WARNING: EPUB file is very small ({file_size} bytes). This might indicate an issue.")
+            
             # Basic validation - check if it's a valid ZIP file (EPUB is a ZIP)
             try:
                 with zipfile.ZipFile(output_file, 'r') as zip_file:
                     file_list = zip_file.namelist()
-                    print(f"EPUB contains {len(file_list)} files")
+                    print(f"EPUB contains {len(file_list)} files:")
+                    for file in file_list:
+                        print(f"  - {file}")
                     
                     # Check for required EPUB files
                     required_files = ['META-INF/container.xml', 'OEBPS/content.opf']
