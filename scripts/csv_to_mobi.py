@@ -109,13 +109,28 @@ def convert_csv_to_mobi(csv_path, output_path, book_title=None, author=None, inc
         
         # Create EPUB book
         book = epub.EpubBook()
+        
+        # Set metadata
         book.set_identifier(f"csv-{Path(csv_path).stem}")
         book.set_title(book_title)
         book.set_language('en')
         book.add_author(author)
         
+        # Create CSS style
+        style = epub.EpubItem(uid="style", file_name="style.css", media_type="text/css", content="""
+        body { font-family: Arial, sans-serif; line-height: 1.6; margin: 20px; color: #333; }
+        h1 { color: #2c3e50; border-bottom: 2px solid #3498db; padding-bottom: 10px; }
+        h2 { color: #34495e; margin-top: 30px; }
+        table { width: 100%; border-collapse: collapse; margin: 20px 0; font-size: 14px; }
+        th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
+        th { background-color: #f2f2f2; font-weight: bold; }
+        tr:nth-child(even) { background-color: #f9f9f9; }
+        """)
+        book.add_item(style)
+        
         # Create main content chapter
         chapter = epub.EpubHtml(title='Data Table', file_name='data_table.xhtml', lang='en')
+        chapter.add_item(style)
         
         # Generate HTML content for the table
         html_content = f"""<?xml version="1.0" encoding="utf-8"?>
@@ -123,15 +138,7 @@ def convert_csv_to_mobi(csv_path, output_path, book_title=None, author=None, inc
 <html xmlns="http://www.w3.org/1999/xhtml">
 <head>
     <title>{book_title}</title>
-    <style>
-        body {{ font-family: Arial, sans-serif; line-height: 1.6; margin: 20px; color: #333; }}
-        h1 {{ color: #2c3e50; border-bottom: 2px solid #3498db; padding-bottom: 10px; }}
-        h2 {{ color: #34495e; margin-top: 30px; }}
-        table {{ width: 100%; border-collapse: collapse; margin: 20px 0; font-size: 14px; }}
-        th, td {{ border: 1px solid #ddd; padding: 8px; text-align: left; }}
-        th {{ background-color: #f2f2f2; font-weight: bold; }}
-        tr:nth-child(even) {{ background-color: #f9f9f9; }}
-    </style>
+    <link rel="stylesheet" type="text/css" href="style.css"/>
 </head>
 <body>
     <h1>{book_title}</h1>
@@ -182,16 +189,47 @@ def convert_csv_to_mobi(csv_path, output_path, book_title=None, author=None, inc
         # Create table of contents
         book.toc = [chapter]
         
-        # Add spine (required for valid EPUB) - this is the key fix
+        # Add spine (required for valid EPUB)
         book.spine = [chapter]
         
         # Add navigation files
         book.add_item(epub.EpubNcx())
         book.add_item(epub.EpubNav())
         
+        # Debug: Check book structure
+        logger.info(f"Book structure - Items: {len(book.get_items())}, Spine: {book.spine}, TOC: {len(book.toc)}")
+        logger.info(f"Chapter content length: {len(html_content)}")
+        
         # Write EPUB file
-        epub.write_epub(epub_path, book, {})
-        logger.info(f"Created EPUB file: {epub_path}")
+        try:
+            logger.info("Writing EPUB file...")
+            epub.write_epub(epub_path, book, {})
+            logger.info("EPUB file written successfully")
+            
+            # Verify EPUB file was created and has content
+            if not os.path.exists(epub_path):
+                raise RuntimeError("EPUB file was not created")
+            
+            file_size = os.path.getsize(epub_path)
+            if file_size == 0:
+                raise RuntimeError("EPUB file is empty")
+            
+            logger.info(f"Created EPUB file: {epub_path} ({file_size} bytes)")
+            
+            # Test if EPUB can be opened
+            try:
+                import zipfile
+                with zipfile.ZipFile(epub_path, 'r') as epub_zip:
+                    files = epub_zip.namelist()
+                    logger.info(f"EPUB contains {len(files)} files: {files[:5]}...")
+            except Exception as e:
+                logger.warning(f"Could not inspect EPUB file: {e}")
+            
+        except Exception as e:
+            logger.error(f"Failed to create EPUB file: {e}")
+            import traceback
+            logger.error(f"Full traceback: {traceback.format_exc()}")
+            raise RuntimeError(f"EPUB creation failed: {e}")
         
         # Step 3: Convert EPUB → MOBI using Calibre
         logger.info("Step 3: Converting EPUB to MOBI using Calibre...")
