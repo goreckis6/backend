@@ -1,8 +1,7 @@
 #!/usr/bin/env python3
 """
 CSV to MOBI Converter
-Converts CSV files to MOBI format using pandas, ebooklib, and Calibre
-Optimized for fast conversion of large CSV files
+Converts CSV files to MOBI format using pandas and ebooklib
 """
 
 import sys
@@ -13,71 +12,14 @@ from pathlib import Path
 import tempfile
 import subprocess
 import logging
-from ebooklib import epub
-import html as html_escape
 
-# Configure logging first
+# Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
-# Try to import Calibre Python API
-try:
-    from calibre.ebooks.conversion import convert
-    CALIBRE_AVAILABLE = True
-    logger.info("Calibre Python API imported successfully")
-except ImportError as e:
-    CALIBRE_AVAILABLE = False
-    logger.warning(f"Calibre Python API not available: {e}")
-
-
-def convert_epub_to_mobi_python_api(epub_path, mobi_path, book_title, author):
-    """
-    Convert EPUB to MOBI using Calibre Python API
-    """
-    try:
-        logger.info("Using Calibre Python API for conversion...")
-        
-        # Verify input file exists
-        if not os.path.exists(epub_path):
-            logger.error(f"EPUB file not found: {epub_path}")
-            return False
-        
-        # Set up conversion options
-        options = {
-            'mobi_file_type': 'old',
-            'disable_font_rescaling': True,
-            'title': book_title,
-            'authors': [author],
-            'language': 'en'
-        }
-        
-        logger.info(f"Converting {epub_path} to {mobi_path}")
-        
-        # Convert using Calibre Python API
-        convert(epub_path, mobi_path, options)
-        
-        # Verify output file was created
-        if not os.path.exists(mobi_path):
-            logger.error("MOBI file was not created by Calibre Python API")
-            return False
-        
-        file_size = os.path.getsize(mobi_path)
-        logger.info(f"EPUB to MOBI conversion completed using Python API. Output size: {file_size} bytes")
-        return True
-        
-    except Exception as e:
-        logger.error(f"Calibre Python API conversion failed: {e}")
-        import traceback
-        logger.debug(f"Full traceback: {traceback.format_exc()}")
-        return False
-
-
 def convert_csv_to_mobi(csv_path, output_path, book_title=None, author=None, include_headers=True, chunk_size=1000):
     """
-    Convert CSV file to MOBI format using the correct approach:
-    1. Read CSV with pandas
-    2. Generate EPUB with ebooklib
-    3. Convert EPUB → MOBI using ebook-convert (from Calibre)
+    Convert CSV file to MOBI format
     
     Args:
         csv_path (str): Path to input CSV file
@@ -90,8 +32,8 @@ def convert_csv_to_mobi(csv_path, output_path, book_title=None, author=None, inc
     try:
         logger.info(f"Starting CSV to MOBI conversion: {csv_path} -> {output_path}")
         
-        # Step 1: Read CSV with pandas
-        logger.info("Step 1: Reading CSV file with pandas...")
+        # Read CSV file
+        logger.info("Reading CSV file...")
         df = pd.read_csv(csv_path)
         
         if df.empty:
@@ -105,289 +47,169 @@ def convert_csv_to_mobi(csv_path, output_path, book_title=None, author=None, inc
         if not author:
             author = "CSV Converter"
         
-        # Step 2: Generate EPUB with ebooklib
-        logger.info("Step 2: Generating EPUB with ebooklib...")
-        epub_path = output_path.replace('.mobi', '.epub')
-        
-        # Create EPUB book
-        book = epub.EpubBook()
-        
-        # Set metadata
-        book.set_identifier(f"csv-{Path(csv_path).stem}")
-        book.set_title(book_title)
-        book.set_language('en')
-        book.add_author(author)
-        
-        # Create CSS style
-        style = epub.EpubItem(uid="style", file_name="style.css", media_type="text/css", content="""
-        body { font-family: Arial, sans-serif; line-height: 1.6; margin: 20px; color: #333; }
-        h1 { color: #2c3e50; border-bottom: 2px solid #3498db; padding-bottom: 10px; }
-        h2 { color: #34495e; margin-top: 30px; }
-        table { width: 100%; border-collapse: collapse; margin: 20px 0; font-size: 14px; }
-        th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
-        th { background-color: #f2f2f2; font-weight: bold; }
-        tr:nth-child(even) { background-color: #f9f9f9; }
-        """)
-        book.add_item(style)
-        
-        # Create main content chapter
-        chapter = epub.EpubHtml(title='Data Table', file_name='data_table.xhtml', lang='en')
-        chapter.add_item(style)
-        
-        # Generate HTML content for the table
-        html_content = f"""<?xml version="1.0" encoding="utf-8"?>
-<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.1//EN" "http://www.w3.org/TR/xhtml11/DTD/xhtml11.dtd">
-<html xmlns="http://www.w3.org/1999/xhtml">
+        # Create temporary HTML file for intermediate conversion
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.html', delete=False, encoding='utf-8') as html_file:
+            html_path = html_file.name
+            
+            # Write HTML content
+            html_file.write(f"""<!DOCTYPE html>
+<html lang="en">
 <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{book_title}</title>
-    <link rel="stylesheet" type="text/css" href="style.css"/>
+    <style>
+        body {{
+            font-family: Arial, sans-serif;
+            line-height: 1.6;
+            margin: 20px;
+            color: #333;
+        }}
+        h1 {{
+            color: #2c3e50;
+            border-bottom: 2px solid #3498db;
+            padding-bottom: 10px;
+        }}
+        h2 {{
+            color: #34495e;
+            margin-top: 30px;
+        }}
+        table {{
+            width: 100%;
+            border-collapse: collapse;
+            margin: 20px 0;
+            font-size: 14px;
+        }}
+        th, td {{
+            border: 1px solid #ddd;
+            padding: 8px;
+            text-align: left;
+        }}
+        th {{
+            background-color: #f2f2f2;
+            font-weight: bold;
+        }}
+        tr:nth-child(even) {{
+            background-color: #f9f9f9;
+        }}
+        .header {{
+            text-align: center;
+            margin-bottom: 30px;
+        }}
+        .author {{
+            color: #7f8c8d;
+            font-style: italic;
+        }}
+    </style>
 </head>
 <body>
-    <h1>{book_title}</h1>
-    <p><em>by {author}</em></p>
+    <div class="header">
+        <h1>{book_title}</h1>
+        <p class="author">by {author}</p>
+    </div>
+    
     <h2>Data Table</h2>
-    <table>"""
-        
-        # Add table headers if requested
-        if include_headers and not df.columns.empty:
-            html_content += "\n        <thead>\n            <tr>\n"
-            for col in df.columns:
-                html_content += f"                <th>{col}</th>\n"
-            html_content += "            </tr>\n        </thead>\n"
-        
-        # Add table body
-        # Use list comprehension for faster HTML generation
-        html_rows = []
-        html_rows.append("        <tbody>\n")
-        
-        # Process data in chunks for large files
-        total_rows = len(df)
-        processed_rows = 0
-        
-        for start_idx in range(0, total_rows, chunk_size):
-            end_idx = min(start_idx + chunk_size, total_rows)
-            chunk_df = df.iloc[start_idx:end_idx]
+    <table>
+""")
             
-            # Use vectorized operations and list comprehension for much faster performance
-            for row_values in chunk_df.values:
-                cells = []
-                for value in row_values:
-                    # Handle NaN values and escape HTML using built-in function (faster)
-                    if pd.isna(value):
-                        cell_value = ""
-                    else:
-                        cell_value = html_escape.escape(str(value))
-                    cells.append(f"                <td>{cell_value}</td>")
-                html_rows.append("            <tr>\n" + "\n".join(cells) + "\n            </tr>\n")
+            # Add table headers if requested
+            if include_headers and not df.columns.empty:
+                html_file.write("        <thead>\n            <tr>\n")
+                for col in df.columns:
+                    html_file.write(f"                <th>{col}</th>\n")
+                html_file.write("            </tr>\n        </thead>\n")
             
-            processed_rows += len(chunk_df)
-            if processed_rows % 5000 == 0 or processed_rows == total_rows:
+            # Add table body
+            html_file.write("        <tbody>\n")
+            
+            # Process data in chunks for large files
+            total_rows = len(df)
+            processed_rows = 0
+            
+            for start_idx in range(0, total_rows, chunk_size):
+                end_idx = min(start_idx + chunk_size, total_rows)
+                chunk_df = df.iloc[start_idx:end_idx]
+                
+                for _, row in chunk_df.iterrows():
+                    html_file.write("            <tr>\n")
+                    for value in row:
+                        # Handle NaN values and escape HTML
+                        if pd.isna(value):
+                            cell_value = ""
+                        else:
+                            cell_value = str(value).replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
+                        html_file.write(f"                <td>{cell_value}</td>\n")
+                    html_file.write("            </tr>\n")
+                
+                processed_rows += len(chunk_df)
                 logger.info(f"Processed {processed_rows}/{total_rows} rows")
-        
-        # Join all rows at once (much faster than repeated concatenation)
-        html_content += "".join(html_rows)
-        
-        html_content += """        </tbody>
+            
+            html_file.write("""        </tbody>
     </table>
 </body>
-</html>"""
+</html>""")
         
-        # Set chapter content - must be bytes, not string
-        chapter.content = html_content.encode('utf-8')
-        book.add_item(chapter)
+        logger.info(f"Created HTML file: {html_path}")
         
-        # Create table of contents
-        book.toc = [chapter]
+        # Convert HTML to MOBI using ebook-convert (Calibre)
+        logger.info("Converting HTML to MOBI using ebook-convert...")
         
-        # Add spine (required for valid EPUB)
-        book.spine = [chapter]
+        # Try to find ebook-convert
+        ebook_convert_paths = [
+            'ebook-convert',
+            '/usr/bin/ebook-convert',
+            '/usr/local/bin/ebook-convert',
+            '/opt/calibre/bin/ebook-convert'
+        ]
         
-        # Add navigation files
-        book.add_item(epub.EpubNcx())
-        book.add_item(epub.EpubNav())
-        
-        # Debug: Check book structure
-        items_count = len(list(book.get_items()))
-        logger.info(f"Book structure - Items: {items_count}, Spine length: {len(book.spine)}, TOC: {len(book.toc)}")
-        logger.info(f"Chapter content length: {len(html_content)} chars")
-        
-        # Write EPUB file
-        try:
-            logger.info("Writing EPUB file...")
-            epub.write_epub(epub_path, book, {})
-            logger.info("EPUB file written successfully")
-            
-            # Verify EPUB file was created and has content
-            if not os.path.exists(epub_path):
-                raise RuntimeError("EPUB file was not created")
-            
-            file_size = os.path.getsize(epub_path)
-            if file_size == 0:
-                raise RuntimeError("EPUB file is empty")
-            
-            logger.info(f"Created EPUB file: {epub_path} ({file_size} bytes)")
-            
-            # Test if EPUB can be opened
+        ebook_convert = None
+        for path in ebook_convert_paths:
             try:
-                import zipfile
-                with zipfile.ZipFile(epub_path, 'r') as epub_zip:
-                    files = epub_zip.namelist()
-                    logger.info(f"EPUB contains {len(files)} files: {files[:5]}...")
-            except Exception as e:
-                logger.warning(f"Could not inspect EPUB file: {e}")
-            
-        except Exception as e:
-            logger.error(f"Failed to create EPUB file: {e}")
-            import traceback
-            logger.error(f"Full traceback: {traceback.format_exc()}")
-            raise RuntimeError(f"EPUB creation failed: {e}")
+                subprocess.run([path, '--version'], capture_output=True, check=True)
+                ebook_convert = path
+                break
+            except (subprocess.CalledProcessError, FileNotFoundError):
+                continue
         
-        # Step 3: Convert EPUB → MOBI using Calibre
-        logger.info("Step 3: Converting EPUB to MOBI using Calibre...")
+        if not ebook_convert:
+            # Fallback: try to install calibre or use alternative method
+            logger.warning("ebook-convert not found. Attempting to install calibre...")
+            try:
+                subprocess.run(['apt-get', 'update'], check=True)
+                subprocess.run(['apt-get', 'install', '-y', 'calibre'], check=True)
+                ebook_convert = 'ebook-convert'
+            except subprocess.CalledProcessError:
+                logger.error("Failed to install calibre. Cannot convert to MOBI format.")
+                raise RuntimeError("ebook-convert (Calibre) is required for MOBI conversion but not available")
         
-        # Try Python API first if available
-        calibre_available = CALIBRE_AVAILABLE
-        if calibre_available:
-            logger.info("Calibre Python API is available, trying that first...")
-            if convert_epub_to_mobi_python_api(epub_path, output_path, book_title, author):
-                logger.info("MOBI conversion completed successfully using Python API")
-            else:
-                logger.warning("Python API failed, falling back to command line...")
-                calibre_available = False  # Force fallback
+        # Convert HTML to MOBI
+        convert_cmd = [
+            ebook_convert,
+            html_path,
+            output_path,
+            '--title', book_title,
+            '--authors', author,
+            '--language', 'en',
+            '--mobi-file-type', 'old',
+            '--disable-font-rescaling'
+        ]
         
-        # Fallback to command line if Python API failed or not available
-        if not calibre_available:
-            logger.info("Using command line ebook-convert...")
-            
-            # Try to find ebook-convert
-            ebook_convert_paths = [
-                'ebook-convert',
-                '/opt/calibre/ebook-convert',
-                '/opt/calibre/bin/ebook-convert',
-                '/usr/bin/ebook-convert',
-                '/usr/local/bin/ebook-convert',
-                '/usr/bin/calibre-ebook-convert',
-                '/usr/local/bin/calibre-ebook-convert',
-                '/usr/bin/calibre',
-                '/usr/local/bin/calibre'
-            ]
-            
-            ebook_convert = None
-            for path in ebook_convert_paths:
-                try:
-                    result = subprocess.run([path, '--version'], capture_output=True, check=True, timeout=10)
-                    logger.info(f"Found ebook-convert at: {path}")
-                    ebook_convert = path
-                    break
-                except (subprocess.CalledProcessError, FileNotFoundError, subprocess.TimeoutExpired):
-                    logger.debug(f"ebook-convert not found at: {path}")
-                    continue
-            
-            if not ebook_convert:
-                # Check if calibre is installed but ebook-convert is not in PATH
-                logger.info("ebook-convert not found in standard paths, searching for Calibre installation...")
-                
-                # Check common Calibre installation locations
-                calibre_locations = [
-                    '/opt/calibre/calibre',
-                    '/opt/calibre/bin/calibre',
-                    '/usr/bin/calibre',
-                    '/usr/local/bin/calibre',
-                    '/usr/share/calibre/bin/calibre'
-                ]
-                
-                for calibre_path in calibre_locations:
-                    if os.path.exists(calibre_path):
-                        logger.info(f"Calibre found at: {calibre_path}")
-                        # Try to find ebook-convert in calibre directory
-                        calibre_dir = os.path.dirname(calibre_path)
-                        ebook_convert_candidates = [
-                            os.path.join(calibre_dir, 'ebook-convert'),
-                            os.path.join(calibre_dir, 'calibre-ebook-convert'),
-                            os.path.join(os.path.dirname(calibre_dir), 'ebook-convert'),
-                            os.path.join(os.path.dirname(calibre_dir), 'bin', 'ebook-convert'),
-                            os.path.join(calibre_dir, '..', 'bin', 'ebook-convert')
-                        ]
-                        for candidate in ebook_convert_candidates:
-                            if os.path.exists(candidate):
-                                ebook_convert = candidate
-                                logger.info(f"Found ebook-convert at: {candidate}")
-                                break
-                        if ebook_convert:
-                            break
-                
-                # Also try using 'which' command as fallback
-                if not ebook_convert:
-                    try:
-                        result = subprocess.run(['which', 'calibre'], capture_output=True, text=True)
-                        if result.returncode == 0:
-                            calibre_path = result.stdout.strip()
-                            logger.info(f"Calibre found via which at: {calibre_path}")
-                            # Try to find ebook-convert in calibre directory
-                            calibre_dir = os.path.dirname(calibre_path)
-                            ebook_convert_candidates = [
-                                os.path.join(calibre_dir, 'ebook-convert'),
-                                os.path.join(calibre_dir, 'calibre-ebook-convert'),
-                                os.path.join(os.path.dirname(calibre_dir), 'bin', 'ebook-convert')
-                            ]
-                            for candidate in ebook_convert_candidates:
-                                if os.path.exists(candidate):
-                                    ebook_convert = candidate
-                                    logger.info(f"Found ebook-convert at: {candidate}")
-                                    break
-                    except Exception as e:
-                        logger.debug(f"Error checking calibre installation with which: {e}")
-            
-            if not ebook_convert:
-                # Debug: List what's available in common directories
-                logger.error("ebook-convert not found. Debugging system...")
-                debug_dirs = ['/usr/bin', '/usr/local/bin', '/opt/calibre/bin', '/usr/share/calibre/bin']
-                for debug_dir in debug_dirs:
-                    if os.path.exists(debug_dir):
-                        try:
-                            files = os.listdir(debug_dir)
-                            calibre_files = [f for f in files if 'calibre' in f.lower() or 'ebook' in f.lower()]
-                            if calibre_files:
-                                logger.info(f"Files in {debug_dir}: {calibre_files}")
-                            else:
-                                logger.info(f"Directory {debug_dir} exists but no calibre files found. All files: {files[:10]}...")  # Show first 10 files
-                        except Exception as e:
-                            logger.debug(f"Could not list {debug_dir}: {e}")
-                    else:
-                        logger.info(f"Directory {debug_dir} does not exist")
-                
-                logger.error("ebook-convert not found. Cannot convert to MOBI format.")
-                raise RuntimeError("ebook-convert not found. Please ensure Calibre is installed and available on the PATH.")
-            
-            # Convert EPUB to MOBI
-            convert_cmd = [
-                ebook_convert,
-                epub_path,
-                output_path,
-                '--title', book_title,
-                '--authors', author,
-                '--language', 'en',
-                '--mobi-file-type', 'old',
-                '--disable-font-rescaling'
-            ]
-            
-            logger.info(f"Running command: {' '.join(convert_cmd)}")
-            # Increased timeout to 30 minutes for very large files
-            result = subprocess.run(convert_cmd, capture_output=True, text=True, timeout=1800)
-            
-            if result.returncode != 0:
-                logger.error(f"ebook-convert failed with return code {result.returncode}")
-                logger.error(f"stderr: {result.stderr}")
-                raise RuntimeError(f"ebook-convert failed: {result.stderr}")
-            
-            logger.info("MOBI conversion completed successfully using command line")
+        logger.info(f"Running command: {' '.join(convert_cmd)}")
+        result = subprocess.run(convert_cmd, capture_output=True, text=True, timeout=300)
         
-        # Clean up temporary EPUB file
+        if result.returncode != 0:
+            logger.error(f"ebook-convert failed with return code {result.returncode}")
+            logger.error(f"stderr: {result.stderr}")
+            raise RuntimeError(f"ebook-convert failed: {result.stderr}")
+        
+        logger.info("MOBI conversion completed successfully")
+        
+        # Clean up temporary HTML file
         try:
-            os.unlink(epub_path)
-            logger.info("Cleaned up temporary EPUB file")
+            os.unlink(html_path)
+            logger.info("Cleaned up temporary HTML file")
         except OSError:
-            logger.warning("Failed to clean up temporary EPUB file")
+            logger.warning("Failed to clean up temporary HTML file")
         
         # Verify output file was created
         if not os.path.exists(output_path):
@@ -423,8 +245,7 @@ def main():
             chunk_size=args.chunk_size
         )
         
-        if success or success is None:
-            # success is None when function completes without explicit return
+        if success:
             print(f"Successfully converted {args.input_csv} to {args.output_mobi}")
             sys.exit(0)
         else:

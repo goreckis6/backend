@@ -1,81 +1,91 @@
-# Backend Dockerfile
-FROM node:20-slim
+# Use Node.js 18 with Debian base for better package support
+FROM node:20-bookworm
 
-WORKDIR /app
-
-# Install system dependencies step by step
-RUN apt-get update
-
-# Install basic packages first
-RUN apt-get update && apt-get install -y \
-    libreoffice \
-    imagemagick \
+# Install system dependencies for image processing and Python
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    libvips-dev \
+    libraw-bin \
+    dcraw \
     ghostscript \
+    imagemagick \
+    libmagick++-dev \
+    libreoffice \
+    libreoffice-impress \
+    libreoffice-writer \
+    libreoffice-calc \
+    libreoffice-java-common \
+    default-jre-headless \
+    unoconv \
+    calibre \
+    exiftool \
+    psmisc \
+    fonts-dejavu fonts-liberation locales \
     python3 \
     python3-pip \
-    wget \
-    xz-utils
+    python3-venv \
+    && rm -rf /var/lib/apt/lists/*
 
-# Install Calibre command-line tools
-RUN wget -nv -O- https://download.calibre-ebook.com/linux-installer.sh | sh /dev/stdin install_dir=/opt/calibre
-ENV PATH="/opt/calibre:${PATH}"
-
-# Install Sharp dependencies
-RUN apt-get install -y \
-    libvips-dev \
-    libglib2.0-dev \
-    libcairo2-dev \
-    libpango1.0-dev \
-    libgdk-pixbuf2.0-dev \
-    libffi-dev
-
-# Install image format libraries
-RUN apt-get install -y \
-    libjpeg-dev \
-    libpng-dev \
-    libtiff-dev \
-    libwebp-dev \
-    libexif-dev \
-    libraw-dev \
-    build-essential \
-    libffi-dev
-
-# Install Python packages for RAW processing and CSV conversion
-RUN pip3 install --no-cache-dir rawpy Pillow pandas python-docx openpyxl xlsxwriter psutil ebooklib jinja2
-
-# Create Python virtual environment for consistency
+# Install Python dependencies in virtual environment
+COPY requirements.txt ./
 RUN python3 -m venv /opt/venv
-RUN /opt/venv/bin/pip install --no-cache-dir rawpy Pillow pandas python-docx openpyxl xlsxwriter psutil ebooklib jinja2
+ENV PATH="/opt/venv/bin:$PATH"
+RUN pip install --no-cache-dir -r requirements.txt
 
-# Clean up
-RUN apt-get clean && rm -rf /var/lib/apt/lists/*
+# Set working directory
+WORKDIR /app
 
-# Copy package files first for better caching
-COPY package*.json ./
+# Copy package files
+COPY package.json ./
+COPY tsconfig.json ./
 
-# Install dependencies
-RUN npm ci --only=production --no-audit --no-fund
+# Install all dependencies (including dev dependencies for build)
+RUN npm install
 
-# Copy source code
-COPY . .
+# Copy source code and Python scripts
+COPY src/ ./src/
+COPY scripts/ ./scripts/
+COPY viewers/ ./viewers/
 
 # Build the application
 RUN npm run build
 
-# Create non-root user
-RUN groupadd -g 1001 nodejs
-RUN useradd -r -u 1001 -g nodejs nodejs
+# Remove dev dependencies to reduce image size
+RUN npm prune --production
 
-# Change ownership of the app directory
-RUN chown -R nodejs:nodejs /app
-USER nodejs
+# Create non-root user for security with proper home directory
+RUN groupadd -r appuser && useradd -r -g appuser -d /home/appuser -m appuser
+RUN chown -R appuser:appuser /app
+
+# Create necessary directories for LibreOffice and set permissions
+RUN mkdir -p /home/appuser/.cache/dconf \
+    && mkdir -p /home/appuser/.config/libreoffice/4/user \
+    && mkdir -p /tmp/libreoffice \
+    && chown -R appuser:appuser /home/appuser \
+    && chmod -R 755 /home/appuser \
+    && chmod -R 777 /tmp/libreoffice
+
+# Set environment variables for LibreOffice and Java
+ENV HOME=/home/appuser
+ENV TMPDIR=/tmp
+ENV DCONF_PROFILE=/dev/null
+ENV SAL_USE_VCLPLUGIN=svp
+ENV JAVA_HOME=/usr/lib/jvm/default-java
+ENV PATH="$JAVA_HOME/bin:$PATH"
+
+# Initialize LibreOffice user profile as root before switching to appuser
+RUN libreoffice --headless --invisible --nocrashreport --nodefault --nofirststartwizard --nologo --norestore --accept='socket,host=localhost,port=2002;urp;' & \
+    sleep 5 && \
+    pkill -9 soffice || true && \
+    pkill -9 oosplash || true
+
+USER appuser
 
 # Expose port
 EXPOSE 3000
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
-  CMD node -e "require('http').get('http://localhost:3000/health', (res) => { process.exit(res.statusCode === 200 ? 0 : 1) })"
+  CMD curl -f http://localhost:3000/health || exit 1
 
-# Start the application
-CMD ["node", "dist/server.js"]
+# Start the application with garbage collection enabled
+CMD ["node", "--expose-gc", "dist/server.js"]

@@ -1967,7 +1967,7 @@ interface CommandResult {
   stderr: string;
 }
 
-const execLibreOffice = async (args: string[], customEnv?: Record<string, string>): Promise<CommandResult> => {
+const execLibreOffice = async (args: string[]): Promise<CommandResult> => {
   let lastError: unknown;
   for (const binary of LIBREOFFICE_CANDIDATES) {
     try {
@@ -1975,8 +1975,7 @@ const execLibreOffice = async (args: string[], customEnv?: Record<string, string
         env: {
           ...process.env,
           HOME: process.env.HOME || os.homedir(),
-          USERPROFILE: process.env.USERPROFILE || os.homedir(),
-          ...customEnv
+          USERPROFILE: process.env.USERPROFILE || os.homedir()
         }
       });
       return result;
@@ -3212,91 +3211,6 @@ const convertCsvToMobiOptimized = async (
   }
 };
 
-// CSV to MOBI converter using Python
-const convertCsvToMobiPython = async (
-  file: Express.Multer.File,
-  options: Record<string, string | undefined> = {},
-  persistToDisk = false
-): Promise<ConversionResult> => {
-  console.log(`=== CSV TO MOBI (Python) START ===`);
-  const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'morphy-csv-mobi-'));
-  const originalBase = path.basename(file.originalname, path.extname(file.originalname));
-  const sanitizedBase = sanitizeFilename(originalBase);
-  const safeBase = `${sanitizedBase}_${randomUUID()}`;
-
-  try {
-    // Write CSV file to temp directory
-    const csvPath = path.join(tmpDir, `${safeBase}.csv`);
-    await fs.writeFile(csvPath, file.buffer);
-
-    // Prepare output file
-    const outputPath = path.join(tmpDir, `${safeBase}.mobi`);
-    
-    // Use Python script for MOBI
-    const pythonPath = '/opt/venv/bin/python3';
-    const scriptPath = path.join(__dirname, '../scripts/csv_to_mobi.py');
-    
-    console.log('Python execution details:', {
-      pythonPath,
-      scriptPath,
-      csvPath,
-      outputPath,
-      title: options.title || sanitizedBase,
-      author: options.author || 'Unknown',
-      fileSize: file.buffer.length
-    });
-
-    const { stdout, stderr } = await execFileAsync(pythonPath, [
-      scriptPath,
-      csvPath,
-      outputPath,
-      '--title', options.title || sanitizedBase,
-      '--author', options.author || 'Unknown',
-      '--chunk-size', '1000'
-    ], {
-      // No timeout limit - let it run as long as needed (up to 30 minutes for very large files)
-      timeout: 30 * 60 * 1000, // 30 minutes timeout
-      maxBuffer: 500 * 1024 * 1024 // 500MB buffer for very large files (100MB+)
-    });
-
-    if (stdout.trim().length > 0) console.log('Python stdout:', stdout.trim());
-    if (stderr.trim().length > 0) console.warn('Python stderr:', stderr.trim());
-
-    // Check if output file was created
-    const outputExists = await fs.access(outputPath).then(() => true).catch(() => false);
-    if (!outputExists) {
-      throw new Error(`Python MOBI script did not produce output file: ${outputPath}`);
-    }
-
-    // Read output file
-    const outputBuffer = await fs.readFile(outputPath);
-    if (!outputBuffer || outputBuffer.length === 0) {
-      throw new Error('Python MOBI script produced empty output file');
-    }
-
-    const downloadName = `${sanitizedBase}.mobi`;
-    console.log(`CSV->MOBI conversion successful:`, { 
-      filename: downloadName, 
-      size: outputBuffer.length
-    });
-
-    if (persistToDisk) {
-      return await persistOutputBuffer(outputBuffer, downloadName, 'application/x-mobipocket-ebook');
-    }
-
-    return {
-      buffer: outputBuffer,
-      filename: downloadName,
-      mime: 'application/x-mobipocket-ebook'
-    };
-  } catch (error) {
-    console.error(`CSV->MOBI conversion error:`, error);
-    const message = error instanceof Error ? error.message : `Unknown CSV->MOBI error`;
-    throw new Error(`Failed to convert CSV to MOBI: ${message}`);
-  } finally {
-    await fs.rm(tmpDir, { recursive: true, force: true }).catch(() => undefined);
-  }
-};
 
 // CSV to ODT converter using Python
 const convertCsvToOdtPython = async (
@@ -3401,7 +3315,7 @@ const convertCsvToPdfPython = async (
     
     // Use Python script for PDF
     const pythonPath = '/opt/venv/bin/python3';
-    const scriptPath = path.join(__dirname, '../scripts/csv_to_pdf.py');
+    const scriptPath = path.join('/app/scripts/csv_to_pdf.py');
     
     console.log('Python execution details:', {
       pythonPath,
@@ -3483,7 +3397,7 @@ const convertCsvToDocPython = async (
     
     // Use optimized Python script for DOC
     const pythonPath = '/opt/venv/bin/python3';
-    const scriptPath = path.join(__dirname, '../scripts/csv_to_doc_optimized.py');
+    const scriptPath = path.join('/app/scripts/csv_to_doc_optimized.py');
     
     // Determine chunk size based on file size for optimal performance
     const fileSizeMB = file.buffer.length / (1024 * 1024);
@@ -3509,8 +3423,8 @@ const convertCsvToDocPython = async (
       '--author', options.author || 'Unknown',
       '--chunk-size', chunkSize.toString()
     ], {
-      // No timeout limit - let it run as long as needed
-      maxBuffer: 500 * 1024 * 1024 // 500MB buffer for very large files (100MB+)
+      timeout: 300000, // 5 minutes timeout for large files
+      maxBuffer: 10 * 1024 * 1024 // 10MB buffer for large outputs
     });
 
     if (stdout.trim().length > 0) console.log('Python stdout:', stdout.trim());
@@ -3578,7 +3492,7 @@ const convertCsvToDocxPython = async (
     
     // Use optimized Python script for DOCX
     const pythonPath = '/opt/venv/bin/python3';
-    const scriptPath = path.join(__dirname, '../scripts/csv_to_docx_optimized.py');
+    const scriptPath = path.join('/app/scripts/csv_to_docx_optimized.py');
     
     // Determine chunk size based on file size for optimal performance
     const fileSizeMB = file.buffer.length / (1024 * 1024);
@@ -3604,8 +3518,8 @@ const convertCsvToDocxPython = async (
       '--author', options.author || 'Unknown',
       '--chunk-size', chunkSize.toString()
     ], {
-      // No timeout limit - let it run as long as needed
-      maxBuffer: 500 * 1024 * 1024 // 500MB buffer for very large files (100MB+)
+      timeout: 300000, // 5 minutes timeout for large files
+      maxBuffer: 10 * 1024 * 1024 // 10MB buffer for large outputs
     });
 
     if (stdout.trim().length > 0) console.log('Python stdout:', stdout.trim());
@@ -3671,9 +3585,9 @@ const convertCsvToEpubPython = async (
     // Prepare output file
     const outputPath = path.join(tmpDir, `${safeBase}.epub`);
     
-    // Use Python script for EPUB (hybrid approach)
+    // Use Python script for EPUB
     const pythonPath = '/opt/venv/bin/python3';
-    const scriptPath = path.join(__dirname, '../scripts/csv_to_epub_hybrid.py');
+    const scriptPath = path.join('/app/scripts/csv_to_epub.py');
     
     // Determine chunk size based on file size for optimal performance
     const fileSizeMB = file.buffer.length / (1024 * 1024);
@@ -3700,8 +3614,8 @@ const convertCsvToEpubPython = async (
       '--author', options.author || 'Unknown',
       '--chunk-size', chunkSize.toString()
     ].concat(options.includeToc === 'false' ? ['--no-toc'] : []), {
-      // No timeout limit - let it run as long as needed
-      maxBuffer: 500 * 1024 * 1024 // 500MB buffer for very large files (100MB+)
+      timeout: 300000, // 5 minutes timeout for large files
+      maxBuffer: 10 * 1024 * 1024 // 10MB buffer for large outputs
     });
 
     if (stdout.trim().length > 0) console.log('Python stdout:', stdout.trim());
@@ -3768,7 +3682,7 @@ const convertCsvToPptPython = async (
     
     // Use Python script for PPT
     const pythonPath = '/opt/venv/bin/python3';
-    const scriptPath = path.join(__dirname, '../scripts/csv_to_ppt.py');
+    const scriptPath = path.join('/app/scripts/csv_to_ppt.py');
     
     console.log('Python execution details:', {
       pythonPath,
@@ -3850,7 +3764,7 @@ const convertCsvToPptxPython = async (
     
     // Use Python script for PPTX
     const pythonPath = '/opt/venv/bin/python3';
-    const scriptPath = path.join(__dirname, '../scripts/csv_to_pptx.py');
+    const scriptPath = path.join('/app/scripts/csv_to_pptx.py');
     
     console.log('Python execution details:', {
       pythonPath,
@@ -3932,7 +3846,7 @@ const convertCsvToRtfPython = async (
     
     // Use Python script for RTF
     const pythonPath = '/opt/venv/bin/python3';
-    const scriptPath = path.join(__dirname, '../scripts/csv_to_rtf.py');
+    const scriptPath = path.join('/app/scripts/csv_to_rtf.py');
     
     console.log('Python execution details:', {
       pythonPath,
@@ -4013,7 +3927,7 @@ const convertCsvToTxtPython = async (
 
     // Use Python script for TXT
     const pythonPath = '/opt/venv/bin/python3';
-    const scriptPath = path.join(__dirname, '../scripts/csv_to_txt.py');
+    const scriptPath = path.join('/app/scripts/csv_to_txt.py');
 
     console.log('Python execution details:', {
       pythonPath,
@@ -4094,7 +4008,7 @@ const convertCsvToXlsPython = async (
 
     // Use Python script for XLS
     const pythonPath = '/opt/venv/bin/python3';
-    const scriptPath = path.join(__dirname, '../scripts/csv_to_xls.py');
+    const scriptPath = path.join('/app/scripts/csv_to_xls.py');
 
     console.log('Python execution details:', {
       pythonPath,
@@ -4176,7 +4090,7 @@ const convertCsvToEbookPython = async (
     // Prepare Python script arguments
     const pythonArgs = [
       'python3',
-      path.join(__dirname, '../scripts/csv_to_ebook.py'),
+      path.join('/app/scripts/csv_to_ebook.py'),
       csvPath,
       outputPath,
       targetFormat,
@@ -4188,7 +4102,7 @@ const convertCsvToEbookPython = async (
 
     // Execute Python script using virtual environment
     const pythonPath = '/opt/venv/bin/python3';
-    const scriptPath = path.join(__dirname, '../scripts/csv_to_ebook.py');
+    const scriptPath = path.join('/app/scripts/csv_to_ebook.py');
     
     console.log('Python execution details:', {
       pythonPath,
@@ -4335,7 +4249,7 @@ const convertCsvToHtmlPython = async (
     
     // Use Python script for HTML
     const pythonPath = '/opt/venv/bin/python3';
-    const scriptPath = path.join(__dirname, '../scripts/csv_to_html.py');
+    const scriptPath = path.join('/app/scripts/csv_to_html.py');
     
     // Determine chunk size based on file size for optimal performance
     const fileSizeMB = file.buffer.length / (1024 * 1024);
@@ -4360,8 +4274,8 @@ const convertCsvToHtmlPython = async (
       '--table-class', options.tableClass || 'simple',
       '--chunk-size', chunkSize.toString()
     ].concat(options.includeHeaders === 'false' ? ['--no-headers'] : []), {
-      // No timeout limit - let it run as long as needed
-      maxBuffer: 500 * 1024 * 1024 // 500MB buffer for very large files (100MB+)
+      timeout: 300000, // 5 minutes timeout for large files
+      maxBuffer: 10 * 1024 * 1024 // 10MB buffer for large outputs
     });
 
     if (stdout.trim().length > 0) console.log('Python stdout:', stdout.trim());
@@ -4793,16 +4707,6 @@ const convertWithCalibre = async (
     });
     
     const message = error instanceof Error ? error.message : 'Unknown Calibre error';
-    
-    // Check for specific EPUB-related errors and provide user-friendly messages
-    if (message.includes('Not a ZIP file') || message.includes('BadZipfile') || message.includes('File is not a zip file')) {
-      throw new Error(`Invalid EPUB file: "${file.originalname}" appears to be corrupted or is not a valid EPUB format. Please check that the file is not damaged and try uploading a different EPUB file.`);
-    }
-    
-    if (message.includes('ValueError') && message.includes('ZIP')) {
-      throw new Error(`Invalid EPUB file: "${file.originalname}" is not a proper EPUB format. EPUB files must be valid ZIP archives. Please verify the file is a genuine EPUB and try again.`);
-    }
-    
     throw new Error(`Failed to convert ${file.originalname} (${targetFormat}): ${message}`);
   } finally {
     await fs.rm(tmpDir, { recursive: true, force: true }).catch(() => undefined);
@@ -4848,30 +4752,13 @@ const convertBufferWithLibreOffice = async (
       '--nodefault',
       '--nologo',
       '--nofirststartwizard',
-      '--invisible',
-      '--norestore',
       ...buildLibreOfficeFilterArgs(options),
       '--convert-to', conversion.convertTo,
       '--outdir', tmpDir,
       inputPath
     ];
 
-    // Try with additional environment variables to prevent DeploymentException
-    const env = {
-      ...process.env,
-      HOME: process.env.HOME || os.homedir(),
-      USERPROFILE: process.env.USERPROFILE || os.homedir(),
-      LIBREOFFICE_USER_PROFILE: path.join(os.tmpdir(), 'lo-profile'),
-      LIBREOFFICE_USER_CONFIG: path.join(os.tmpdir(), 'lo-config'),
-      LIBREOFFICE_USER_DATA: path.join(os.tmpdir(), 'lo-data')
-    };
-    
-    // Create LibreOffice profile directories
-    await fs.mkdir(env.LIBREOFFICE_USER_PROFILE, { recursive: true }).catch(() => {});
-    await fs.mkdir(env.LIBREOFFICE_USER_CONFIG, { recursive: true }).catch(() => {});
-    await fs.mkdir(env.LIBREOFFICE_USER_DATA, { recursive: true }).catch(() => {});
-
-    const { stdout, stderr } = await execLibreOffice(args, env);
+    const { stdout, stderr } = await execLibreOffice(args);
     if (stdout.trim().length > 0) {
       console.log('LibreOffice post-process stdout:', stdout.trim());
     }
@@ -4900,56 +4787,11 @@ const convertBufferWithLibreOffice = async (
     };
   } catch (error) {
     console.error('LibreOffice post-processing failed:', error);
-    
-    // Check if it's a DeploymentException (common in containers)
-    const errorMessage = error instanceof Error ? error.message : String(error);
-    const isDeploymentException = errorMessage.includes('DeploymentException') || 
-                                 errorMessage.includes('Unspecified Application Error');
-    
-    if (isDeploymentException) {
-      console.log('LibreOffice DeploymentException detected, attempting fallback...');
-      
-      // For RTF conversion, try a simpler approach or return the text as-is
-      if (targetFormat === 'rtf') {
-        console.log('Falling back to basic RTF conversion for DeploymentException');
-        try {
-          const textContent = buffer.toString('utf-8');
-          const rtfContent = convertTextToRtf(textContent);
-          const rtfBuffer = Buffer.from(rtfContent, 'utf-8');
-          const downloadName = `${sanitizedBase}.rtf`;
-          
-          if (persistToDisk) {
-            return persistOutputBuffer(rtfBuffer, downloadName, 'application/rtf');
-          }
-          
-          return {
-            buffer: rtfBuffer,
-            filename: downloadName,
-            mime: 'application/rtf'
-          };
-        } catch (fallbackError) {
-          console.error('RTF fallback also failed:', fallbackError);
-        }
-      }
-    }
-    
     const message = error instanceof Error ? error.message : 'Unknown LibreOffice error';
     throw new Error(`Failed to post-process with LibreOffice: ${message}`);
   } finally {
     await fs.rm(tmpDir, { recursive: true, force: true }).catch(() => undefined);
   }
-};
-
-const convertTextToRtf = (text: string): string => {
-  // Basic RTF conversion - escape special characters and wrap in RTF format
-  const escapedText = text
-    .replace(/\\/g, '\\\\')  // Escape backslashes
-    .replace(/\{/g, '\\{')   // Escape opening braces
-    .replace(/\}/g, '\\}')   // Escape closing braces
-    .replace(/\n/g, '\\par ') // Convert newlines to paragraph breaks
-    .replace(/\r/g, '');     // Remove carriage returns
-  
-  return `{\\rtf1\\ansi\\deff0 {\\fonttbl {\\f0 Times New Roman;}} \\f0\\fs24 ${escapedText}}`;
 };
 
 const postProcessToSpreadsheet = async (
@@ -5031,49 +4873,12 @@ const convertTxtToPresentation = async (
       ['--headless','--nolockcheck','--nodefault','--nologo','--nofirststartwizard','--convert-to', targetFormat,'--outdir', tmpDir, pptxPath]
     ];
     let stdout = ''; let stderr = ''; let ok = false;
-    
-    // Try with additional environment variables to prevent DeploymentException
-    const env = {
-      ...process.env,
-      HOME: process.env.HOME || os.homedir(),
-      USERPROFILE: process.env.USERPROFILE || os.homedir(),
-      LIBREOFFICE_USER_PROFILE: path.join(os.tmpdir(), 'lo-profile'),
-      LIBREOFFICE_USER_CONFIG: path.join(os.tmpdir(), 'lo-config'),
-      LIBREOFFICE_USER_DATA: path.join(os.tmpdir(), 'lo-data')
-    };
-
-    // Create LibreOffice profile directories
-    await fs.mkdir(env.LIBREOFFICE_USER_PROFILE, { recursive: true }).catch(() => {});
-    await fs.mkdir(env.LIBREOFFICE_USER_CONFIG, { recursive: true }).catch(() => {});
-    await fs.mkdir(env.LIBREOFFICE_USER_DATA, { recursive: true }).catch(() => {});
-    
     for (const variant of variants2) {
       console.log('LibreOffice PPTX->presentation args:', variant);
       try {
-        const res = await execLibreOffice(variant, env);
+        const res = await execLibreOffice(variant);
         stdout = res.stdout; stderr = res.stderr; ok = true; break;
-      } catch (e) { 
-        console.warn('LibreOffice PPTX conversion attempt failed, trying fallback...', e);
-        
-        // Check if it's a DeploymentException and try a simpler approach
-        const errorMessage = e instanceof Error ? e.message : String(e);
-        const isDeploymentException = errorMessage.includes('DeploymentException') ||
-                                     errorMessage.includes('Unspecified Application Error');
-        
-        if (isDeploymentException) {
-          console.log('LibreOffice DeploymentException detected for presentation conversion, trying fallback...');
-          // For presentation conversion, we can fall back to returning the original PPTX
-          console.log(`LibreOffice failed to convert to ${targetFormat}, falling back to PPTX format`);
-          // Fall back to PPTX format when LibreOffice fails
-          const outputBuffer = await fs.readFile(pptxPath);
-          const downloadName = `${sanitizedBase}.pptx`;
-          const mime = 'application/vnd.openxmlformats-officedocument.presentationml.presentation';
-          if (persistToDisk) {
-            return persistOutputBuffer(outputBuffer, downloadName, mime);
-          }
-          return { buffer: outputBuffer, filename: downloadName, mime };
-        }
-      }
+      } catch (e) { console.warn('LibreOffice PPTX conversion attempt failed, trying fallback...', e); }
     }
     if (!ok) throw new Error('LibreOffice failed converting PPTX to presentation format');
     if (stdout.trim()) console.log('LibreOffice presentation stdout:', stdout.trim());
@@ -5576,7 +5381,7 @@ const convertCsvToMdPython = async (
 
     // Use Python script for Markdown
     const pythonPath = '/opt/venv/bin/python3';
-    const scriptPath = path.join(__dirname, '../scripts/csv_to_md.py');
+    const scriptPath = path.join('/app/scripts/csv_to_md.py');
 
     // Determine chunk size based on file size for optimal performance
     const fileSizeMB = file.buffer.length / (1024 * 1024);
@@ -5601,8 +5406,8 @@ const convertCsvToMdPython = async (
       '--table-alignment', options.tableAlignment || 'left',
       '--chunk-size', chunkSize.toString()
     ].concat(options.includeHeaders === 'false' ? ['--no-headers'] : []), {
-      // No timeout limit - let it run as long as needed
-      maxBuffer: 500 * 1024 * 1024 // 500MB buffer for very large files (100MB+)
+      timeout: 300000, // 5 minutes timeout for large files
+      maxBuffer: 10 * 1024 * 1024 // 10MB buffer for large outputs
     });
 
     if (stdout.trim().length > 0) console.log('Python stdout:', stdout.trim());
@@ -5647,6 +5452,102 @@ const convertCsvToMdPython = async (
   }
 };
 
+// CSV to MOBI converter using Python
+const convertCsvToMobiPython = async (
+  file: Express.Multer.File,
+  options: Record<string, string | undefined> = {},
+  persistToDisk = false
+): Promise<ConversionResult> => {
+  console.log(`=== CSV TO MOBI (Python) START ===`);
+  const startTime = Date.now();
+  const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'morphy-csv-mobi-'));
+  const originalBase = path.basename(file.originalname, path.extname(file.originalname));
+  const sanitizedBase = sanitizeFilename(originalBase);
+  const safeBase = `${sanitizedBase}_${randomUUID()}`;
+
+  try {
+    // Write CSV file to temp directory
+    const csvPath = path.join(tmpDir, `${safeBase}.csv`);
+    await fs.writeFile(csvPath, file.buffer);
+
+    // Prepare output file
+    const outputPath = path.join(tmpDir, `${safeBase}.mobi`);
+
+    // Use Python script for MOBI
+    const pythonPath = '/opt/venv/bin/python3';
+    const scriptPath = path.join('/app/scripts/csv_to_mobi.py');
+
+    // Determine chunk size based on file size for optimal performance
+    const fileSizeMB = file.buffer.length / (1024 * 1024);
+    const chunkSize = fileSizeMB > 10 ? 2000 : fileSizeMB > 5 ? 1500 : 1000;
+
+    console.log('Python execution details:', {
+      pythonPath,
+      scriptPath,
+      csvPath,
+      outputPath,
+      bookTitle: options.bookTitle || sanitizedBase,
+      author: options.author || 'CSV Converter',
+      includeHeaders: options.includeHeaders !== 'false',
+      fileSize: file.buffer.length,
+      fileSizeMB: fileSizeMB.toFixed(2),
+      chunkSize
+    });
+
+    const { stdout, stderr } = await execFileAsync(pythonPath, [
+      scriptPath,
+      csvPath,
+      outputPath,
+      '--title', options.bookTitle || sanitizedBase,
+      '--author', options.author || 'CSV Converter',
+      '--chunk-size', chunkSize.toString()
+    ].concat(options.includeHeaders === 'false' ? ['--no-headers'] : []), {
+      timeout: 300000, // 5 minutes timeout for large files
+      maxBuffer: 10 * 1024 * 1024 // 10MB buffer for large outputs
+    });
+
+    if (stdout.trim().length > 0) console.log('Python stdout:', stdout.trim());
+    if (stderr.trim().length > 0) console.warn('Python stderr:', stderr.trim());
+
+    // Check if output file was created
+    const outputExists = await fs.access(outputPath).then(() => true).catch(() => false);
+    if (!outputExists) {
+      throw new Error(`Python MOBI script did not produce output file: ${outputPath}`);
+    }
+
+    // Read output file
+    const outputBuffer = await fs.readFile(outputPath);
+    if (!outputBuffer || outputBuffer.length === 0) {
+      throw new Error('Python MOBI script produced empty output file');
+    }
+
+    const downloadName = `${sanitizedBase}.mobi`;
+    const processingTime = Date.now() - startTime;
+    console.log(`CSV->MOBI conversion successful:`, {
+      filename: downloadName,
+      size: outputBuffer.length,
+      processingTimeMs: processingTime,
+      processingTimeSec: (processingTime / 1000).toFixed(2)
+    });
+
+    if (persistToDisk) {
+      return await persistOutputBuffer(outputBuffer, downloadName, 'application/x-mobipocket-ebook');
+    }
+
+    return {
+      buffer: outputBuffer,
+      filename: downloadName,
+      mime: 'application/x-mobipocket-ebook'
+    };
+  } catch (error) {
+    console.error(`CSV->MOBI conversion error:`, error);
+    const message = error instanceof Error ? error.message : `Unknown CSV->MOBI error`;
+    throw new Error(`Failed to convert CSV to MOBI: ${message}`);
+  } finally {
+    await fs.rm(tmpDir, { recursive: true, force: true }).catch(() => undefined);
+  }
+};
+
 // CSV to ODP converter using Python
 const convertCsvToOdpPython = async (
   file: Express.Multer.File,
@@ -5670,7 +5571,7 @@ const convertCsvToOdpPython = async (
 
     // Use Python script for ODP
     const pythonPath = '/opt/venv/bin/python3';
-    const scriptPath = path.join(__dirname, '../scripts/csv_to_odp.py');
+    const scriptPath = path.join('/app/scripts/csv_to_odp.py');
 
     // Determine chunk size based on file size for optimal performance
     const fileSizeMB = file.buffer.length / (1024 * 1024);
@@ -5699,8 +5600,8 @@ const convertCsvToOdpPython = async (
       '--slide-layout', options.slideLayout || 'table',
       '--chunk-size', chunkSize.toString()
     ].concat(options.includeHeaders === 'false' ? ['--no-headers'] : []), {
-      // No timeout limit - let it run as long as needed
-      maxBuffer: 500 * 1024 * 1024 // 500MB buffer for very large files (100MB+)
+      timeout: 300000, // 5 minutes timeout for large files
+      maxBuffer: 10 * 1024 * 1024 // 10MB buffer for large outputs
     });
 
     if (stdout.trim().length > 0) console.log('Python stdout:', stdout.trim());
@@ -5747,16 +5648,7 @@ const convertCsvToOdpPython = async (
 
 // Initialize Express app
 const app = express();
-const DEFAULT_PORT = 3000;
-const parsedPort = Number.parseInt(process.env.PORT ?? '', 10);
-const PORT = Number.isInteger(parsedPort) && parsedPort > 0 && parsedPort < 65536
-  ? parsedPort
-  : DEFAULT_PORT;
-
-if (PORT !== parsedPort) {
-  console.warn('Invalid PORT environment variable detected:', process.env.PORT);
-  console.warn(`Falling back to default port ${DEFAULT_PORT}`);
-}
+const PORT = parseInt(process.env.PORT || '3000', 10);
 
 // Rate limiting to prevent abuse
 const limiter = rateLimit({
@@ -5770,65 +5662,7 @@ app.use(helmet({
   contentSecurityPolicy: false, // Disable CSP for file uploads
   crossOriginEmbedderPolicy: false
 }));
-
-// Trust proxy for rate limiting behind Traefik
-app.set('trust proxy', 1);
-// Centralized CORS configuration
-const allowedOrigins = [
-  'https://morphyimg.com',
-  'https://www.morphyimg.com',
-  'https://api.morphyimg.com',
-  'http://localhost:5173', // Frontend dev server
-  'http://localhost:3000', // Backend dev server
-];
-
-// Add environment variables if they exist
-if (process.env.FRONTEND_URL) {
-  allowedOrigins.push(process.env.FRONTEND_URL);
-}
-if (process.env.FRONTEND_URL_ALT) {
-  allowedOrigins.push(process.env.FRONTEND_URL_ALT);
-}
-
-console.log('CORS - Allowed origins:', allowedOrigins);
-
-// Single CORS configuration for all routes
-app.use(cors({
-  origin: (origin, callback) => {
-    console.log('CORS check - Request origin:', origin);
-    console.log('CORS check - Allowed origins:', allowedOrigins);
-
-    // Allow requests with no origin (like mobile apps or curl requests)        
-    if (!origin) {
-      console.log('CORS check - No origin, allowing request');
-      return callback(null, true);
-    }
-
-    if (allowedOrigins.indexOf(origin) === -1) {
-      const msg = `The CORS policy for this site does not allow access from the specified Origin: ${origin}`;                                                   
-      console.log('CORS check - Origin not allowed:', origin);
-      return callback(new Error(msg), false);
-    }
-
-    console.log('CORS check - Origin allowed:', origin);
-    return callback(null, true);
-  },
-  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'Accept', 'X-Requested-With'],
-  credentials: true,
-}));
-
-// Manual CORS headers as backup
-app.use((req, res, next) => {
-  const origin = req.headers.origin;
-  if (allowedOrigins.includes(origin as string)) {
-    res.header('Access-Control-Allow-Origin', origin as string);
-  }
-  res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
-  res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization, Accept, X-Requested-With');
-  res.header('Access-Control-Allow-Credentials', 'true');
-  next();
-});
+// CORS configuration is handled later in the file
 
 app.use('/api/', limiter);
 
@@ -5870,7 +5704,15 @@ const uploadBatchMulter = multer({
 
 const uploadBatch = uploadBatchMulter.array('files', 20);
 
-// OPTIONS requests are now handled automatically by the CORS middleware above
+// Handle preflight OPTIONS requests
+app.options('*', (req, res) => {
+  console.log('OPTIONS preflight request received');
+  res.header('Access-Control-Allow-Origin', 'https://morphy-1-ulvv.onrender.com');
+  res.header('Access-Control-Allow-Credentials', 'true');
+  res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
+  res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization, Accept');
+  res.status(200).end();
+});
 
 app.get('/health', (_req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });
@@ -5878,6 +5720,13 @@ app.get('/health', (_req, res) => {
 
 // Route: Batch Download
 app.get('/batch-download/:filename', async (req, res) => {
+  // Set CORS headers
+  res.set({
+    'Access-Control-Allow-Origin': '*',
+    'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+    'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept'
+  });
+  
   const { filename } = req.params;
   console.log(`Batch download request for: ${filename}`);
   
@@ -5982,7 +5831,11 @@ app.use('/api/convert', (req, res, next) => {
 
 app.post('/api/convert', conversionTimeout(5 * 60 * 1000), upload.single('file'), async (req, res) => {
   // Set CORS headers
-  
+  res.set({
+    'Access-Control-Allow-Origin': '*',
+    'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+    'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept'
+  });
   
   try {
     let file = req.file;
@@ -6018,7 +5871,11 @@ app.post('/api/convert', conversionTimeout(5 * 60 * 1000), upload.single('file')
       }
       
       if (!file) {
-      
+      res.set({
+        'Access-Control-Allow-Origin': '*',
+        'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+        'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept'
+      });
       return res.status(400).json({ error: 'No file uploaded' });
       }
     }
@@ -6070,7 +5927,11 @@ app.post('/api/convert', conversionTimeout(5 * 60 * 1000), upload.single('file')
             console.log('Created generic fallback filename');
           }
         } else {
-          
+          res.set({
+            'Access-Control-Allow-Origin': '*',
+            'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+            'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept'
+          });
           return res.status(400).json({ error: 'Invalid file upload - missing filename and content' });
         }
       }
@@ -6078,7 +5939,11 @@ app.post('/api/convert', conversionTimeout(5 * 60 * 1000), upload.single('file')
 
     if (!file.buffer || file.buffer.length === 0) {
       console.log('ERROR: File has no content');
-      
+      res.set({
+        'Access-Control-Allow-Origin': '*',
+        'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+        'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept'
+      });
       return res.status(400).json({ error: 'Invalid file upload - empty file' });
     }
 
@@ -6212,8 +6077,8 @@ app.post('/api/convert', conversionTimeout(5 * 60 * 1000), upload.single('file')
       console.log('Single: Routing to Calibre (EPUB conversion)');
       result = await convertWithCalibre(file, targetFormat, requestOptions, true);
     } else if (!result && isCSV && targetFormat === 'mobi') {
-      console.log('Single: Routing to Python CSV to MOBI conversion');
-      result = await convertCsvToMobiPython(file, requestOptions, true);
+      console.log('Single: Routing to Simple CSV to MOBI conversion');
+      result = await convertCsvToMobiSimple(file, requestOptions, true);
     } else if (!result && isCSV && targetFormat === 'odp') {
       console.log('Single: Routing to Python (CSV to ODP conversion)');
       result = await convertCsvToOdpPython(file, requestOptions, true);
@@ -6247,12 +6112,9 @@ app.post('/api/convert', conversionTimeout(5 * 60 * 1000), upload.single('file')
       } else if (!result && isCSV && targetFormat === 'doc') {
         console.log('Single: Routing to Python (CSV to DOC conversion)');
         result = await convertCsvToDocPython(file, requestOptions, true);
-      } else if (!result && isCSV && targetFormat === 'epub') {
-        console.log('Single: Routing to Python (CSV to EPUB conversion)');
-        result = await convertCsvToEpubPython(file, requestOptions, true);
-      } else if (!result && isCSV && targetFormat === 'html') {
-        console.log('Single: Routing to Python (CSV to HTML conversion)');
-        result = await convertCsvToEbookPython(file, targetFormat, requestOptions, true);
+      } else if (!result && isCSV && ['epub', 'html'].includes(targetFormat)) {
+      console.log(`Single: Routing to Python (CSV to ${targetFormat.toUpperCase()} conversion)`);
+      result = await convertCsvToEbookPython(file, targetFormat, requestOptions, true);
     } else if (!result && isCSV && LIBREOFFICE_CONVERSIONS[targetFormat] && targetFormat !== 'doc') {
       console.log('Single: Routing to LibreOffice (CSV conversion)');
       result = await convertCsvWithLibreOffice(file, targetFormat, requestOptions, true);
@@ -6399,7 +6261,11 @@ app.post('/api/convert', conversionTimeout(5 * 60 * 1000), upload.single('file')
       mime: result.mime
     });
     
-    
+    res.set({
+      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+      'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept'
+    });
     res.json({
       success: true,
       downloadPath: `/download/${encodeURIComponent(result.storedFilename!)}`,
@@ -6426,7 +6292,11 @@ app.post('/api/convert', conversionTimeout(5 * 60 * 1000), upload.single('file')
     const errorMessage = error instanceof Error ? error.message : 'Unknown conversion error';
     console.log('=== CONVERSION REQUEST END (ERROR) ===');
     
-    
+    res.set({
+      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+      'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept'
+    });
     res.status(500).json({
       error: 'Conversion failed',
       details: errorMessage
@@ -6436,14 +6306,22 @@ app.post('/api/convert', conversionTimeout(5 * 60 * 1000), upload.single('file')
 
 app.post('/api/convert/batch', conversionTimeout(10 * 60 * 1000), uploadBatch, async (req, res) => {
   // Set CORS headers
-  
+  res.set({
+    'Access-Control-Allow-Origin': '*',
+    'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+    'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept'
+  });
   
   const files = req.files as Express.Multer.File[] | undefined;
   const requestOptions = { ...(req.body as Record<string, string | undefined>) };
   const format = String(requestOptions.format ?? 'webp').toLowerCase();
 
   if (!files || files.length === 0) {
-    
+    res.set({
+      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+      'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept'
+    });
     return res.status(400).json({
       success: false,
       processed: 0,
@@ -6453,7 +6331,11 @@ app.post('/api/convert/batch', conversionTimeout(10 * 60 * 1000), uploadBatch, a
   }
 
   if (files.length > 20) {
-    
+    res.set({
+      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+      'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept'
+    });
     return res.status(400).json({
       success: false,
       processed: 0,
@@ -6493,8 +6375,8 @@ app.post('/api/convert/batch', conversionTimeout(10 * 60 * 1000), uploadBatch, a
         console.log('Routing to Calibre (EPUB conversion)');
         output = await convertWithCalibre(file, format, requestOptions, true);
       } else if (isCSV && format === 'mobi') {
-        console.log('Batch: Routing to Python CSV to MOBI conversion');
-        output = await convertCsvToMobiPython(file, requestOptions, true);
+        console.log('Batch: Routing to Simple CSV to MOBI conversion');
+        output = await convertCsvToMobiSimple(file, requestOptions, true);
       } else if (isCSV && format === 'odp') {
         console.log('Batch: Routing to Python (CSV to ODP conversion)');
         output = await convertCsvToOdpPython(file, requestOptions, true);
@@ -6531,11 +6413,8 @@ app.post('/api/convert/batch', conversionTimeout(10 * 60 * 1000), uploadBatch, a
       } else if (isCSV && format === 'docx') {
         console.log('Batch: Routing to Python (CSV to DOCX conversion)');
         output = await convertCsvToDocxPython(file, requestOptions, true);
-      } else if (isCSV && format === 'epub') {
-        console.log('Batch: Routing to Python (CSV to EPUB conversion)');
-        output = await convertCsvToEpubPython(file, requestOptions, true);
-      } else if (isCSV && format === 'html') {
-        console.log('Batch: Routing to Python (CSV to HTML conversion)');
+      } else if (isCSV && ['epub', 'html'].includes(format)) {
+        console.log(`Batch: Routing to Python (CSV to ${format.toUpperCase()} conversion)`);
         output = await convertCsvToEbookPython(file, format, requestOptions, true);
       } else if (isCSV && LIBREOFFICE_CONVERSIONS[format] && format !== 'doc' && format !== 'docx') {
         console.log('Routing to LibreOffice (CSV conversion)');
@@ -6586,7 +6465,11 @@ app.post('/api/convert/batch', conversionTimeout(10 * 60 * 1000), uploadBatch, a
     }
   }
 
-  
+  res.set({
+    'Access-Control-Allow-Origin': '*',
+    'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+    'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept'
+  });
   res.json({
     success: results.every(result => result.success),
     processed,
@@ -6607,7 +6490,11 @@ app.get('/download/:filename', async (req, res) => {
     });
 
     if (!metadata) {
-      
+      res.set({
+        'Access-Control-Allow-Origin': '*',
+        'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+        'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept'
+      });
       return res.status(404).json({ error: 'File not found or expired' });
     }
 
@@ -6615,7 +6502,11 @@ app.get('/download/:filename', async (req, res) => {
     const stat = await fs.stat(filePath).catch(() => null);
     if (!stat) {
       batchFileMetadata.delete(storedFilename);
-      
+      res.set({
+        'Access-Control-Allow-Origin': '*',
+        'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+        'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept'
+      });
       return res.status(404).json({ error: 'File not found or expired' });
     }
 
@@ -6642,9 +6533,9 @@ app.get('/download/:filename', async (req, res) => {
       'Content-Disposition': `attachment; filename="${metadata.downloadName}"`,
       'Content-Length': stat.size.toString(),
       'Cache-Control': 'no-cache',
-
-
-
+      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+      'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept'
     });
 
     const stream = (await import('node:fs')).createReadStream(filePath);
@@ -6655,7 +6546,11 @@ app.get('/download/:filename', async (req, res) => {
     stream.pipe(res);
   } catch (error) {
     console.error('Download error:', error);
-    
+    res.set({
+      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+      'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept'
+    });
     res.status(500).json({ error: 'Failed to download file' });
   }
 });
@@ -10685,7 +10580,11 @@ app.post('/convert/csv-to-parquet/single', upload.single('file'), async (req, re
   console.log('CSV->Parquet single conversion request');
   
   // Set CORS headers
-  
+  res.set({
+    'Access-Control-Allow-Origin': '*',
+    'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+    'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept'
+  });
   
   try {
     const file = req.file;
@@ -10700,9 +10599,9 @@ app.post('/convert/csv-to-parquet/single', upload.single('file'), async (req, re
       'Content-Type': result.mime,
       'Content-Disposition': `attachment; filename="${result.filename}"`,
       'Content-Length': result.buffer.length,
-
-
-
+      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+      'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept'
     });
     
     res.send(result.buffer);
@@ -10718,7 +10617,11 @@ app.post('/convert/csv-to-parquet/batch', uploadBatch, async (req, res) => {
   console.log('CSV->Parquet batch conversion request');
   
   // Set CORS headers
-  
+  res.set({
+    'Access-Control-Allow-Origin': '*',
+    'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+    'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept'
+  });
   
   try {
     const files = req.files as Express.Multer.File[];
@@ -10760,7 +10663,11 @@ app.post('/convert/csv-to-sql/single', upload.single('file'), async (req, res) =
   console.log('CSV->SQL single conversion request');
   
   // Set CORS headers
-  
+  res.set({
+    'Access-Control-Allow-Origin': '*',
+    'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+    'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept'
+  });
   
   try {
     const file = req.file;
@@ -10775,9 +10682,9 @@ app.post('/convert/csv-to-sql/single', upload.single('file'), async (req, res) =
       'Content-Type': result.mime,
       'Content-Disposition': `attachment; filename="${result.filename}"`,
       'Content-Length': result.buffer.length,
-
-
-
+      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+      'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept'
     });
     
     res.send(result.buffer);
@@ -10793,7 +10700,11 @@ app.post('/convert/csv-to-sql/batch', uploadBatch, async (req, res) => {
   console.log('CSV->SQL batch conversion request');
   
   // Set CORS headers
-  
+  res.set({
+    'Access-Control-Allow-Origin': '*',
+    'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+    'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept'
+  });
   
   try {
     const files = req.files as Express.Multer.File[];
@@ -10835,7 +10746,11 @@ app.post('/convert/csv-to-toml/single', upload.single('file'), async (req, res) 
   console.log('CSV->TOML single conversion request');
   
   // Set CORS headers
-  
+  res.set({
+    'Access-Control-Allow-Origin': '*',
+    'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+    'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept'
+  });
   
   try {
     const file = req.file;
@@ -10850,9 +10765,9 @@ app.post('/convert/csv-to-toml/single', upload.single('file'), async (req, res) 
       'Content-Type': result.mime,
       'Content-Disposition': `attachment; filename="${result.filename}"`,
       'Content-Length': result.buffer.length,
-
-
-
+      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+      'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept'
     });
     
     res.send(result.buffer);
@@ -10868,7 +10783,11 @@ app.post('/convert/csv-to-toml/batch', uploadBatch, async (req, res) => {
   console.log('CSV->TOML batch conversion request');
   
   // Set CORS headers
-  
+  res.set({
+    'Access-Control-Allow-Origin': '*',
+    'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+    'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept'
+  });
   
   try {
     const files = req.files as Express.Multer.File[];
@@ -10993,7 +10912,11 @@ app.post('/convert/csv-to-xml/single', upload.single('file'), async (req, res) =
   console.log('CSV->XML single conversion request');
   
   // Set CORS headers
-  
+  res.set({
+    'Access-Control-Allow-Origin': '*',
+    'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+    'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept'
+  });
   
   try {
     const file = req.file;
@@ -11008,9 +10931,9 @@ app.post('/convert/csv-to-xml/single', upload.single('file'), async (req, res) =
       'Content-Type': result.mime,
       'Content-Disposition': `attachment; filename="${result.filename}"`,
       'Content-Length': result.buffer.length,
-
-
-
+      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+      'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept'
     });
     
     res.send(result.buffer);
@@ -11026,7 +10949,11 @@ app.post('/convert/csv-to-xml/batch', uploadBatch, async (req, res) => {
   console.log('CSV->XML batch conversion request');
   
   // Set CORS headers
-  
+  res.set({
+    'Access-Control-Allow-Origin': '*',
+    'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+    'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept'
+  });
   
   try {
     const files = req.files as Express.Multer.File[];
@@ -11157,7 +11084,11 @@ app.post('/convert/csv-to-yaml/single', upload.single('file'), async (req, res) 
   console.log('CSV->YAML single conversion request');
   
   // Set CORS headers
-  
+  res.set({
+    'Access-Control-Allow-Origin': '*',
+    'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+    'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept'
+  });
   
   try {
     const file = req.file;
@@ -11172,9 +11103,9 @@ app.post('/convert/csv-to-yaml/single', upload.single('file'), async (req, res) 
       'Content-Type': result.mime,
       'Content-Disposition': `attachment; filename="${result.filename}"`,
       'Content-Length': result.buffer.length,
-
-
-
+      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+      'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept'
     });
     
     res.send(result.buffer);
@@ -11190,7 +11121,11 @@ app.post('/convert/csv-to-yaml/batch', uploadBatch, async (req, res) => {
   console.log('CSV->YAML batch conversion request');
   
   // Set CORS headers
-  
+  res.set({
+    'Access-Control-Allow-Origin': '*',
+    'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+    'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept'
+  });
   
   try {
     const files = req.files as Express.Multer.File[];
@@ -11990,7 +11925,11 @@ app.post('/convert/csv-to-epub/batch', uploadBatch, async (req, res) => {
 // Route: CSV to HTML (Single)
 app.post('/convert/csv-to-html/single', upload.single('file'), async (req, res) => {
   // Set CORS headers
-  
+  res.set({
+    'Access-Control-Allow-Origin': '*',
+    'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+    'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept'
+  });
   
   console.log('CSV->HTML single conversion request');
   
@@ -12007,9 +11946,9 @@ app.post('/convert/csv-to-html/single', upload.single('file'), async (req, res) 
       'Content-Type': result.mime,
       'Content-Disposition': `attachment; filename="${result.filename}"`,
       'Content-Length': result.buffer.length,
-
-
-
+      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+      'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept'
     });
     
     res.send(result.buffer);
@@ -12018,9 +11957,9 @@ app.post('/convert/csv-to-html/single', upload.single('file'), async (req, res) 
     const message = error instanceof Error ? error.message : 'Unknown error';
     res.status(500).json({ 
       error: message,
-
-
-
+      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+      'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept'
     });
   }
 });
@@ -12028,7 +11967,11 @@ app.post('/convert/csv-to-html/single', upload.single('file'), async (req, res) 
 // Route: CSV to HTML (Batch)
 app.post('/convert/csv-to-html/batch', uploadBatch, async (req, res) => {
   // Set CORS headers
-  
+  res.set({
+    'Access-Control-Allow-Origin': '*',
+    'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+    'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept'
+  });
   
   console.log('CSV->HTML batch conversion request');
   
@@ -12065,9 +12008,9 @@ app.post('/convert/csv-to-html/batch', uploadBatch, async (req, res) => {
     const message = error instanceof Error ? error.message : 'Unknown error';
     res.status(500).json({ 
       error: message,
-
-
-
+      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+      'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept'
     });
   }
 });
@@ -12075,7 +12018,11 @@ app.post('/convert/csv-to-html/batch', uploadBatch, async (req, res) => {
 // Route: CSV to Markdown (Single)
 app.post('/convert/csv-to-md/single', upload.single('file'), async (req, res) => {
   // Set CORS headers
-  
+  res.set({
+    'Access-Control-Allow-Origin': '*',
+    'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+    'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept'
+  });
   
   console.log('CSV->Markdown single conversion request');
   
@@ -12092,9 +12039,9 @@ app.post('/convert/csv-to-md/single', upload.single('file'), async (req, res) =>
       'Content-Type': result.mime,
       'Content-Disposition': `attachment; filename="${result.filename}"`,
       'Content-Length': result.buffer.length,
-
-
-
+      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+      'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept'
     });
     
     res.send(result.buffer);
@@ -12103,9 +12050,9 @@ app.post('/convert/csv-to-md/single', upload.single('file'), async (req, res) =>
     const message = error instanceof Error ? error.message : 'Unknown error';
     res.status(500).json({ 
       error: message,
-
-
-
+      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+      'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept'
     });
   }
 });
@@ -12113,7 +12060,11 @@ app.post('/convert/csv-to-md/single', upload.single('file'), async (req, res) =>
 // Route: CSV to Markdown (Batch)
 app.post('/convert/csv-to-md/batch', uploadBatch, async (req, res) => {
   // Set CORS headers
-  
+  res.set({
+    'Access-Control-Allow-Origin': '*',
+    'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+    'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept'
+  });
   
   console.log('CSV->Markdown batch conversion request');
   
@@ -12150,9 +12101,9 @@ app.post('/convert/csv-to-md/batch', uploadBatch, async (req, res) => {
     const message = error instanceof Error ? error.message : 'Unknown error';
     res.status(500).json({ 
       error: message,
-
-
-
+      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+      'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept'
     });
   }
 });
@@ -12160,7 +12111,11 @@ app.post('/convert/csv-to-md/batch', uploadBatch, async (req, res) => {
 // Route: CSV to MOBI (Single)
 app.post('/convert/csv-to-mobi/single', upload.single('file'), async (req, res) => {
   // Set CORS headers
-  
+  res.set({
+    'Access-Control-Allow-Origin': '*',
+    'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+    'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept'
+  });
   
   console.log('CSV->MOBI single conversion request');
   
@@ -12177,9 +12132,9 @@ app.post('/convert/csv-to-mobi/single', upload.single('file'), async (req, res) 
       'Content-Type': result.mime,
       'Content-Disposition': `attachment; filename="${result.filename}"`,
       'Content-Length': result.buffer.length,
-
-
-
+      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+      'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept'
     });
     
     res.send(result.buffer);
@@ -12188,9 +12143,9 @@ app.post('/convert/csv-to-mobi/single', upload.single('file'), async (req, res) 
     const message = error instanceof Error ? error.message : 'Unknown error';
     res.status(500).json({ 
       error: message,
-
-
-
+      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+      'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept'
     });
   }
 });
@@ -12303,7 +12258,52 @@ app.post('/convert/csv-to-odp/batch', uploadBatch, async (req, res) => {
 // Initialize dotenv
 dotenv.config();
 
-// CORS configuration is now handled earlier in the file
+// CORS configuration
+const allowedOrigins = [
+  process.env.FRONTEND_URL,
+  process.env.FRONTEND_URL_ALT,
+  'https://morphyimg.com',
+  'https://morphy-1-ulvv.onrender.com',
+  'https://morphy-2-n2tb.onrender.com',
+  'http://localhost:5173', // Frontend dev server
+  'http://localhost:3000', // Backend dev server
+].filter(Boolean) as string[];
+
+// Temporary permissive CORS for debugging
+app.use(cors({
+  origin: true, // Allow all origins temporarily
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'Accept'],
+  credentials: true,
+}));
+
+// Original CORS configuration (commented out for debugging)
+/*
+app.use(cors({
+  origin: (origin, callback) => {
+    console.log('CORS check - Request origin:', origin);
+    console.log('CORS check - Allowed origins:', allowedOrigins);
+    
+    // Allow requests with no origin (like mobile apps or curl requests)
+    if (!origin) {
+      console.log('CORS check - No origin, allowing request');
+      return callback(null, true);
+    }
+    
+    if (allowedOrigins.indexOf(origin) === -1) {
+      const msg = `The CORS policy for this site does not allow access from the specified Origin: ${origin}`;
+      console.log('CORS check - Origin not allowed:', origin);
+      return callback(new Error(msg), false);
+    }
+    
+    console.log('CORS check - Origin allowed:', origin);
+    return callback(null, true);
+  },
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'Accept'],
+  credentials: true,
+}));
+*/
 
 // Security middleware
 app.use(helmet());
@@ -13005,28 +13005,39 @@ app.post('/convert/bmp-to-webp/batch', uploadBatch, async (req, res) => {
 // Route: CR2 to ICO (Single)
 app.post('/convert/cr2-to-ico/single', upload.single('file'), async (req, res) => {
   console.log('CR2->ICO single conversion request');
-  console.log('CR2->ICO request origin:', req.headers.origin);
-  console.log('CR2->ICO request headers:', req.headers);
 
-  // No timeout limits for CR2 processing - let it run as long as needed
+  // Set longer timeout for CR2 processing (10 minutes)
+  req.setTimeout(10 * 60 * 1000);
+  res.setTimeout(10 * 60 * 1000);
+  
+  // Handle timeout gracefully with CORS headers
+  const timeoutHandler = () => {
+    console.log('CR2 to ICO: Request timeout - sending timeout response');
+    res.set({
+      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+      'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept'
+    });
+    if (!res.headersSent) {
+      res.status(408).json({ 
+        error: 'Conversion timeout', 
+        message: 'CR2 to ICO conversion is taking longer than expected. Please try with a smaller file or contact support.',
+        timeout: true
+      });
+    }
+  };
+  
+  // Set timeout handler
+  req.on('timeout', timeoutHandler);
+  res.on('timeout', timeoutHandler);
 
   const tmpDir = path.join(os.tmpdir(), `cr2-ico-${Date.now()}`);
 
   try {
     const file = req.file;
     if (!file) {
-      res.set({
-        'Access-Control-Allow-Origin': req.headers.origin || '*',
-        'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
-        'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept, X-Requested-With',
-        'Access-Control-Allow-Credentials': 'true'
-      });
       return res.status(400).json({ error: 'No file uploaded' });
     }
-    
-    // Always use original size for CR2 to ICO conversion
-    console.log('CR2 to ICO: Using original image size (simplified approach)');
-    
     await fs.mkdir(tmpDir, { recursive: true });
 
     const inputPath = path.join(tmpDir, file.originalname);
@@ -13048,27 +13059,12 @@ app.post('/convert/cr2-to-ico/single', upload.single('file'), async (req, res) =
       return res.status(500).json({ error: 'Conversion script not found' });
     }
 
-    // Check if Python environment exists
-    try {
-      await fs.access('/opt/venv/bin/python');
-      console.log('CR2 to ICO: Python environment exists');
-    } catch (error) {
-      console.error('CR2 to ICO: Python environment not found at /opt/venv/bin/python');
-      return res.status(500).json({ error: 'Python environment not found. Please check deployment.' });
-    }
-
-    // Prepare Python arguments - always use original size approach
-    const pythonArgs = [
+    const python = spawn('/opt/venv/bin/python', [
       scriptPath,
       inputPath,
       outputPath,
-      '--quality', '95',
-      '--original-size'
-    ];
-    
-    console.log('CR2 to ICO: Python arguments:', pythonArgs);
-    
-    const python = spawn('/opt/venv/bin/python', pythonArgs);
+      '--quality', '95'
+    ]);
 
     let stdout = '';
     let stderr = '';
@@ -13095,32 +13091,27 @@ app.post('/convert/cr2-to-ico/single', upload.single('file'), async (req, res) =
           res.set({
             'Content-Type': 'image/x-icon',
             'Content-Disposition': `attachment; filename="${path.basename(outputPath)}"`,
-            'Access-Control-Allow-Origin': req.headers.origin || '*',
+            'Access-Control-Allow-Origin': '*',
             'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
-            'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept, X-Requested-With',
-            'Access-Control-Allow-Credentials': 'true'
+            'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept'
           });
           res.send(outputBuffer);
           
         } else {
           console.error('CR2 to ICO conversion failed. Code:', code, 'Stderr:', stderr);
-          
           res.set({
-            'Access-Control-Allow-Origin': req.headers.origin || '*',
+            'Access-Control-Allow-Origin': '*',
             'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
-            'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept, X-Requested-With',
-            'Access-Control-Allow-Credentials': 'true'
+            'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept'
           });
           res.status(500).json({ error: 'Conversion failed', details: stderr });
         }
       } catch (error) {
         console.error('Error handling conversion result:', error);
-        
         res.set({
-          'Access-Control-Allow-Origin': req.headers.origin || '*',
+          'Access-Control-Allow-Origin': '*',
           'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
-          'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept, X-Requested-With',
-          'Access-Control-Allow-Credentials': 'true'
+          'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept'
         });
         res.status(500).json({ error: 'Conversion failed', details: error.message });
       } finally {
@@ -13130,12 +13121,10 @@ app.post('/convert/cr2-to-ico/single', upload.single('file'), async (req, res) =
   } catch (error) {
     console.error('CR2 to ICO conversion error:', error);
     const message = error instanceof Error ? error.message : 'Unknown error';
-    
     res.set({
-      'Access-Control-Allow-Origin': req.headers.origin || '*',
+      'Access-Control-Allow-Origin': '*',
       'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
-      'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept, X-Requested-With',
-      'Access-Control-Allow-Credentials': 'true'
+      'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept'
     });
     res.status(500).json({ error: message });
   }
@@ -13144,20 +13133,12 @@ app.post('/convert/cr2-to-ico/single', upload.single('file'), async (req, res) =
 // Route: CR2 to ICO (Batch)
 app.post('/convert/cr2-to-ico/batch', uploadBatch, async (req, res) => {
   console.log('CR2->ICO batch conversion request');
-  console.log('CR2->ICO batch request origin:', req.headers.origin);
-  console.log('CR2->ICO batch request headers:', req.headers);
 
   const tmpDir = path.join(os.tmpdir(), `cr2-ico-batch-${Date.now()}`);
 
   try {
     const files = req.files as Express.Multer.File[];
     if (!files || files.length === 0) {
-      res.set({
-        'Access-Control-Allow-Origin': req.headers.origin || '*',
-        'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
-        'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept, X-Requested-With',
-        'Access-Control-Allow-Credentials': 'true'
-      });
       return res.status(400).json({ error: 'No files uploaded' });
     }
     await fs.mkdir(tmpDir, { recursive: true });
@@ -13259,24 +13240,11 @@ app.post('/convert/cr2-to-ico/batch', uploadBatch, async (req, res) => {
       }
     }
 
-    res.set({
-      'Access-Control-Allow-Origin': req.headers.origin || '*',
-      'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
-      'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept, X-Requested-With',
-      'Access-Control-Allow-Credentials': 'true'
-    });
     res.json({ success: true, results });
     
   } catch (error) {
     console.error('CR2 to ICO batch conversion error:', error);
     const message = error instanceof Error ? error.message : 'Unknown error';
-    
-    res.set({
-      'Access-Control-Allow-Origin': req.headers.origin || '*',
-      'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
-      'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept, X-Requested-With',
-      'Access-Control-Allow-Credentials': 'true'
-    });
     res.status(500).json({ error: message });
   } finally {
     await fs.rm(tmpDir, { recursive: true, force: true }).catch(() => undefined);
@@ -13287,7 +13255,30 @@ app.post('/convert/cr2-to-ico/batch', uploadBatch, async (req, res) => {
 app.post('/convert/cr2-to-webp/single', upload.single('file'), async (req, res) => {
   console.log('CR2->WebP single conversion request');
 
-  // No timeout limits for CR2 processing - let it run as long as needed
+  // Set longer timeout for CR2 processing (10 minutes)
+  req.setTimeout(10 * 60 * 1000);
+  res.setTimeout(10 * 60 * 1000);
+  
+  // Handle timeout gracefully with CORS headers
+  const timeoutHandler = () => {
+    console.log('CR2 to WebP: Request timeout - sending timeout response');
+    res.set({
+      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+      'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept'
+    });
+    if (!res.headersSent) {
+      res.status(408).json({ 
+        error: 'Conversion timeout', 
+        message: 'CR2 to WebP conversion is taking longer than expected. Please try with a smaller file or contact support.',
+        timeout: true
+      });
+    }
+  };
+  
+  // Set timeout handler
+  req.on('timeout', timeoutHandler);
+  res.on('timeout', timeoutHandler);
 
   const tmpDir = path.join(os.tmpdir(), `cr2-webp-${Date.now()}`);
 
@@ -13349,30 +13340,27 @@ app.post('/convert/cr2-to-webp/single', upload.single('file'), async (req, res) 
           res.set({
             'Content-Type': 'image/webp',
             'Content-Disposition': `attachment; filename="${path.basename(outputPath)}"`,
-            'Access-Control-Allow-Origin': req.headers.origin || '*',
+            'Access-Control-Allow-Origin': '*',
             'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
-            'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept, X-Requested-With',
-            'Access-Control-Allow-Credentials': 'true'
+            'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept'
           });
           res.send(outputBuffer);
           
         } else {
           console.error('CR2 to WebP conversion failed. Code:', code, 'Stderr:', stderr);
           res.set({
-            'Access-Control-Allow-Origin': req.headers.origin || '*',
+            'Access-Control-Allow-Origin': '*',
             'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
-            'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept, X-Requested-With',
-            'Access-Control-Allow-Credentials': 'true'
+            'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept'
           });
           res.status(500).json({ error: 'Conversion failed', details: stderr });
         }
       } catch (error) {
         console.error('Error handling conversion result:', error);
         res.set({
-          'Access-Control-Allow-Origin': req.headers.origin || '*',
+          'Access-Control-Allow-Origin': '*',
           'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
-          'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept, X-Requested-With',
-          'Access-Control-Allow-Credentials': 'true'
+          'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept'
         });
         res.status(500).json({ error: 'Conversion failed', details: error.message });
       } finally {
@@ -13383,10 +13371,9 @@ app.post('/convert/cr2-to-webp/single', upload.single('file'), async (req, res) 
     console.error('CR2 to WebP conversion error:', error);
     const message = error instanceof Error ? error.message : 'Unknown error';
     res.set({
-      'Access-Control-Allow-Origin': req.headers.origin || '*',
+      'Access-Control-Allow-Origin': '*',
       'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
-      'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept, X-Requested-With',
-      'Access-Control-Allow-Credentials': 'true'
+      'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept'
     });
     res.status(500).json({ error: message });
   }
@@ -13516,7 +13503,11 @@ app.post('/convert/cr2-to-webp/batch', uploadBatch, async (req, res) => {
 // EPS to ICO conversion routes
 app.post('/convert/eps-to-ico/single', upload.single('file'), async (req, res) => {
   // Set CORS headers
-  
+  res.set({
+    'Access-Control-Allow-Origin': '*',
+    'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+    'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept'
+  });
   
   try {
     const file = req.file;
@@ -13531,9 +13522,9 @@ app.post('/convert/eps-to-ico/single', upload.single('file'), async (req, res) =
       'Content-Type': result.mime,
       'Content-Disposition': `attachment; filename="${result.filename}"`,
       'Content-Length': result.buffer.length,
-
-
-
+      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+      'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept'
     });
     
     res.send(result.buffer);
@@ -13542,16 +13533,20 @@ app.post('/convert/eps-to-ico/single', upload.single('file'), async (req, res) =
     const message = error instanceof Error ? error.message : 'Unknown error';
     res.status(500).json({ 
       error: message,
-
-
-
+      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+      'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept'
     });
   }
 });
 
 app.post('/convert/eps-to-ico/batch', uploadBatch, async (req, res) => {
   // Set CORS headers
-  
+  res.set({
+    'Access-Control-Allow-Origin': '*',
+    'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+    'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept'
+  });
   
   try {
     const files = req.files as Express.Multer.File[] | undefined;
@@ -13591,7 +13586,11 @@ app.post('/convert/eps-to-ico/batch', uploadBatch, async (req, res) => {
 // EPS to WebP conversion routes
 app.post('/convert/eps-to-webp/single', upload.single('file'), async (req, res) => {
   // Set CORS headers
-  
+  res.set({
+    'Access-Control-Allow-Origin': '*',
+    'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+    'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept'
+  });
   
   try {
     const file = req.file;
@@ -13606,9 +13605,9 @@ app.post('/convert/eps-to-webp/single', upload.single('file'), async (req, res) 
       'Content-Type': result.mime,
       'Content-Disposition': `attachment; filename="${result.filename}"`,
       'Content-Length': result.buffer.length,
-
-
-
+      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+      'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept'
     });
     
     res.send(result.buffer);
@@ -13617,16 +13616,20 @@ app.post('/convert/eps-to-webp/single', upload.single('file'), async (req, res) 
     const message = error instanceof Error ? error.message : 'Unknown error';
     res.status(500).json({ 
       error: message,
-
-
-
+      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+      'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept'
     });
   }
 });
 
 app.post('/convert/eps-to-webp/batch', uploadBatch, async (req, res) => {
   // Set CORS headers
-  
+  res.set({
+    'Access-Control-Allow-Origin': '*',
+    'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+    'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept'
+  });
   
   try {
     const files = req.files as Express.Multer.File[] | undefined;
@@ -13666,7 +13669,11 @@ app.post('/convert/eps-to-webp/batch', uploadBatch, async (req, res) => {
 // GIF to ICO conversion routes
 app.post('/convert/gif-to-ico/single', upload.single('file'), async (req, res) => {
   // Set CORS headers
-  
+  res.set({
+    'Access-Control-Allow-Origin': '*',
+    'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+    'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept'
+  });
   
   try {
     const file = req.file;
@@ -13681,9 +13688,9 @@ app.post('/convert/gif-to-ico/single', upload.single('file'), async (req, res) =
       'Content-Type': result.mime,
       'Content-Disposition': `attachment; filename="${result.filename}"`,
       'Content-Length': result.buffer.length,
-
-
-
+      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+      'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept'
     });
     
     res.send(result.buffer);
@@ -13696,7 +13703,11 @@ app.post('/convert/gif-to-ico/single', upload.single('file'), async (req, res) =
 
 app.post('/convert/gif-to-ico/batch', uploadBatch, async (req, res) => {
   // Set CORS headers
-  
+  res.set({
+    'Access-Control-Allow-Origin': '*',
+    'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+    'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept'
+  });
   
   try {
     const files = req.files as Express.Multer.File[] | undefined;
@@ -13731,121 +13742,6 @@ app.post('/convert/gif-to-ico/batch', uploadBatch, async (req, res) => {
     const message = error instanceof Error ? error.message : 'Unknown error';
     res.status(500).json({ error: message });
   }
-});
-
-
-// Route: CSV to EPUB (Single)
-app.post('/convert/csv-to-epub/single', upload.single('file'), async (req, res) => {
-  // Set CORS headers
-  res.set({
-    'Access-Control-Allow-Origin': req.headers.origin || '*',
-    'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
-    'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept, X-Requested-With',
-    'Access-Control-Allow-Credentials': 'true'
-  });
-  
-  console.log('CSV->EPUB single conversion request');
-  
-  try {
-    const file = req.file;
-    if (!file) {
-      return res.status(400).json({ error: 'No file provided' });
-    }
-
-    const options = req.body || {};
-    const result = await convertCsvToEpubPython(file, options, false);
-    
-    res.set({
-      'Content-Type': result.mime,
-      'Content-Disposition': `attachment; filename="${result.filename}"`,
-      'Content-Length': result.buffer.length,
-      'Access-Control-Allow-Origin': req.headers.origin || '*',
-      'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
-      'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept, X-Requested-With',
-      'Access-Control-Allow-Credentials': 'true'
-    });
-    
-    res.send(result.buffer);
-  } catch (error) {
-    console.error('CSV->EPUB single error:', error);
-    const message = error instanceof Error ? error.message : 'Unknown error';
-    res.status(500).json({ 
-      error: message,
-      'Access-Control-Allow-Origin': req.headers.origin || '*',
-      'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
-      'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept, X-Requested-With',
-      'Access-Control-Allow-Credentials': 'true'
-    });
-  }
-});
-
-// Route: CSV to EPUB (Batch)
-app.post('/convert/csv-to-epub/batch', uploadBatch, async (req, res) => {
-  // Set CORS headers
-  res.set({
-    'Access-Control-Allow-Origin': req.headers.origin || '*',
-    'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
-    'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept, X-Requested-With',
-    'Access-Control-Allow-Credentials': 'true'
-  });
-  
-  console.log('CSV->EPUB batch conversion request');
-  
-  try {
-    const files = req.files as Express.Multer.File[];
-    if (!files || files.length === 0) {
-      return res.status(400).json({ error: 'No files provided' });
-    }
-
-    const options = req.body || {};
-    const results = [];
-
-    for (const file of files) {
-      try {
-        const result = await convertCsvToEpubPython(file, options, true);
-        results.push({
-          success: true,
-          filename: result.filename,
-          downloadUrl: result.downloadUrl,
-          size: result.size
-        });
-      } catch (error) {
-        results.push({
-          success: false,
-          filename: file.originalname,
-          error: error instanceof Error ? error.message : 'Conversion failed'
-        });
-      }
-    }
-
-    res.json({ results });
-  } catch (error) {
-    console.error('CSV->EPUB batch error:', error);
-    const message = error instanceof Error ? error.message : 'Unknown error';
-    res.status(500).json({ 
-      error: message,
-      'Access-Control-Allow-Origin': req.headers.origin || '*',
-      'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
-      'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept, X-Requested-With',
-      'Access-Control-Allow-Credentials': 'true'
-    });
-  }
-});
-
-// Health check endpoint
-app.get('/health', (req, res) => {
-  res.set({
-    'Access-Control-Allow-Origin': req.headers.origin || '*',
-    'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
-    'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept, X-Requested-With',
-    'Access-Control-Allow-Credentials': 'true'
-  });
-  res.json({ 
-    status: 'healthy', 
-    timestamp: new Date().toISOString(),
-    uptime: process.uptime(),
-    version: process.env.npm_package_version || '1.0.0'
-  });
 });
 
 // Start server

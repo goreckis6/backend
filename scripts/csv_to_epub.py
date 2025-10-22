@@ -35,23 +35,16 @@ def create_epub_from_csv(csv_file, output_file, title="CSV Data", author="Unknow
         include_toc (bool): Whether to include table of contents
         chunk_size (int): Number of rows to process at once
     """
-    print("=" * 50)
-    print("CSV TO EPUB CONVERSION STARTED")
-    print("=" * 50)
     print(f"Starting CSV to EPUB conversion...")
     print(f"Input: {csv_file}")
     print(f"Output: {output_file}")
     print(f"Title: {title}")
     print(f"Author: {author}")
     print(f"Chunk size: {chunk_size}")
-    print("=" * 50)
     
     try:
         # Read CSV file with optimizations
         print("Reading CSV file with optimizations...")
-        print(f"File exists: {os.path.exists(csv_file)}")
-        print(f"File readable: {os.access(csv_file, os.R_OK)}")
-        print(f"File size: {os.path.getsize(csv_file)} bytes")
         
         # Get file size for progress tracking
         file_size = os.path.getsize(csv_file)
@@ -66,9 +59,6 @@ def create_epub_from_csv(csv_file, output_file, title="CSV Data", author="Unknow
         )
         
         print(f"CSV loaded: {len(df)} rows, {len(df.columns)} columns")
-        print("=" * 50)
-        print("CSV READING COMPLETED - STARTING PROCESSING")
-        print("=" * 50)
         
         # Create EPUB book
         print("Creating EPUB book...")
@@ -235,14 +225,9 @@ def create_epub_from_csv(csv_file, output_file, title="CSV Data", author="Unknow
             data_html += f"<th>{col}</th>"
         data_html += "</tr></thead><tbody>"
         
-        # Add table data (include more rows for better file size)
-        # For files with < 5000 rows, include all data; otherwise limit to 5000 for performance
-        max_rows = min(5000, len(df))
-        print(f"Adding table data (first {max_rows} rows out of {len(df)} total)...")
-        print(f"DataFrame shape: {df.shape}")
-        print(f"DataFrame columns: {list(df.columns)}")
-        
-        rows_added = 0
+        # Add table data (limit to first 1000 rows for performance)
+        print(f"Adding table data (first {min(1000, len(df))} rows)...")
+        max_rows = min(1000, len(df))
         for idx in range(max_rows):
             if idx % 100 == 0:
                 print(f"Processing row {idx + 1}/{max_rows}")
@@ -256,9 +241,6 @@ def create_epub_from_csv(csv_file, output_file, title="CSV Data", author="Unknow
                     cell_value = cell_value[:97] + "..."
                 data_html += f"<td>{cell_value}</td>"
             data_html += "</tr>"
-            rows_added += 1
-        
-        print(f"Successfully added {rows_added} rows to HTML table")
         
         data_html += """
             </tbody></table>
@@ -270,9 +252,6 @@ def create_epub_from_csv(csv_file, output_file, title="CSV Data", author="Unknow
         data_page.content = data_html
         book.add_item(data_page)
         
-        print(f"Data HTML content size: {len(data_html)} characters")
-        print(f"Data HTML preview (first 200 chars): {data_html[:200]}...")
-        
         # Create spine (reading order)
         print("Creating book spine...")
         book.spine = ['cover']
@@ -280,41 +259,8 @@ def create_epub_from_csv(csv_file, output_file, title="CSV Data", author="Unknow
             book.spine.append('toc')
         book.spine.append('data')
         
-        # Add navigation (NCX) for better compatibility
-        print("Adding navigation (NCX)...")
-        book.add_item(epub.EpubNcx())
-        book.add_item(epub.EpubNav())
-        
         # Add navigation
         if include_toc:
-            print("Adding table of contents...")
-            # Create TOC page
-            toc_html = f"""
-            <html>
-            <head>
-                <title>Table of Contents</title>
-                <style>
-                    body {{ font-family: Arial, sans-serif; padding: 20px; line-height: 1.6; }}
-                    h1 {{ color: #333; border-bottom: 2px solid #667eea; padding-bottom: 10px; }}
-                    ul {{ list-style-type: none; padding: 0; }}
-                    li {{ margin: 10px 0; }}
-                    a {{ text-decoration: none; color: #667eea; font-size: 1.1em; }}
-                    a:hover {{ color: #764ba2; }}
-                </style>
-            </head>
-            <body>
-                <h1>Table of Contents</h1>
-                <ul>
-                    <li><a href="cover.xhtml">Cover</a></li>
-                    <li><a href="data.xhtml">Data Table</a></li>
-                </ul>
-            </body>
-            </html>
-            """
-            toc_page = epub.EpubHtml(title='Table of Contents', file_name='toc.xhtml', lang='en')
-            toc_page.content = toc_html
-            book.add_item(toc_page)
-            
             book.toc = [
                 epub.Link('cover.xhtml', 'Cover', 'cover'),
                 epub.Link('toc.xhtml', 'Table of Contents', 'toc'),
@@ -337,65 +283,14 @@ def create_epub_from_csv(csv_file, output_file, title="CSV Data", author="Unknow
         )
         book.add_item(style)
         
-        # Memory cleanup for large files
-        print("Cleaning up memory...")
-        del df  # Free up memory from the large DataFrame
-        
-        # Save EPUB file with proper options
+        # Save EPUB file
         print(f"Saving EPUB file to {output_file}...")
-        try:
-            # Create EPUB with proper options for better compatibility
-            epub.write_epub(output_file, book, {
-                'epub2_guide': True,
-                'epub3_landmark': True,
-                'epub3_nav': True
-            })
-            print("EPUB file saved successfully with full options")
-        except Exception as e:
-            print(f"Error saving EPUB with full options: {e}")
-            try:
-                # Try with basic options
-                epub.write_epub(output_file, book, {
-                    'epub2_guide': True
-                })
-                print("EPUB file saved with basic options")
-            except Exception as e2:
-                print(f"Error saving EPUB with basic options: {e2}")
-                # Try with minimal options
-                epub.write_epub(output_file, book, {})
-                print("EPUB file saved with minimal options")
+        epub.write_epub(output_file, book, {})
         
-        # Verify file was created and is valid
+        # Verify file was created
         if os.path.exists(output_file):
             file_size = os.path.getsize(output_file)
             print(f"EPUB file created successfully: {file_size / (1024*1024):.2f} MB")
-            
-            # Check if file is too small (less than 10KB is suspicious)
-            if file_size < 10240:  # 10KB
-                print(f"WARNING: EPUB file is very small ({file_size} bytes). This might indicate an issue.")
-            
-            # Basic validation - check if it's a valid ZIP file (EPUB is a ZIP)
-            try:
-                with zipfile.ZipFile(output_file, 'r') as zip_file:
-                    file_list = zip_file.namelist()
-                    print(f"EPUB contains {len(file_list)} files:")
-                    for file in file_list:
-                        print(f"  - {file}")
-                    
-                    # Check for required EPUB files
-                    required_files = ['META-INF/container.xml', 'OEBPS/content.opf']
-                    missing_files = [f for f in required_files if f not in file_list]
-                    if missing_files:
-                        print(f"WARNING: Missing required EPUB files: {missing_files}")
-                    else:
-                        print("EPUB structure validation passed")
-                        
-            except zipfile.BadZipFile:
-                print("ERROR: Generated file is not a valid ZIP/EPUB file")
-                return False
-            except Exception as e:
-                print(f"WARNING: Could not validate EPUB structure: {e}")
-            
             return True
         else:
             print("ERROR: EPUB file was not created")

@@ -35,45 +35,28 @@ def create_doc_from_csv_optimized(csv_file, output_file, title="CSV Data", autho
         author (str): Document author
         chunk_size (int): Number of rows to process at once
     """
-    print("=" * 50)
-    print("CSV TO DOC CONVERSION STARTED")
-    print("=" * 50)
     print(f"Starting optimized CSV to DOC conversion...")
     print(f"Input: {csv_file}")
     print(f"Output: {output_file}")
     print(f"Chunk size: {chunk_size}")
-    print("=" * 50)
     
     try:
         # Read CSV file with optimizations
         print("Reading CSV file with optimizations...")
-        print(f"File exists: {os.path.exists(csv_file)}")
-        print(f"File readable: {os.access(csv_file, os.R_OK)}")
-        print(f"File size: {os.path.getsize(csv_file)} bytes")
         
         # Get file size for progress tracking
         file_size = os.path.getsize(csv_file)
         print(f"File size: {file_size / (1024*1024):.2f} MB")
         
-        # Read CSV with optimized settings for large files
-        print("Reading large CSV file with memory optimizations...")
+        # Read CSV with optimized settings
         df = pd.read_csv(
             csv_file,
             dtype=str,  # Read all as strings to avoid type inference overhead
             na_filter=False,  # Disable NaN filtering for speed
-            low_memory=False,  # Use more memory for speed
-            chunksize=None,  # Read entire file at once for processing
-            engine='c'  # Use C engine for better performance
+            low_memory=False  # Use more memory for speed
         )
         
         print(f"CSV loaded: {len(df)} rows, {len(df.columns)} columns")
-        print("=" * 50)
-        print("CSV READING COMPLETED - STARTING PROCESSING")
-        print("=" * 50)
-        
-        # Estimate processing time
-        estimated_time = len(df) / 1000  # Rough estimate: 1000 rows per second
-        print(f"Estimated processing time: {estimated_time:.1f} seconds for {len(df)} rows")
         
         # Create DOCX document
         print("Creating optimized DOCX document...")
@@ -115,56 +98,46 @@ def create_doc_from_csv_optimized(csv_file, output_file, title="CSV Data", autho
         # Process data in chunks for better performance
         print(f"Processing {len(df)} rows in chunks of {chunk_size}...")
         
+        # Pre-allocate table rows for better performance
         total_rows = len(df)
+        if total_rows > 1000:  # Only pre-allocate for large datasets
+            print("Pre-allocating table rows for large dataset...")
+            # Add rows in batches
+            for _ in range(min(chunk_size, total_rows)):
+                table.add_row()
         
-        # For very large files, limit the number of rows to prevent timeout
-        max_rows = min(total_rows, 5000)  # Limit to 5000 rows for performance
-        if total_rows > max_rows:
-            print(f"⚠️  Large file detected ({total_rows} rows). Limiting to first {max_rows} rows for performance.")
-            print(f"   Original file had {total_rows} rows, processing first {max_rows} rows only.")
-            df = df.head(max_rows)
-            total_rows = max_rows
-        
-        # Pre-allocate table rows for much better performance
-        print(f"Pre-allocating {total_rows} table rows...")
-        for _ in range(total_rows):
-            table.add_row()
-        
-        print("Pre-allocation complete, now filling data...")
-        
-        # Process data in chunks using bulk operations (much faster)
+        # Process data in chunks
         for chunk_start in range(0, total_rows, chunk_size):
             chunk_end = min(chunk_start + chunk_size, total_rows)
             chunk_df = df.iloc[chunk_start:chunk_end]
             
-            print(f"Processing rows {chunk_start + 1}-{chunk_end} of {total_rows} ({(chunk_end/total_rows*100):.1f}%)")
+            print(f"Processing rows {chunk_start + 1}-{chunk_end} of {total_rows}")
             
-            # Convert chunk to numpy array for much faster processing
-            chunk_data = chunk_df.values
-            
-            # Process chunk data using bulk operations
-            for idx in range(len(chunk_data)):
-                row_index = chunk_start + idx
-                row_cells = table.rows[row_index + 1].cells  # +1 because header is row 0
+            for idx, (_, row) in enumerate(chunk_df.iterrows()):
+                # Add row if not pre-allocated
+                if total_rows <= 1000 or idx >= chunk_size:
+                    table.add_row()
                 
-                # Process cells using numpy array (much faster than iterrows)
-                for i, value in enumerate(chunk_data[idx]):
+                row_cells = table.rows[-1].cells
+                
+                # Process cells with minimal styling
+                for i, value in enumerate(row):
                     # Convert to string efficiently
                     cell_value = str(value) if value else ""
                     row_cells[i].text = cell_value
+                    
+                    # Minimal cell styling (only for first few rows to save time)
+                    if chunk_start < 100:  # Only style first 100 rows
+                        for paragraph in row_cells[i].paragraphs:
+                            for run in paragraph.runs:
+                                run.font.size = Pt(8)  # Smaller font
+                            paragraph.alignment = WD_ALIGN_PARAGRAPH.LEFT
         
         # Add minimal summary
         print("Adding document summary...")
         doc.add_paragraph()
-        summary_text = f"Total: {len(df)} rows × {len(df.columns)} columns"
-        if total_rows < len(df):
-            summary_text += f" (Limited to first {total_rows} rows for performance)"
-        summary_para = doc.add_paragraph(summary_text)
+        summary_para = doc.add_paragraph(f"Total: {len(df)} rows × {len(df.columns)} columns")
         summary_para.alignment = WD_ALIGN_PARAGRAPH.CENTER
-        
-        # Memory cleanup for large files
-        print("Cleaning up memory...")
-        del df  # Free up memory from the large DataFrame
         
         # Save document with optimizations
         print(f"Saving DOCX document...")

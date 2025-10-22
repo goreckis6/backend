@@ -31,12 +31,7 @@ def convert_csv_to_markdown(
         print(f"Converting CSV to Markdown: {input_file} -> {output_file}")
         
         # Read CSV file
-        try:
-            df = pd.read_csv(input_file)
-        except pd.errors.ParserError as e:
-            raise ValueError(f"CSV file appears to be corrupted or malformed. Please check the file format and try again. Error: {str(e)}")
-        except Exception as e:
-            raise ValueError(f"Could not read CSV file. The file may be corrupted or in an unsupported format. Error: {str(e)}")
+        df = pd.read_csv(input_file)
         
         if df.empty:
             raise ValueError("CSV file is empty")
