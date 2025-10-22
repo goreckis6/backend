@@ -197,8 +197,9 @@ def convert_csv_to_mobi(csv_path, output_path, book_title=None, author=None, inc
         book.add_item(epub.EpubNav())
         
         # Debug: Check book structure
-        logger.info(f"Book structure - Items: {len(book.get_items())}, Spine: {book.spine}, TOC: {len(book.toc)}")
-        logger.info(f"Chapter content length: {len(html_content)}")
+        items_count = len(list(book.get_items()))
+        logger.info(f"Book structure - Items: {items_count}, Spine length: {len(book.spine)}, TOC: {len(book.toc)}")
+        logger.info(f"Chapter content length: {len(html_content)} chars")
         
         # Write EPUB file
         try:
