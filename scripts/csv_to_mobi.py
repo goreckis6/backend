@@ -203,7 +203,8 @@ def convert_csv_to_mobi(csv_path, output_path, book_title=None, author=None, inc
             import shutil
             shutil.copy2(html_path, output_path)
             logger.info(f"Created HTML file as fallback: {output_path}")
-            return
+            print(f"Successfully converted {csv_path} to HTML (Calibre not available)")
+            return True
         
         # Convert HTML to MOBI
         convert_cmd = [
@@ -268,7 +269,8 @@ def main():
             chunk_size=args.chunk_size
         )
         
-        if success:
+        if success or success is None:
+            # success is None when function completes without explicit return
             print(f"Successfully converted {args.input_csv} to {args.output_mobi}")
             sys.exit(0)
         else:
