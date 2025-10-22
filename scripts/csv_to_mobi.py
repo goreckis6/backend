@@ -114,43 +114,40 @@ def convert_csv_to_mobi(csv_path, output_path, book_title=None, author=None, inc
         book.set_language('en')
         book.add_author(author)
         
-        # Create table of contents
-        toc = []
-        
         # Create main content chapter
         chapter = epub.EpubHtml(title='Data Table', file_name='data_table.xhtml', lang='en')
         
         # Generate HTML content for the table
-        html_content = f"""
-        <html>
-        <head>
-            <title>{book_title}</title>
-            <style>
-                body {{ font-family: Arial, sans-serif; line-height: 1.6; margin: 20px; color: #333; }}
-                h1 {{ color: #2c3e50; border-bottom: 2px solid #3498db; padding-bottom: 10px; }}
-                h2 {{ color: #34495e; margin-top: 30px; }}
-                table {{ width: 100%; border-collapse: collapse; margin: 20px 0; font-size: 14px; }}
-                th, td {{ border: 1px solid #ddd; padding: 8px; text-align: left; }}
-                th {{ background-color: #f2f2f2; font-weight: bold; }}
-                tr:nth-child(even) {{ background-color: #f9f9f9; }}
-            </style>
-        </head>
-        <body>
-            <h1>{book_title}</h1>
-            <p><em>by {author}</em></p>
-            <h2>Data Table</h2>
-            <table>
-"""
+        html_content = f"""<?xml version="1.0" encoding="utf-8"?>
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.1//EN" "http://www.w3.org/TR/xhtml11/DTD/xhtml11.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml">
+<head>
+    <title>{book_title}</title>
+    <style>
+        body {{ font-family: Arial, sans-serif; line-height: 1.6; margin: 20px; color: #333; }}
+        h1 {{ color: #2c3e50; border-bottom: 2px solid #3498db; padding-bottom: 10px; }}
+        h2 {{ color: #34495e; margin-top: 30px; }}
+        table {{ width: 100%; border-collapse: collapse; margin: 20px 0; font-size: 14px; }}
+        th, td {{ border: 1px solid #ddd; padding: 8px; text-align: left; }}
+        th {{ background-color: #f2f2f2; font-weight: bold; }}
+        tr:nth-child(even) {{ background-color: #f9f9f9; }}
+    </style>
+</head>
+<body>
+    <h1>{book_title}</h1>
+    <p><em>by {author}</em></p>
+    <h2>Data Table</h2>
+    <table>"""
         
         # Add table headers if requested
         if include_headers and not df.columns.empty:
-            html_content += "                <thead>\n                    <tr>\n"
+            html_content += "\n        <thead>\n            <tr>\n"
             for col in df.columns:
-                html_content += f"                        <th>{col}</th>\n"
-            html_content += "                    </tr>\n                </thead>\n"
+                html_content += f"                <th>{col}</th>\n"
+            html_content += "            </tr>\n        </thead>\n"
         
         # Add table body
-        html_content += "                <tbody>\n"
+        html_content += "        <tbody>\n"
         
         # Process data in chunks for large files
         total_rows = len(df)
@@ -161,30 +158,34 @@ def convert_csv_to_mobi(csv_path, output_path, book_title=None, author=None, inc
             chunk_df = df.iloc[start_idx:end_idx]
             
             for _, row in chunk_df.iterrows():
-                html_content += "                    <tr>\n"
+                html_content += "            <tr>\n"
                 for value in row:
                     # Handle NaN values and escape HTML
                     if pd.isna(value):
                         cell_value = ""
                     else:
                         cell_value = str(value).replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
-                    html_content += f"                        <td>{cell_value}</td>\n"
-                html_content += "                    </tr>\n"
+                    html_content += f"                <td>{cell_value}</td>\n"
+                html_content += "            </tr>\n"
             
             processed_rows += len(chunk_df)
             logger.info(f"Processed {processed_rows}/{total_rows} rows")
         
-        html_content += """                </tbody>
-            </table>
-        </body>
-        </html>"""
+        html_content += """        </tbody>
+    </table>
+</body>
+</html>"""
         
         chapter.content = html_content
         book.add_item(chapter)
-        toc.append(chapter)
         
-        # Add table of contents
-        book.toc = toc
+        # Create table of contents
+        book.toc = [chapter]
+        
+        # Add spine (required for valid EPUB) - this is the key fix
+        book.spine = [chapter]
+        
+        # Add navigation files
         book.add_item(epub.EpubNcx())
         book.add_item(epub.EpubNav())
         
