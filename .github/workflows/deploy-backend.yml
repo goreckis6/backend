@@ -78,7 +78,11 @@ jobs:
               sudo apt install -y \
                 python3 python3-pip python3-venv python3-dev \
                 libjpeg-dev libpng-dev libtiff-dev libraw-dev \
-                build-essential libffi-dev calibre
+                build-essential libffi-dev wget xz-utils
+              
+              # Install Calibre command-line tools
+              wget -nv -O- https://download.calibre-ebook.com/linux-installer.sh | sudo sh /dev/stdin install_dir=/opt/calibre
+              echo 'export PATH="/opt/calibre:$PATH"' | sudo tee -a /etc/environment
               
               # Create virtual environment
               sudo mkdir -p $VENV_DIR
@@ -87,7 +91,7 @@ jobs:
               
               # Install Python packages
               $VENV_DIR/bin/pip install --upgrade pip
-              $VENV_DIR/bin/pip install Pillow rawpy pandas python-docx openpyxl xlsxwriter psutil ebooklib jinja2 calibre
+              $VENV_DIR/bin/pip install Pillow rawpy pandas python-docx openpyxl xlsxwriter psutil ebooklib jinja2
             else
               echo "✅ Python environment already exists, skipping setup..."
             fi
@@ -95,7 +99,7 @@ jobs:
             # Verify Python environment
             echo "🔍 Verifying Python environment..."
             $VENV_DIR/bin/python --version
-            if $VENV_DIR/bin/python -c "import rawpy, PIL, pandas, docx, psutil, ebooklib, jinja2, calibre; print('✅ Python packages OK')"; then
+            if $VENV_DIR/bin/python -c "import rawpy, PIL, pandas, docx, psutil, ebooklib, jinja2; print('✅ Python packages OK')"; then
               echo "✅ Python environment verified successfully"
             else
               echo "⚠️ Warning: Python packages verification failed"

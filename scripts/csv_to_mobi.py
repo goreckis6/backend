@@ -212,6 +212,7 @@ def convert_csv_to_mobi(csv_path, output_path, book_title=None, author=None, inc
             # Try to find ebook-convert
             ebook_convert_paths = [
                 'ebook-convert',
+                '/opt/calibre/ebook-convert',
                 '/usr/bin/ebook-convert',
                 '/usr/local/bin/ebook-convert',
                 '/opt/calibre/bin/ebook-convert',
@@ -238,9 +239,10 @@ def convert_csv_to_mobi(csv_path, output_path, book_title=None, author=None, inc
                 
                 # Check common Calibre installation locations
                 calibre_locations = [
+                    '/opt/calibre/calibre',
+                    '/opt/calibre/bin/calibre',
                     '/usr/bin/calibre',
                     '/usr/local/bin/calibre',
-                    '/opt/calibre/bin/calibre',
                     '/usr/share/calibre/bin/calibre'
                 ]
                 
@@ -252,6 +254,7 @@ def convert_csv_to_mobi(csv_path, output_path, book_title=None, author=None, inc
                         ebook_convert_candidates = [
                             os.path.join(calibre_dir, 'ebook-convert'),
                             os.path.join(calibre_dir, 'calibre-ebook-convert'),
+                            os.path.join(os.path.dirname(calibre_dir), 'ebook-convert'),
                             os.path.join(os.path.dirname(calibre_dir), 'bin', 'ebook-convert'),
                             os.path.join(calibre_dir, '..', 'bin', 'ebook-convert')
                         ]
@@ -288,7 +291,7 @@ def convert_csv_to_mobi(csv_path, output_path, book_title=None, author=None, inc
             if not ebook_convert:
                 # Debug: List what's available in common directories
                 logger.error("ebook-convert not found. Debugging system...")
-                debug_dirs = ['/usr/bin', '/usr/local/bin', '/opt/calibre/bin', '/usr/share/calibre/bin']
+                debug_dirs = ['/opt/calibre', '/usr/bin', '/usr/local/bin', '/opt/calibre/bin', '/usr/share/calibre/bin']
                 for debug_dir in debug_dirs:
                     if os.path.exists(debug_dir):
                         try:

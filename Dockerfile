@@ -7,13 +7,18 @@ WORKDIR /app
 RUN apt-get update
 
 # Install basic packages first
-RUN apt-get install -y \
+RUN apt-get update && apt-get install -y \
     libreoffice \
     imagemagick \
     ghostscript \
     python3 \
     python3-pip \
-    calibre
+    wget \
+    xz-utils
+
+# Install Calibre command-line tools
+RUN wget -nv -O- https://download.calibre-ebook.com/linux-installer.sh | sh /dev/stdin install_dir=/opt/calibre
+ENV PATH="/opt/calibre:${PATH}"
 
 # Install Sharp dependencies
 RUN apt-get install -y \
@@ -36,11 +41,11 @@ RUN apt-get install -y \
     libffi-dev
 
 # Install Python packages for RAW processing and CSV conversion
-RUN pip3 install --no-cache-dir rawpy Pillow pandas python-docx openpyxl xlsxwriter psutil ebooklib jinja2 calibre
+RUN pip3 install --no-cache-dir rawpy Pillow pandas python-docx openpyxl xlsxwriter psutil ebooklib jinja2
 
 # Create Python virtual environment for consistency
 RUN python3 -m venv /opt/venv
-RUN /opt/venv/bin/pip install --no-cache-dir rawpy Pillow pandas python-docx openpyxl xlsxwriter psutil ebooklib jinja2 calibre
+RUN /opt/venv/bin/pip install --no-cache-dir rawpy Pillow pandas python-docx openpyxl xlsxwriter psutil ebooklib jinja2
 
 # Clean up
 RUN apt-get clean && rm -rf /var/lib/apt/lists/*
