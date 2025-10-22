@@ -15,6 +15,12 @@ CSV to Markdown Conversion Updates:
 - Added clear error messages for malformed files
 - Improved user experience with straightforward error reporting
 
+CSV to MOBI Conversion Updates:
+- Enhanced Calibre detection with multiple path checking
+- Added fallback to HTML output when Calibre is not available
+- Improved error handling for missing ebook-convert binary
+- Better logging for debugging Calibre installation issues
+
 Python Script Improvements:
 - Updated csv_to_epub_hybrid.py with dual approach
 - Added comprehensive error handling

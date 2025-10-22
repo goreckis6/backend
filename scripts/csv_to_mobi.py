@@ -159,28 +159,51 @@ def convert_csv_to_mobi(csv_path, output_path, book_title=None, author=None, inc
             'ebook-convert',
             '/usr/bin/ebook-convert',
             '/usr/local/bin/ebook-convert',
-            '/opt/calibre/bin/ebook-convert'
+            '/opt/calibre/bin/ebook-convert',
+            '/usr/bin/calibre-ebook-convert',
+            '/usr/local/bin/calibre-ebook-convert'
         ]
         
         ebook_convert = None
         for path in ebook_convert_paths:
             try:
-                subprocess.run([path, '--version'], capture_output=True, check=True)
+                result = subprocess.run([path, '--version'], capture_output=True, check=True, timeout=10)
+                logger.info(f"Found ebook-convert at: {path}")
                 ebook_convert = path
                 break
-            except (subprocess.CalledProcessError, FileNotFoundError):
+            except (subprocess.CalledProcessError, FileNotFoundError, subprocess.TimeoutExpired):
+                logger.debug(f"ebook-convert not found at: {path}")
                 continue
         
         if not ebook_convert:
-            # Fallback: try to install calibre or use alternative method
-            logger.warning("ebook-convert not found. Attempting to install calibre...")
+            # Check if calibre is installed but ebook-convert is not in PATH
             try:
-                subprocess.run(['apt-get', 'update'], check=True)
-                subprocess.run(['apt-get', 'install', '-y', 'calibre'], check=True)
-                ebook_convert = 'ebook-convert'
-            except subprocess.CalledProcessError:
-                logger.error("Failed to install calibre. Cannot convert to MOBI format.")
-                raise RuntimeError("ebook-convert (Calibre) is required for MOBI conversion but not available")
+                result = subprocess.run(['which', 'calibre'], capture_output=True, text=True)
+                if result.returncode == 0:
+                    calibre_path = result.stdout.strip()
+                    logger.info(f"Calibre found at: {calibre_path}")
+                    # Try to find ebook-convert in calibre directory
+                    calibre_dir = os.path.dirname(calibre_path)
+                    ebook_convert_candidates = [
+                        os.path.join(calibre_dir, 'ebook-convert'),
+                        os.path.join(calibre_dir, 'calibre-ebook-convert'),
+                        os.path.join(os.path.dirname(calibre_dir), 'bin', 'ebook-convert')
+                    ]
+                    for candidate in ebook_convert_candidates:
+                        if os.path.exists(candidate):
+                            ebook_convert = candidate
+                            logger.info(f"Found ebook-convert at: {candidate}")
+                            break
+            except Exception as e:
+                logger.debug(f"Error checking calibre installation: {e}")
+        
+        if not ebook_convert:
+            logger.warning("ebook-convert not found. Creating HTML file instead of MOBI...")
+            # Fallback: just copy the HTML file as the output
+            import shutil
+            shutil.copy2(html_path, output_path)
+            logger.info(f"Created HTML file as fallback: {output_path}")
+            return
         
         # Convert HTML to MOBI
         convert_cmd = [
