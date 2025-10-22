@@ -3586,9 +3586,9 @@ const convertCsvToEpubPython = async (
     // Prepare output file
     const outputPath = path.join(tmpDir, `${safeBase}.epub`);
     
-    // Use Python script for EPUB
+    // Use Python script for EPUB (Jinja2 version)
     const pythonPath = '/opt/venv/bin/python3';
-    const scriptPath = path.join(__dirname, '../scripts/csv_to_epub.py');
+    const scriptPath = path.join(__dirname, '../scripts/csv_to_epub_jinja.py');
     
     // Determine chunk size based on file size for optimal performance
     const fileSizeMB = file.buffer.length / (1024 * 1024);
