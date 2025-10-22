@@ -30,51 +30,13 @@ def convert_csv_to_markdown(
     try:
         print(f"Converting CSV to Markdown: {input_file} -> {output_file}")
         
-        # Read CSV file with robust error handling
+        # Read CSV file
         try:
-            # Try reading with default settings first
             df = pd.read_csv(input_file)
         except pd.errors.ParserError as e:
-            print(f"Default CSV parsing failed: {e}")
-            print("Trying alternative parsing methods...")
-            
-            # Try to identify the problematic line
-            try:
-                with open(input_file, 'r', encoding='utf-8') as f:
-                    lines = f.readlines()
-                    print(f"Total lines in file: {len(lines)}")
-                    for i, line in enumerate(lines[:10], 1):  # Check first 10 lines
-                        print(f"Line {i}: {repr(line[:100])}")  # Show first 100 chars
-            except Exception as debug_error:
-                print(f"Could not read file for debugging: {debug_error}")
-            
-            # Try different delimiters
-            for delimiter in [',', ';', '\t', '|']:
-                try:
-                    print(f"Trying delimiter: '{delimiter}'")
-                    df = pd.read_csv(input_file, delimiter=delimiter)
-                    print(f"Success with delimiter: '{delimiter}'")
-                    break
-                except pd.errors.ParserError:
-                    continue
-            
-            # If still failing, try with error handling
-            try:
-                df = pd.read_csv(input_file, on_bad_lines='skip', engine='python')
-                print("Success with error handling (skipping bad lines)")
-            except Exception as final_error:
-                raise ValueError(f"Could not parse CSV file with any method. Last error: {final_error}")
-        
-        # Additional fallback for encoding issues
-        if df.empty:
-            try:
-                print("Trying with different encoding...")
-                df = pd.read_csv(input_file, encoding='latin-1')
-            except:
-                try:
-                    df = pd.read_csv(input_file, encoding='utf-8-sig')
-                except:
-                    raise ValueError("Could not read CSV file with any encoding")
+            raise ValueError(f"CSV file appears to be corrupted or malformed. Please check the file format and try again. Error: {str(e)}")
+        except Exception as e:
+            raise ValueError(f"Could not read CSV file. The file may be corrupted or in an unsupported format. Error: {str(e)}")
         
         if df.empty:
             raise ValueError("CSV file is empty")
