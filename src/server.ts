@@ -6258,9 +6258,12 @@ app.post('/api/convert', conversionTimeout(5 * 60 * 1000), upload.single('file')
       } else if (!result && isCSV && targetFormat === 'doc') {
         console.log('Single: Routing to Python (CSV to DOC conversion)');
         result = await convertCsvToDocPython(file, requestOptions, true);
-      } else if (!result && isCSV && ['epub', 'html'].includes(targetFormat)) {
-      console.log(`Single: Routing to Python (CSV to ${targetFormat.toUpperCase()} conversion)`);
-      result = await convertCsvToEbookPython(file, targetFormat, requestOptions, true);
+      } else if (!result && isCSV && targetFormat === 'epub') {
+        console.log('Single: Routing to Python (CSV to EPUB conversion)');
+        result = await convertCsvToEpubPython(file, requestOptions, true);
+      } else if (!result && isCSV && targetFormat === 'html') {
+        console.log('Single: Routing to Python (CSV to HTML conversion)');
+        result = await convertCsvToEbookPython(file, targetFormat, requestOptions, true);
     } else if (!result && isCSV && LIBREOFFICE_CONVERSIONS[targetFormat] && targetFormat !== 'doc') {
       console.log('Single: Routing to LibreOffice (CSV conversion)');
       result = await convertCsvWithLibreOffice(file, targetFormat, requestOptions, true);
@@ -6539,8 +6542,11 @@ app.post('/api/convert/batch', conversionTimeout(10 * 60 * 1000), uploadBatch, a
       } else if (isCSV && format === 'docx') {
         console.log('Batch: Routing to Python (CSV to DOCX conversion)');
         output = await convertCsvToDocxPython(file, requestOptions, true);
-      } else if (isCSV && ['epub', 'html'].includes(format)) {
-        console.log(`Batch: Routing to Python (CSV to ${format.toUpperCase()} conversion)`);
+      } else if (isCSV && format === 'epub') {
+        console.log('Batch: Routing to Python (CSV to EPUB conversion)');
+        output = await convertCsvToEpubPython(file, requestOptions, true);
+      } else if (isCSV && format === 'html') {
+        console.log('Batch: Routing to Python (CSV to HTML conversion)');
         output = await convertCsvToEbookPython(file, format, requestOptions, true);
       } else if (isCSV && LIBREOFFICE_CONVERSIONS[format] && format !== 'doc' && format !== 'docx') {
         console.log('Routing to LibreOffice (CSV conversion)');
