@@ -14,17 +14,18 @@ import subprocess
 import logging
 from ebooklib import epub
 
+# Configure logging first
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+logger = logging.getLogger(__name__)
+
 # Try to import Calibre Python API
 try:
     from calibre.ebooks.conversion import convert
-    from calibre.ebooks.conversion.cli import main as calibre_main
     CALIBRE_AVAILABLE = True
-except ImportError:
+    logger.info("Calibre Python API imported successfully")
+except ImportError as e:
     CALIBRE_AVAILABLE = False
-
-# Configure logging
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
-logger = logging.getLogger(__name__)
+    logger.warning(f"Calibre Python API not available: {e}")
 
 
 def convert_epub_to_mobi_python_api(epub_path, mobi_path, book_title, author):
@@ -33,6 +34,11 @@ def convert_epub_to_mobi_python_api(epub_path, mobi_path, book_title, author):
     """
     try:
         logger.info("Using Calibre Python API for conversion...")
+        
+        # Verify input file exists
+        if not os.path.exists(epub_path):
+            logger.error(f"EPUB file not found: {epub_path}")
+            return False
         
         # Set up conversion options
         options = {
@@ -43,13 +49,24 @@ def convert_epub_to_mobi_python_api(epub_path, mobi_path, book_title, author):
             'language': 'en'
         }
         
+        logger.info(f"Converting {epub_path} to {mobi_path}")
+        
         # Convert using Calibre Python API
         convert(epub_path, mobi_path, options)
-        logger.info("EPUB to MOBI conversion completed using Python API")
+        
+        # Verify output file was created
+        if not os.path.exists(mobi_path):
+            logger.error("MOBI file was not created by Calibre Python API")
+            return False
+        
+        file_size = os.path.getsize(mobi_path)
+        logger.info(f"EPUB to MOBI conversion completed using Python API. Output size: {file_size} bytes")
         return True
         
     except Exception as e:
         logger.error(f"Calibre Python API conversion failed: {e}")
+        import traceback
+        logger.debug(f"Full traceback: {traceback.format_exc()}")
         return False
 
 
@@ -179,16 +196,17 @@ def convert_csv_to_mobi(csv_path, output_path, book_title=None, author=None, inc
         logger.info("Step 3: Converting EPUB to MOBI using Calibre...")
         
         # Try Python API first if available
-        if CALIBRE_AVAILABLE:
+        calibre_available = CALIBRE_AVAILABLE
+        if calibre_available:
             logger.info("Calibre Python API is available, trying that first...")
             if convert_epub_to_mobi_python_api(epub_path, output_path, book_title, author):
                 logger.info("MOBI conversion completed successfully using Python API")
             else:
                 logger.warning("Python API failed, falling back to command line...")
-                CALIBRE_AVAILABLE = False  # Force fallback
+                calibre_available = False  # Force fallback
         
         # Fallback to command line if Python API failed or not available
-        if not CALIBRE_AVAILABLE:
+        if not calibre_available:
             logger.info("Using command line ebook-convert...")
             
             # Try to find ebook-convert
