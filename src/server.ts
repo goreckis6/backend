@@ -3258,32 +3258,47 @@ const convertCsvToMobiPython = async (
     if (stdout.trim().length > 0) console.log('Python stdout:', stdout.trim());
     if (stderr.trim().length > 0) console.warn('Python stderr:', stderr.trim());
 
-    // Check if output file was created
+    // Check if output file was created (either MOBI or HTML fallback)
     const outputExists = await fs.access(outputPath).then(() => true).catch(() => false);
-    if (!outputExists) {
+    const htmlOutputPath = outputPath.replace('.mobi', '.html');
+    const htmlOutputExists = await fs.access(htmlOutputPath).then(() => true).catch(() => false);
+    
+    if (!outputExists && !htmlOutputExists) {
       throw new Error(`Python MOBI script did not produce output file: ${outputPath}`);
     }
 
+    let actualOutputPath = outputPath;
+    let downloadName = `${sanitizedBase}.mobi`;
+    let mimeType = 'application/x-mobipocket-ebook';
+    
+    // Check if HTML fallback was created instead of MOBI
+    if (!outputExists && htmlOutputExists) {
+      actualOutputPath = htmlOutputPath;
+      downloadName = `${sanitizedBase}.html`;
+      mimeType = 'text/html';
+      console.log('Using HTML fallback file (Calibre not available)');
+    }
+
     // Read output file
-    const outputBuffer = await fs.readFile(outputPath);
+    const outputBuffer = await fs.readFile(actualOutputPath);
     if (!outputBuffer || outputBuffer.length === 0) {
       throw new Error('Python MOBI script produced empty output file');
     }
 
-    const downloadName = `${sanitizedBase}.mobi`;
     console.log(`CSV->MOBI conversion successful:`, { 
       filename: downloadName, 
-      size: outputBuffer.length
+      size: outputBuffer.length,
+      format: mimeType === 'text/html' ? 'HTML (fallback)' : 'MOBI'
     });
 
     if (persistToDisk) {
-      return await persistOutputBuffer(outputBuffer, downloadName, 'application/x-mobipocket-ebook');
+      return await persistOutputBuffer(outputBuffer, downloadName, mimeType);
     }
 
     return {
       buffer: outputBuffer,
       filename: downloadName,
-      mime: 'application/x-mobipocket-ebook'
+      mime: mimeType
     };
   } catch (error) {
     console.error(`CSV->MOBI conversion error:`, error);

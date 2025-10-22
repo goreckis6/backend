@@ -299,11 +299,49 @@ def convert_csv_to_mobi(csv_path, output_path, book_title=None, author=None, inc
                             calibre_files = [f for f in files if 'calibre' in f.lower() or 'ebook' in f.lower()]
                             if calibre_files:
                                 logger.info(f"Files in {debug_dir}: {calibre_files}")
+                            else:
+                                logger.info(f"Directory {debug_dir} exists but no calibre files found. All files: {files[:10]}...")  # Show first 10 files
                         except Exception as e:
                             logger.debug(f"Could not list {debug_dir}: {e}")
+                    else:
+                        logger.info(f"Directory {debug_dir} does not exist")
                 
                 logger.error("ebook-convert not found. Cannot convert to MOBI format.")
-                raise RuntimeError("ebook-convert not found. Please ensure Calibre is installed and available on the PATH.")
+                
+                # Fallback: Create HTML file instead of MOBI
+                logger.warning("Creating HTML fallback since Calibre is not available...")
+                html_output_path = output_path.replace('.mobi', '.html')
+                
+                # Copy the EPUB content to HTML (EPUB is basically HTML in a ZIP)
+                import zipfile
+                import shutil
+                
+                try:
+                    # Extract EPUB content to temporary directory
+                    with tempfile.TemporaryDirectory() as temp_dir:
+                        with zipfile.ZipFile(epub_path, 'r') as epub_zip:
+                            epub_zip.extractall(temp_dir)
+                        
+                        # Find the main HTML file
+                        html_files = []
+                        for root, dirs, files in os.walk(temp_dir):
+                            for file in files:
+                                if file.endswith('.xhtml') or file.endswith('.html'):
+                                    html_files.append(os.path.join(root, file))
+                        
+                        if html_files:
+                            # Use the first HTML file found
+                            main_html = html_files[0]
+                            shutil.copy2(main_html, html_output_path)
+                            logger.info(f"Created HTML fallback: {html_output_path}")
+                            print(f"Successfully converted {csv_path} to HTML (Calibre not available)")
+                            return True
+                        else:
+                            raise RuntimeError("No HTML content found in EPUB file")
+                            
+                except Exception as e:
+                    logger.error(f"HTML fallback failed: {e}")
+                    raise RuntimeError("ebook-convert not found and HTML fallback failed. Please ensure Calibre is installed and available on the PATH.")
             
             # Convert EPUB to MOBI
             convert_cmd = [
