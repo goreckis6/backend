@@ -219,9 +219,7 @@ def convert_csv_to_mobi(csv_path, output_path, book_title=None, author=None, inc
                 '/usr/bin/calibre-ebook-convert',
                 '/usr/local/bin/calibre-ebook-convert',
                 '/usr/bin/calibre',
-                '/usr/local/bin/calibre',
-                '/home/calibre/.local/bin/ebook-convert',
-                '/root/.local/bin/ebook-convert'
+                '/usr/local/bin/calibre'
             ]
             
             ebook_convert = None
@@ -293,7 +291,7 @@ def convert_csv_to_mobi(csv_path, output_path, book_title=None, author=None, inc
             if not ebook_convert:
                 # Debug: List what's available in common directories
                 logger.error("ebook-convert not found. Debugging system...")
-                debug_dirs = ['/opt/calibre', '/usr/bin', '/usr/local/bin', '/opt/calibre/bin', '/usr/share/calibre/bin']
+                debug_dirs = ['/usr/bin', '/usr/local/bin', '/opt/calibre/bin', '/usr/share/calibre/bin']
                 for debug_dir in debug_dirs:
                     if os.path.exists(debug_dir):
                         try:
@@ -309,76 +307,7 @@ def convert_csv_to_mobi(csv_path, output_path, book_title=None, author=None, inc
                         logger.info(f"Directory {debug_dir} does not exist")
                 
                 logger.error("ebook-convert not found. Cannot convert to MOBI format.")
-                
-                # Try to install Calibre if we have the necessary permissions
-                logger.info("Attempting to install Calibre...")
-                try:
-                    # Try to install Calibre using the official installer
-                    install_cmd = [
-                        'wget', '-nv', '-O-', 
-                        'https://download.calibre-ebook.com/linux-installer.sh'
-                    ]
-                    result = subprocess.run(install_cmd, capture_output=True, text=True, timeout=30)
-                    if result.returncode == 0:
-                        # Run the installer
-                        install_script = result.stdout
-                        install_result = subprocess.run(
-                            ['sh', '-c', f'echo "{install_script}" | sh /dev/stdin install_dir=/opt/calibre'],
-                            capture_output=True, text=True, timeout=120
-                        )
-                        if install_result.returncode == 0:
-                            logger.info("Calibre installed successfully, trying conversion again...")
-                            # Try to find ebook-convert again
-                            for path in ['/opt/calibre/ebook-convert', '/opt/calibre/bin/ebook-convert']:
-                                if os.path.exists(path):
-                                    ebook_convert = path
-                                    logger.info(f"Found ebook-convert after installation: {path}")
-                                    break
-                            
-                            if ebook_convert:
-                                # Continue with conversion
-                                convert_cmd = [
-                                    ebook_convert,
-                                    epub_path,
-                                    output_path,
-                                    '--title', book_title,
-                                    '--authors', author,
-                                    '--language', 'en',
-                                    '--mobi-file-type', 'old',
-                                    '--disable-font-rescaling'
-                                ]
-                                
-                                logger.info(f"Running command: {' '.join(convert_cmd)}")
-                                result = subprocess.run(convert_cmd, capture_output=True, text=True, timeout=300)
-                                
-                                if result.returncode != 0:
-                                    logger.error(f"ebook-convert failed with return code {result.returncode}")
-                                    logger.error(f"stderr: {result.stderr}")
-                                    raise RuntimeError(f"ebook-convert failed: {result.stderr}")
-                                
-                                logger.info("MOBI conversion completed successfully after installation")
-                                # Clean up temporary EPUB file
-                                try:
-                                    os.unlink(epub_path)
-                                    logger.info("Cleaned up temporary EPUB file")
-                                except OSError:
-                                    logger.warning("Failed to clean up temporary EPUB file")
-                                
-                                # Verify output file was created
-                                if not os.path.exists(output_path):
-                                    raise RuntimeError("MOBI file was not created")
-                                
-                                file_size = os.path.getsize(output_path)
-                                logger.info(f"MOBI file created successfully: {output_path} ({file_size} bytes)")
-                                return True
-                        else:
-                            logger.error(f"Calibre installation failed: {install_result.stderr}")
-                    else:
-                        logger.error(f"Failed to download Calibre installer: {result.stderr}")
-                except Exception as e:
-                    logger.error(f"Failed to install Calibre: {e}")
-                
-                raise RuntimeError("ebook-convert not found and installation failed. Please ensure Calibre is installed and available on the PATH.")
+                raise RuntimeError("ebook-convert not found. Please ensure Calibre is installed and available on the PATH.")
             
             # Convert EPUB to MOBI
             convert_cmd = [
