@@ -183,7 +183,8 @@ def convert_csv_to_mobi(csv_path, output_path, book_title=None, author=None, inc
 </body>
 </html>"""
         
-        chapter.content = html_content
+        # Set chapter content - must be bytes, not string
+        chapter.content = html_content.encode('utf-8')
         book.add_item(chapter)
         
         # Create table of contents
