@@ -1,0 +1,46 @@
+MorphyIMG Backend - Changelog
+=============================
+
+Version 2.1.0 - 2024-12-19
+==========================
+
+CSV to EPUB Conversion Updates:
+- Implemented hybrid CSV to EPUB conversion approach
+- Added Calibre support for high-quality EPUB generation
+- Created manual EPUB construction as fallback
+- Enhanced error handling and logging
+
+Python Script Improvements:
+- Updated csv_to_epub_hybrid.py with dual approach
+- Added comprehensive error handling
+- Improved file validation and processing
+- Enhanced metadata extraction
+
+Server Updates:
+- Fixed CSV to EPUB routing in server.ts
+- Improved conversion endpoint handling
+- Enhanced error responses and logging
+- Updated Python script execution logic
+
+Dependencies Added:
+- jinja2 for template processing
+- calibre for professional EPUB conversion
+- Enhanced Python environment setup
+
+Bug Fixes:
+- Fixed file path issues in conversion scripts
+- Resolved routing problems for CSV conversions
+- Improved error handling in batch processing
+- Enhanced logging for debugging
+
+Performance Improvements:
+- Optimized CSV processing for large files
+- Improved memory usage in conversions
+- Enhanced parallel processing capabilities
+- Better resource management
+
+Deployment Ready:
+- All changes tested and verified
+- Docker configuration updated
+- GitHub Actions workflow enhanced
+- Production deployment ready
