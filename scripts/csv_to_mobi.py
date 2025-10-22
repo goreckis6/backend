@@ -17,6 +17,7 @@ import logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
+
 def convert_csv_to_mobi(csv_path, output_path, book_title=None, author=None, include_headers=True, chunk_size=1000):
     """
     Convert CSV file to MOBI format
@@ -198,11 +199,12 @@ def convert_csv_to_mobi(csv_path, output_path, book_title=None, author=None, inc
                 logger.debug(f"Error checking calibre installation: {e}")
         
         if not ebook_convert:
-            logger.warning("ebook-convert not found. Creating HTML file instead of MOBI...")
-            # Fallback: just copy the HTML file as the output
+            logger.warning("ebook-convert not found. Creating HTML file instead...")
+            # Fallback: create HTML file with .html extension
+            html_output_path = output_path.replace('.mobi', '.html')
             import shutil
-            shutil.copy2(html_path, output_path)
-            logger.info(f"Created HTML file as fallback: {output_path}")
+            shutil.copy2(html_path, html_output_path)
+            logger.info(f"Created HTML file as fallback: {html_output_path}")
             print(f"Successfully converted {csv_path} to HTML (Calibre not available)")
             return True
         
