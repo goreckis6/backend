@@ -10,6 +10,12 @@ CSV to EPUB Conversion Updates:
 - Created manual EPUB construction as fallback
 - Enhanced error handling and logging
 
+CSV to Markdown Conversion Updates:
+- Added robust CSV parsing with multiple delimiter detection
+- Enhanced error handling for malformed CSV files
+- Added fallback parsing methods for different encodings
+- Improved debugging for CSV parsing issues
+
 Python Script Improvements:
 - Updated csv_to_epub_hybrid.py with dual approach
 - Added comprehensive error handling
