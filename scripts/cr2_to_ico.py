@@ -126,6 +126,7 @@ def convert_cr2_to_ico(cr2_file, output_file, sizes=None, quality='high', use_or
         print(f"sizes parameter: {sizes}")
         
         # SIMPLIFIED LOGIC: Always use original size unless specific size is provided
+        print(f"DEBUG: Checking sizes - sizes={sizes}, len={len(sizes) if sizes else 0}")
         if sizes and len(sizes) > 0:
             # User selected a specific size (16, 32, 48, 64, 128, or 256)
             sizes_to_use = sizes
@@ -133,7 +134,7 @@ def convert_cr2_to_ico(cr2_file, output_file, sizes=None, quality='high', use_or
         else:
             # Default: use original image size
             sizes_to_use = [original_size_value]
-            print(f"✓ Using ORIGINAL image size: {original_width}x{original_height} -> {original_size_value}x{original_size_value}")
+            print(f"✓✓✓ USING ORIGINAL IMAGE SIZE: {original_width}x{original_height} -> {original_size_value}x{original_size_value} ✓✓✓")
         
         # Create multiple sizes for ICO
         print(f"Creating ICO with sizes: {sizes_to_use}")
