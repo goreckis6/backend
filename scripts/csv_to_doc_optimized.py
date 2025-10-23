@@ -59,7 +59,9 @@ def create_doc_from_csv_optimized(csv_file, output_file, title="CSV Data", autho
             chunksize=None,  # Read entire file at once for speed
             keep_default_na=False,  # Don't convert empty strings to NaN
             na_values=[],  # Don't treat any values as NaN
-            encoding='utf-8'  # Ensure proper encoding
+            encoding='utf-8',  # Ensure proper encoding
+            skip_blank_lines=False,  # Keep all rows including blank ones
+            skipinitialspace=False  # Don't remove leading spaces
         )
         
         print(f"CSV loaded: {len(df)} rows, {len(df.columns)} columns")
@@ -73,6 +75,9 @@ def create_doc_from_csv_optimized(csv_file, output_file, title="CSV Data", autho
         empty_rows = df.isnull().all(axis=1).sum()
         if empty_rows > 0:
             print(f"WARNING: Found {empty_rows} completely empty rows")
+        
+        # Note: We preserve ALL data including duplicates - no deduplication
+        print("✅ Data preservation mode: ALL rows and duplicates will be preserved")
         
         # Create DOCX document
         print("Creating optimized DOCX document...")
@@ -140,14 +145,16 @@ def create_doc_from_csv_optimized(csv_file, output_file, title="CSV Data", autho
                 
                 row_cells = table.rows[-1].cells
                 
-                # Process cells with data integrity
+                # Process cells with data integrity - preserve ALL data including duplicates
                 for i, value in enumerate(row):
-                    # Ensure we preserve the original data
+                    # Preserve the original data exactly as it appears in CSV
                     if pd.isna(value) or value is None:
                         cell_value = ""
                     else:
+                        # Keep the original string representation, don't modify it
                         cell_value = str(value)
                     
+                    # Set the cell text exactly as it appears in the original data
                     row_cells[i].text = cell_value
                     
                     # Skip styling for most rows to maximize speed

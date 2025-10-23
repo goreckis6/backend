@@ -12,7 +12,7 @@ from PIL import Image
 import rawpy
 import numpy as np
 
-def convert_cr2_to_ico(cr2_file, output_file, sizes=[16, 32, 48, 64, 128, 256], quality='high'):
+def convert_cr2_to_ico(cr2_file, output_file, sizes=None, quality='high', use_original_size=False):
     """
     Convert CR2 file to ICO format using rawpy and Pillow
     
@@ -28,6 +28,7 @@ def convert_cr2_to_ico(cr2_file, output_file, sizes=[16, 32, 48, 64, 128, 256], 
     print(f"Starting CR2 to ICO conversion...")
     print(f"Input: {cr2_file}")
     print(f"Output: {output_file}")
+    print(f"Use original size: {use_original_size}")
     print(f"Sizes: {sizes}")
     print(f"Quality: {quality}")
     
@@ -116,11 +117,27 @@ def convert_cr2_to_ico(cr2_file, output_file, sizes=[16, 32, 48, 64, 128, 256], 
             traceback.print_exc()
             return False
         
+        # Determine the output size
+        if use_original_size:
+            # Use the original image dimensions
+            original_width, original_height = pil_image.size
+            # For ICO, we'll use the larger dimension to maintain aspect ratio
+            output_size = max(original_width, original_height)
+            print(f"Using original size: {original_width}x{original_height} -> {output_size}x{output_size}")
+            sizes_to_use = [output_size]
+        else:
+            # Use provided sizes or default sizes
+            if sizes is None:
+                sizes_to_use = [16, 32, 48, 64, 128, 256]
+            else:
+                sizes_to_use = sizes
+            print(f"Using specified sizes: {sizes_to_use}")
+        
         # Create multiple sizes for ICO
-        print(f"Creating ICO with sizes: {sizes}")
+        print(f"Creating ICO with sizes: {sizes_to_use}")
         icon_images = []
         
-        for size in sizes:
+        for size in sizes_to_use:
             print(f"Creating {size}x{size} version...")
             resized = pil_image.resize((size, size), Image.Resampling.LANCZOS)
             icon_images.append(resized)
@@ -130,8 +147,8 @@ def convert_cr2_to_ico(cr2_file, output_file, sizes=[16, 32, 48, 64, 128, 256], 
         
         # Use a simpler approach - save as single size ICO first, then try multi-size
         try:
-            # Create a 32x32 version for the base ICO
-            base_size = 32
+            # Use the first (largest) size for the base ICO
+            base_size = sizes_to_use[0]
             base_image = pil_image.resize((base_size, base_size), Image.Resampling.LANCZOS)
             
             # Save as ICO - Pillow will handle the format
@@ -179,6 +196,8 @@ def main():
     parser.add_argument('output_file', help='Output ICO file path')
     parser.add_argument('--sizes', type=int, nargs='+', default=[16, 32, 48, 64, 128, 256],
                         help='Icon sizes to include (default: 16 32 48 64 128 256)')
+    parser.add_argument('--original-size', action='store_true',
+                        help='Use the original image size instead of predefined sizes')
     parser.add_argument('--quality', choices=['high', 'medium', 'low'], default='high',
                         help='Quality level (default: high)')
     
@@ -240,7 +259,8 @@ def main():
             args.cr2_file,
             args.output_file,
             sizes=args.sizes,
-            quality=args.quality
+            quality=args.quality,
+            use_original_size=args.original_size
         )
         
         if success:

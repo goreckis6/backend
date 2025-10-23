@@ -11827,7 +11827,18 @@ app.post('/convert/csv-to-doc/batch', uploadBatch, async (req, res) => {
 
 // Route: CSV to DOCX (Single)
 app.post('/convert/csv-to-docx/single', upload.single('file'), async (req, res) => {
+  // Set CORS headers
+  res.set({
+    'Access-Control-Allow-Origin': '*',
+    'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+    'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept'
+  });
+  
   console.log('CSV->DOCX single conversion request');
+  
+  // Set longer timeout for large CSV files (15 minutes)
+  req.setTimeout(15 * 60 * 1000);
+  res.setTimeout(15 * 60 * 1000);
   
   try {
     const file = req.file;
@@ -11841,20 +11852,39 @@ app.post('/convert/csv-to-docx/single', upload.single('file'), async (req, res) 
     res.set({
       'Content-Type': result.mime,
       'Content-Disposition': `attachment; filename="${result.filename}"`,
-      'Content-Length': result.buffer.length
+      'Content-Length': result.buffer.length,
+      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+      'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept'
     });
     
     res.send(result.buffer);
   } catch (error) {
     console.error('CSV->DOCX single error:', error);
     const message = error instanceof Error ? error.message : 'Unknown error';
+    res.set({
+      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+      'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept'
+    });
     res.status(500).json({ error: message });
   }
 });
 
 // Route: CSV to DOCX (Batch)
 app.post('/convert/csv-to-docx/batch', uploadBatch, async (req, res) => {
+  // Set CORS headers
+  res.set({
+    'Access-Control-Allow-Origin': '*',
+    'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+    'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept'
+  });
+  
   console.log('CSV->DOCX batch conversion request');
+  
+  // Set longer timeout for large CSV files (15 minutes)
+  req.setTimeout(15 * 60 * 1000);
+  res.setTimeout(15 * 60 * 1000);
   
   try {
     const files = req.files as Express.Multer.File[];
@@ -11887,6 +11917,11 @@ app.post('/convert/csv-to-docx/batch', uploadBatch, async (req, res) => {
   } catch (error) {
     console.error('CSV->DOCX batch error:', error);
     const message = error instanceof Error ? error.message : 'Unknown error';
+    res.set({
+      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+      'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept'
+    });
     res.status(500).json({ error: message });
   }
 });
@@ -13133,8 +13168,11 @@ app.post('/convert/cr2-to-ico/single', upload.single('file'), async (req, res) =
     }
 
     const pythonArgs = [scriptPath, inputPath, outputPath, '--quality', 'high'];
-    if (iconSize) {
+    if (iconSize && iconSize !== 'default') {
       pythonArgs.push('--sizes', iconSize.toString());
+    } else {
+      // Use original size when iconSize is 'default' or not provided
+      pythonArgs.push('--original-size');
     }
     const python = spawn('/opt/venv/bin/python', pythonArgs);
 
@@ -13252,8 +13290,11 @@ app.post('/convert/cr2-to-ico/batch', uploadBatch, async (req, res) => {
         }
 
         const pythonArgs = [scriptPath, inputPath, outputPath, '--quality', 'high'];
-        if (req.body.iconSize) {
+        if (req.body.iconSize && req.body.iconSize !== 'default') {
           pythonArgs.push('--sizes', req.body.iconSize.toString());
+        } else {
+          // Use original size when iconSize is 'default' or not provided
+          pythonArgs.push('--original-size');
         }
         const python = spawn('/opt/venv/bin/python', pythonArgs);
 

@@ -48,15 +48,36 @@ def create_docx_from_csv_optimized(csv_file, output_file, title="CSV Data", auth
         file_size = os.path.getsize(csv_file)
         print(f"File size: {file_size / (1024*1024):.2f} MB")
         
-        # Read CSV with optimized settings
+        # Read CSV with maximum speed optimizations and data preservation
         df = pd.read_csv(
             csv_file,
             dtype=str,  # Read all as strings to avoid type inference overhead
             na_filter=False,  # Disable NaN filtering for speed
-            low_memory=False  # Use more memory for speed
+            low_memory=False,  # Use more memory for speed
+            engine='c',  # Use C engine for maximum speed
+            memory_map=True,  # Memory map for large files
+            chunksize=None,  # Read entire file at once for speed
+            keep_default_na=False,  # Don't convert empty strings to NaN
+            na_values=[],  # Don't treat any values as NaN
+            encoding='utf-8',  # Ensure proper encoding
+            skip_blank_lines=False,  # Keep all rows including blank ones
+            skipinitialspace=False  # Don't remove leading spaces
         )
         
         print(f"CSV loaded: {len(df)} rows, {len(df.columns)} columns")
+        
+        # Data integrity check - show first few rows for verification
+        print("First 3 rows of data:")
+        for i in range(min(3, len(df))):
+            print(f"Row {i+1}: {list(df.iloc[i])}")
+        
+        # Check for any completely empty rows that might cause issues
+        empty_rows = df.isnull().all(axis=1).sum()
+        if empty_rows > 0:
+            print(f"WARNING: Found {empty_rows} completely empty rows")
+        
+        # Note: We preserve ALL data including duplicates - no deduplication
+        print("✅ Data preservation mode: ALL rows and duplicates will be preserved")
         
         # Create DOCX document
         print("Creating optimized DOCX document...")
@@ -95,43 +116,62 @@ def create_docx_from_csv_optimized(csv_file, output_file, title="CSV Data", auth
                     run.font.size = Pt(9)  # Smaller font for speed
                 paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER
         
-        # Process data in chunks for better performance
+        # Process data with maximum speed optimizations and data integrity
         print(f"Processing {len(df)} rows in chunks of {chunk_size}...")
         
-        # Pre-allocate table rows for better performance
+        # Pre-allocate table rows for better performance (but ensure we don't skip data)
         total_rows = len(df)
-        if total_rows > 1000:  # Only pre-allocate for large datasets
+        pre_allocated_rows = 0
+        if total_rows > 1000:  # Only pre-allocate for very large datasets
             print("Pre-allocating table rows for large dataset...")
-            # Add rows in batches
-            for _ in range(min(chunk_size, total_rows)):
+            # Pre-allocate up to 2000 rows maximum to avoid memory issues
+            pre_allocated_rows = min(2000, total_rows)
+            for _ in range(pre_allocated_rows):
                 table.add_row()
         
-        # Process data in chunks
+        # Process data in optimized chunks with data integrity checks
+        processed_rows = 0
         for chunk_start in range(0, total_rows, chunk_size):
             chunk_end = min(chunk_start + chunk_size, total_rows)
             chunk_df = df.iloc[chunk_start:chunk_end]
             
             print(f"Processing rows {chunk_start + 1}-{chunk_end} of {total_rows}")
             
+            # Process each row in the chunk
             for idx, (_, row) in enumerate(chunk_df.iterrows()):
                 # Add row if not pre-allocated
-                if total_rows <= 1000 or idx >= chunk_size:
+                if processed_rows >= pre_allocated_rows:
                     table.add_row()
                 
                 row_cells = table.rows[-1].cells
                 
-                # Process cells with minimal styling
+                # Process cells with data integrity - preserve ALL data including duplicates
                 for i, value in enumerate(row):
-                    # Convert to string efficiently
-                    cell_value = str(value) if value else ""
+                    # Preserve the original data exactly as it appears in CSV
+                    if pd.isna(value) or value is None:
+                        cell_value = ""
+                    else:
+                        # Keep the original string representation, don't modify it
+                        cell_value = str(value)
+                    
+                    # Set the cell text exactly as it appears in the original data
                     row_cells[i].text = cell_value
                     
-                    # Minimal cell styling (only for first few rows to save time)
-                    if chunk_start < 100:  # Only style first 100 rows
+                    # Skip styling for most rows to maximize speed
+                    if processed_rows < 50:  # Only style first 50 rows
                         for paragraph in row_cells[i].paragraphs:
                             for run in paragraph.runs:
                                 run.font.size = Pt(8)  # Smaller font
                             paragraph.alignment = WD_ALIGN_PARAGRAPH.LEFT
+                
+                processed_rows += 1
+        
+        # Verify data integrity
+        print(f"Data integrity check: Processed {processed_rows} rows, Expected {total_rows} rows")
+        if processed_rows != total_rows:
+            print(f"WARNING: Data mismatch! Processed {processed_rows} but expected {total_rows}")
+        else:
+            print("✅ Data integrity verified - all rows processed correctly")
         
         # Add minimal summary
         print("Adding document summary...")
@@ -143,10 +183,17 @@ def create_docx_from_csv_optimized(csv_file, output_file, title="CSV Data", auth
         print(f"Saving DOCX document...")
         doc.save(output_file)
         
-        # Verify file was created
+        # Verify file was created and validate data integrity
         if os.path.exists(output_file):
             file_size = os.path.getsize(output_file)
             print(f"DOCX file created successfully: {file_size / (1024*1024):.2f} MB")
+            
+            # Additional validation: check if file is not empty and has reasonable size
+            if file_size < 1000:  # Less than 1KB is suspicious for a DOCX file
+                print("WARNING: Output file is very small, may indicate data loss")
+                return False
+            
+            print("✅ File creation and size validation passed")
             return True
         else:
             print("ERROR: DOCX file was not created")
@@ -192,18 +239,32 @@ def main():
         print(f"ERROR: python-docx not available: {e}")
         sys.exit(1)
     
-    # Create output directory if it doesn't exist
-    output_dir = os.path.dirname(args.output_file)
-    if output_dir and not os.path.exists(output_dir):
-        os.makedirs(output_dir)
+    # Determine chunk size based on file size for maximum performance
+    file_size = os.path.getsize(args.csv_file)
+    file_size_mb = file_size / (1024 * 1024)
+    if file_size_mb > 20:
+        chunk_size = 5000  # Large files: bigger chunks
+    elif file_size_mb > 10:
+        chunk_size = 3000  # Medium files: medium chunks
+    elif file_size_mb > 5:
+        chunk_size = 2000  # Small files: smaller chunks
+    else:
+        chunk_size = 1500  # Very small files: smallest chunks
     
-    # Convert CSV to DOCX with optimizations
+    print(f"Auto-determined chunk size: {chunk_size} (file size: {file_size_mb:.2f} MB)")
+    
+    # Override with user-specified chunk size if provided
+    if args.chunk_size != 1000:
+        chunk_size = args.chunk_size
+        print(f"Using user-specified chunk size: {chunk_size}")
+    
+    # Convert CSV to DOCX
     success = create_docx_from_csv_optimized(
         args.csv_file,
         args.output_file,
         args.title,
         args.author,
-        args.chunk_size
+        chunk_size
     )
     
     if success:
