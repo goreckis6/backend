@@ -211,6 +211,8 @@ def main():
     print(f"Python version: {sys.version}")
     print(f"Working directory: {os.getcwd()}")
     print(f"Arguments: {vars(args)}")
+    print(f"Original size flag: {args.original_size}")
+    print(f"Sizes provided: {args.sizes}")
     
     # Check if input file exists
     if not os.path.exists(args.cr2_file):

@@ -13151,7 +13151,8 @@ app.post('/convert/cr2-to-ico/single', upload.single('file'), async (req, res) =
 
     // Get icon size from request body (use original size if not specified)
     const iconSize = req.body.iconSize;
-    console.log('CR2 to ICO: Icon size:', iconSize || 'original size');
+    console.log('CR2 to ICO: Icon size received:', iconSize, 'Type:', typeof iconSize);
+    console.log('CR2 to ICO: Icon size check (iconSize !== "default"):', iconSize !== 'default');
 
     const scriptPath = path.join(__dirname, '..', 'scripts', 'cr2_to_ico.py');
     console.log('CR2 to ICO: Executing Python script:', scriptPath);
@@ -13290,11 +13291,15 @@ app.post('/convert/cr2-to-ico/batch', uploadBatch, async (req, res) => {
         }
 
         const pythonArgs = [scriptPath, inputPath, outputPath, '--quality', 'high'];
+        console.log('CR2 to ICO batch: Icon size received:', req.body.iconSize, 'Type:', typeof req.body.iconSize);
+        console.log('CR2 to ICO batch: Icon size check (iconSize !== "default"):', req.body.iconSize !== 'default');
         if (req.body.iconSize && req.body.iconSize !== 'default') {
           pythonArgs.push('--sizes', req.body.iconSize.toString());
+          console.log('CR2 to ICO batch: Using custom size:', req.body.iconSize);
         } else {
           // Use original size when iconSize is 'default' or not provided
           pythonArgs.push('--original-size');
+          console.log('CR2 to ICO batch: Using original size');
         }
         const python = spawn('/opt/venv/bin/python', pythonArgs);
 
