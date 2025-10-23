@@ -13097,7 +13097,7 @@ app.post('/convert/cr2-to-ico/single', upload.single('file'), async (req, res) =
       scriptPath,
       inputPath,
       outputPath,
-      '--quality', '95'
+      '--quality', 'high'
     ]);
 
     let stdout = '';
@@ -13217,7 +13217,7 @@ app.post('/convert/cr2-to-ico/batch', uploadBatch, async (req, res) => {
           scriptPath,
           inputPath,
           outputPath,
-          '--quality', '95'
+          '--quality', 'high'
         ]);
 
         let stdout = '';
