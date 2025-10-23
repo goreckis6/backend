@@ -117,25 +117,18 @@ def convert_cr2_to_ico(cr2_file, output_file, sizes=None, quality='high', use_or
             traceback.print_exc()
             return False
         
-        # Determine the output size
-        if use_original_size:
+        # Determine the output size - ALWAYS use original size by default
+        original_width, original_height = pil_image.size
+        output_size = max(original_width, original_height)
+        
+        if use_original_size or sizes is None:
             # Use the original image dimensions
-            original_width, original_height = pil_image.size
-            # For ICO, we'll use the larger dimension to maintain aspect ratio
-            output_size = max(original_width, original_height)
-            print(f"Using original size: {original_width}x{original_height} -> {output_size}x{output_size}")
             sizes_to_use = [output_size]
+            print(f"Using original size: {original_width}x{original_height} -> {output_size}x{output_size}")
         else:
-            # Use provided sizes or default sizes
-            if sizes is None:
-                # Use original size as default instead of hardcoded sizes
-                original_width, original_height = pil_image.size
-                output_size = max(original_width, original_height)
-                sizes_to_use = [output_size]
-                print(f"Using original size as default: {original_width}x{original_height} -> {output_size}x{output_size}")
-            else:
-                sizes_to_use = sizes
-                print(f"Using specified sizes: {sizes_to_use}")
+            # Use provided sizes
+            sizes_to_use = sizes
+            print(f"Using specified sizes: {sizes_to_use}")
         
         # Create multiple sizes for ICO
         print(f"Creating ICO with sizes: {sizes_to_use}")
