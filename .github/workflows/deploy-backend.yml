@@ -1,1 +1,236 @@
+name: Deploy Backend
 
+on:
+push:
+branches: [main]
+
+permissions:
+contents: read
+packages: write
+
+jobs:
+deploy:
+runs-on: ubuntu-latest
+
+steps:
+- name: Checkout repository
+uses: actions/checkout@v4
+
+- name: Test SSH Connection
+uses: appleboy/ssh-action@v1.0.3
+with:
+host: ${{ secrets.BACKEND_VPS_HOST }}
+username: ${{ secrets.BACKEND_VPS_USERNAME }}
+key: ${{ secrets.BACKEND_VPS_SSH_KEY }}
+script: |
+           echo "✅ Testing SSH connection..."
+           hostname
+           whoami
+           uptime
+           echo "✅ SSH connection successful!"
+
+     - name: Deploy to VPS
+uses: appleboy/ssh-action@v1.0.3
+with:
+host: ${{ secrets.BACKEND_VPS_HOST }}
+username: ${{ secrets.BACKEND_VPS_USERNAME }}
+key: ${{ secrets.BACKEND_VPS_SSH_KEY }}
+script: |
+           set -euo pipefail
+           
+           echo "🚀 Starting deployment..."
+           
+           # Define paths
+           BACKEND_DIR="/opt/backend"
+           VENV_DIR="/opt/venv"
+           
+           # Navigate to backend directory
+           cd $BACKEND_DIR
+           
+           # Pull latest changes
+           echo "📥 Pulling latest changes from GitHub..."
+           git fetch origin main
+           git reset --hard origin/main
+           git clean -fd
+           
+           # Clear Node.js cache and old builds
+           echo "🧹 Cleaning cache and old builds..."
+           rm -rf node_modules/.cache
+           rm -rf dist
+           rm -rf .npm
+           npm cache clean --force
+           
+           # Install/Update Node.js dependencies (fresh install)
+           echo "📦 Installing Node.js dependencies..."
+           npm ci --production=false
+           
+           # Build application
+           echo "🔨 Building application..."
+           npm run build
+           
+           # Setup Python environment (only if not exists or needs update)
+           if [ ! -d "$VENV_DIR" ] || [ ! -f "$VENV_DIR/bin/python" ]; then
+             echo "🐍 Setting up Python virtual environment..."
+             
+             # Install system dependencies
+             sudo apt update -qq
+             sudo apt install -y \
+               python3 python3-pip python3-venv python3-dev \
+               libjpeg-dev libpng-dev libtiff-dev libraw-dev \
+               build-essential libffi-dev
+             
+             # Create virtual environment
+             sudo mkdir -p $VENV_DIR
+             sudo chown -R debian:debian $VENV_DIR
+             python3 -m venv $VENV_DIR
+             
+            # Install Python packages
+            $VENV_DIR/bin/pip install --upgrade pip
+            $VENV_DIR/bin/pip install Pillow rawpy odfpy
+           else
+             echo "✅ Python environment already exists, skipping setup..."
+           fi
+           
+            # Verify Python environment
+            echo "🔍 Verifying Python environment..."
+            $VENV_DIR/bin/python --version
+            if $VENV_DIR/bin/python -c "import rawpy, PIL, odfpy; print('✅ Python packages OK')"; then
+              echo "✅ Python environment verified successfully"
+            else
+              echo "⚠️ Warning: Python packages verification failed"
+              # Reinstall packages
+              $VENV_DIR/bin/pip install --upgrade --force-reinstall Pillow rawpy odfpy
+            fi
+           
+           # Clear PM2 logs and dump before restart
+           echo "🧹 Clearing PM2 logs and cache..."
+           pm2 flush  # Clear all logs
+           pm2 cleardump  # Clear PM2 dump file
+           
+           # Stop PM2 process completely (not reload)
+           echo "⏹️ Stopping PM2 process..."
+           pm2 stop morphy-backend 2>/dev/null || true
+           pm2 delete morphy-backend 2>/dev/null || true
+           
+           # Start fresh PM2 process
+           echo "▶️ Starting fresh PM2 process..."
+           pm2 start ecosystem.config.cjs
+           pm2 save --force
+           
+           # Restart Traefik with force-recreate
+           echo "🔄 Restarting Traefik..."
+           docker compose -f traefik-only.yml down
+           docker compose -f traefik-only.yml pull
+           docker compose -f traefik-only.yml up -d --force-recreate --remove-orphans
+           
+           # Wait for services to be ready
+           echo "⏳ Waiting for services to start..."
+           sleep 5
+           
+           # Health checks
+           echo "🏥 Running health checks..."
+           
+           # Check if backend is running on localhost
+           if curl -f -s http://localhost:3000/health > /dev/null; then
+             echo "✅ Backend is running on localhost:3000"
+           else
+             echo "❌ ERROR: Backend not accessible on localhost:3000"
+             pm2 logs morphy-backend --lines 50 --nostream
+             exit 1
+           fi
+           
+           # Check if Traefik routing is working
+           if curl -f -s https://api.morphyimg.com/health > /dev/null; then
+             echo "✅ Traefik routing is working (https://api.morphyimg.com)"
+           else
+             echo "⚠️ WARNING: Traefik routing may not be working yet (allow 30s for SSL)"
+           fi
+           
+           # Check Python environment in running app
+           echo "🐍 Testing Python in running application..."
+           if $VENV_DIR/bin/python -c "import rawpy; print('✅ rawpy OK')" 2>/dev/null; then
+             echo "✅ rawpy is working"
+           else
+             echo "⚠️ WARNING: rawpy may not be working"
+           fi
+           
+            if $VENV_DIR/bin/python -c "import PIL; print('✅ Pillow OK')" 2>/dev/null; then
+              echo "✅ Pillow is working"
+            else
+              echo "⚠️ WARNING: Pillow may not be working"
+            fi
+            
+            if $VENV_DIR/bin/python -c "import odfpy; print('✅ odfpy OK')" 2>/dev/null; then
+              echo "✅ odfpy is working"
+            else
+              echo "⚠️ WARNING: odfpy may not be working"
+            fi
+           
+           # Show status
+           echo ""
+           echo "📊 Deployment Status:"
+           echo "===================="
+           pm2 status
+           echo ""
+           docker compose -f traefik-only.yml ps
+           echo ""
+           echo "✅ Deployment completed successfully!"
+           echo "🌐 API: https://api.morphyimg.com"
+           echo "🏥 Health: https://api.morphyimg.com/health"
+
+     - name: Verify Deployment
+uses: appleboy/ssh-action@v1.0.3
+with:
+host: ${{ secrets.BACKEND_VPS_HOST }}
+username: ${{ secrets.BACKEND_VPS_USERNAME }}
+key: ${{ secrets.BACKEND_VPS_SSH_KEY }}
+script: |
+           echo "🔍 Final verification after 10 seconds..."
+           sleep 10
+           
+           # Test health endpoint
+            if curl -f -s https://api.morphyimg.com/health | grep -q "healthy"; then
+              echo "✅ Deployment verified: API is healthy"
+            echo "Testing health endpoint..."
+            HEALTH_RESPONSE=$(curl -f -s https://api.morphyimg.com/health 2>&1)
+            CURL_EXIT_CODE=$?
+            
+            if [ $CURL_EXIT_CODE -eq 0 ]; then
+              echo "✅ Deployment verified: API is responding"
+              echo "📋 Health response: $HEALTH_RESPONSE"
+           else
+              echo "❌ Deployment verification failed"
+              exit 1
+              echo "⚠️ External endpoint not ready yet (this is normal)"
+              echo "📋 Response: $HEALTH_RESPONSE"
+              echo "🔍 Checking localhost..."
+              if curl -s http://localhost:3000/health > /dev/null; then
+                echo "✅ Backend is running on localhost (Traefik may need more time for SSL)"
+              else
+                echo "❌ Backend not responding on localhost either"
+                exit 1
+              fi
+           fi
+
+      - name: Notify on Failure
+      - name: Show Logs on Failure
+if: failure()
+uses: appleboy/ssh-action@v1.0.3
+with:
+host: ${{ secrets.BACKEND_VPS_HOST }}
+username: ${{ secrets.BACKEND_VPS_USERNAME }}
+key: ${{ secrets.BACKEND_VPS_SSH_KEY }}
+script: |
+           echo "❌ Deployment failed! Checking logs..."
+            echo ""
+            echo "📋 PM2 Logs:"
+           pm2 logs morphy-backend --lines 100 --nostream
+            echo ""
+            echo "📊 PM2 Status:"
+           pm2 status
+            echo ""
+            echo "🐳 Docker Status:"
+            docker compose -f traefik-only.yml ps
+            echo ""
+            echo "🔍 Port 3000 Status:"
+            netstat -tlnp | grep :3000 || echo "Port 3000 not listening"
