@@ -9,34 +9,34 @@ contents: read
 packages: write
 
 jobs:
-deploy:
-runs-on: ubuntu-latest
+  deploy:
+    runs-on: ubuntu-latest
 
-steps:
-- name: Checkout repository
-uses: actions/checkout@v4
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
 
-- name: Test SSH Connection
-uses: appleboy/ssh-action@v1.0.3
-with:
-host: ${{ secrets.BACKEND_VPS_HOST }}
-username: ${{ secrets.BACKEND_VPS_USERNAME }}
-key: ${{ secrets.BACKEND_VPS_SSH_KEY }}
-script: |
-           echo "✅ Testing SSH connection..."
-           hostname
-           whoami
-           uptime
-           echo "✅ SSH connection successful!"
+    - name: Test SSH Connection
+      uses: appleboy/ssh-action@v1.0.3
+      with:
+        host: ${{ secrets.BACKEND_VPS_HOST }}
+        username: ${{ secrets.BACKEND_VPS_USERNAME }}
+        key: ${{ secrets.BACKEND_VPS_SSH_KEY }}
+        script: |
+          echo "✅ Testing SSH connection..."
+          hostname
+          whoami
+          uptime
+          echo "✅ SSH connection successful!"
 
-     - name: Deploy to VPS
-uses: appleboy/ssh-action@v1.0.3
-with:
-host: ${{ secrets.BACKEND_VPS_HOST }}
-username: ${{ secrets.BACKEND_VPS_USERNAME }}
-key: ${{ secrets.BACKEND_VPS_SSH_KEY }}
-script: |
-           set -euo pipefail
+    - name: Deploy to VPS
+      uses: appleboy/ssh-action@v1.0.3
+      with:
+        host: ${{ secrets.BACKEND_VPS_HOST }}
+        username: ${{ secrets.BACKEND_VPS_USERNAME }}
+        key: ${{ secrets.BACKEND_VPS_SSH_KEY }}
+        script: |
+          set -euo pipefail
            
            echo "🚀 Starting deployment..."
            
