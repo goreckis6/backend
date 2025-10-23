@@ -144,25 +144,28 @@ def convert_cr2_to_ico(cr2_file, output_file, sizes=None, quality='high', use_or
         
         # Create multiple sizes for ICO
         print(f"Creating ICO with sizes: {sizes_to_use}")
-        icon_images = []
         
-        for size in sizes_to_use:
-            print(f"Creating {size}x{size} version...")
-            resized = pil_image.resize((size, size), Image.Resampling.LANCZOS)
-            icon_images.append(resized)
+        # ICO format has a maximum size of 256x256 pixels
+        # If requested size is larger, we need to handle it differently
+        base_size = sizes_to_use[0]
         
-        # Save as ICO with multiple sizes
-        print("Saving ICO file...")
+        if base_size > 256:
+            print(f"⚠️  WARNING: Requested size {base_size}x{base_size} exceeds ICO format limit (256x256)")
+            print(f"⚠️  ICO format maximum size is 256x256 pixels")
+            print(f"⚠️  Creating ICO with maximum supported size: 256x256")
+            print(f"⚠️  Note: Original image is {pil_image.size[0]}x{pil_image.size[1]}")
+            base_size = 256
         
-        # Use a simpler approach - save as single size ICO first, then try multi-size
+        print(f"Creating {base_size}x{base_size} version...")
+        base_image = pil_image.resize((base_size, base_size), Image.Resampling.LANCZOS)
+        
+        # Save as ICO
+        print(f"Saving ICO file as {base_size}x{base_size}...")
+        
         try:
-            # Use the first (largest) size for the base ICO
-            base_size = sizes_to_use[0]
-            base_image = pil_image.resize((base_size, base_size), Image.Resampling.LANCZOS)
-            
             # Save as ICO - Pillow will handle the format
             base_image.save(output_file, format='ICO')
-            print(f"ICO saved successfully as {base_size}x{base_size}")
+            print(f"✅ ICO saved successfully as {base_size}x{base_size}")
             
         except Exception as save_error:
             print(f"Error saving ICO: {save_error}")
