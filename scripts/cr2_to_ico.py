@@ -117,24 +117,30 @@ def convert_cr2_to_ico(cr2_file, output_file, sizes=None, quality='high', use_or
             traceback.print_exc()
             return False
         
-        # Determine the output size - ALWAYS use original size by default
+        # Get original image dimensions
         original_width, original_height = pil_image.size
         original_size_value = max(original_width, original_height)
         
-        print(f"Original image dimensions: {original_width}x{original_height}")
+        print(f"=" * 80)
+        print(f"ORIGINAL IMAGE DIMENSIONS: {original_width} x {original_height}")
+        print(f"ORIGINAL SIZE VALUE (max): {original_size_value}")
         print(f"use_original_size flag: {use_original_size}")
         print(f"sizes parameter: {sizes}")
+        print(f"sizes type: {type(sizes)}")
+        print(f"=" * 80)
         
-        # SIMPLIFIED LOGIC: Always use original size unless specific size is provided
-        print(f"DEBUG: Checking sizes - sizes={sizes}, len={len(sizes) if sizes else 0}")
-        if sizes and len(sizes) > 0:
-            # User selected a specific size (16, 32, 48, 64, 128, or 256)
-            sizes_to_use = sizes
-            print(f"✓ Using user-specified sizes: {sizes_to_use}")
-        else:
-            # Default: use original image size
+        # FORCE ORIGINAL SIZE LOGIC: Use original size UNLESS a specific size is explicitly provided
+        # Check if sizes is None, empty list, or empty
+        if not sizes or (isinstance(sizes, list) and len(sizes) == 0):
+            # NO SIZES PROVIDED - USE ORIGINAL IMAGE SIZE
             sizes_to_use = [original_size_value]
-            print(f"✓✓✓ USING ORIGINAL IMAGE SIZE: {original_width}x{original_height} -> {original_size_value}x{original_size_value} ✓✓✓")
+            print(f"🎯 NO SIZES PROVIDED - USING ORIGINAL IMAGE SIZE: {original_size_value}x{original_size_value}")
+            print(f"=" * 80)
+        else:
+            # SPECIFIC SIZE PROVIDED - USE IT
+            sizes_to_use = sizes if isinstance(sizes, list) else [sizes]
+            print(f"📏 SPECIFIC SIZE PROVIDED - USING: {sizes_to_use}")
+            print(f"=" * 80)
         
         # Create multiple sizes for ICO
         print(f"Creating ICO with sizes: {sizes_to_use}")
@@ -197,7 +203,7 @@ def main():
     parser = argparse.ArgumentParser(description='Convert CR2 to ICO format')
     parser.add_argument('cr2_file', help='Input CR2 file path')
     parser.add_argument('output_file', help='Output ICO file path')
-    parser.add_argument('--sizes', type=int, nargs='+', default=None,
+    parser.add_argument('--sizes', type=int, nargs='*', default=None,
                         help='Icon sizes to include (default: use original image size)')
     parser.add_argument('--original-size', action='store_true',
                         help='Use the original image size instead of predefined sizes')
@@ -236,12 +242,14 @@ def main():
         print("Please install Pillow: pip install Pillow")
         sys.exit(1)
     
-    # Validate sizes (only if sizes are provided)
-    if args.sizes:
+    # Validate sizes (only if sizes are provided and not empty)
+    if args.sizes and len(args.sizes) > 0:
         for size in args.sizes:
-            if size < 16 or size > 256:
-                print(f"ERROR: Icon size must be between 16 and 256, got: {size}")
+            if size < 16 or size > 10000:  # Allow larger sizes for original images
+                print(f"ERROR: Icon size must be between 16 and 10000, got: {size}")
                 sys.exit(1)
+    else:
+        print("✅ No sizes provided - will use original image size")
     
     # Create output directory if it doesn't exist
     output_dir = os.path.dirname(args.output_file)
