@@ -80,12 +80,43 @@ jobs:
           
           # Verify scripts are in place
           echo "🔍 Verifying Python scripts..."
-          if [ -f "$BACKEND_DIR/scripts/csv_to_odp.py" ]; then
-            echo "✅ csv_to_odp.py found in $BACKEND_DIR/scripts/"
-          else
-            echo "❌ ERROR: csv_to_odp.py not found in $BACKEND_DIR/scripts/"
-            echo "📋 Available files in scripts directory:"
-            ls -la $BACKEND_DIR/scripts/ || echo "Scripts directory does not exist"
+          REQUIRED_SCRIPTS=(
+            "csv_to_odp.py"
+            "cr2_to_ico.py"
+            "cr2_to_webp.py"
+            "csv_to_doc.py"
+            "csv_to_doc_optimized.py"
+            "csv_to_docx.py"
+            "csv_to_docx_optimized.py"
+            "csv_to_epub.py"
+            "csv_to_html.py"
+            "csv_to_md.py"
+            "csv_to_mobi.py"
+          )
+          
+          for script in "${REQUIRED_SCRIPTS[@]}"; do
+            if [ -f "$BACKEND_DIR/scripts/$script" ]; then
+              echo "✅ $script found in $BACKEND_DIR/scripts/"
+            else
+              echo "❌ ERROR: $script not found in $BACKEND_DIR/scripts/"
+            fi
+          done
+          
+          echo "📋 All available files in scripts directory:"
+          ls -la $BACKEND_DIR/scripts/ || echo "Scripts directory does not exist"
+          
+          # Check if any required scripts are missing
+          MISSING_SCRIPTS=()
+          for script in "${REQUIRED_SCRIPTS[@]}"; do
+            if [ ! -f "$BACKEND_DIR/scripts/$script" ]; then
+              MISSING_SCRIPTS+=("$script")
+            fi
+          done
+          
+          if [ ${#MISSING_SCRIPTS[@]} -gt 0 ]; then
+            echo "❌ CRITICAL ERROR: Missing required scripts: ${MISSING_SCRIPTS[*]}"
+            echo "🔧 Attempting to copy scripts again..."
+            rsync -av --delete scripts/ $BACKEND_DIR/scripts/ || echo "⚠️ Failed to copy scripts again"
             exit 1
           fi
           
@@ -190,11 +221,19 @@ jobs:
                  
                  # Verify script paths are accessible
                  echo "📁 Verifying script paths..."
-                 if [ -f "$BACKEND_DIR/scripts/csv_to_odp.py" ]; then
-                   echo "✅ $BACKEND_DIR/scripts/csv_to_odp.py is accessible"
-                 else
-                   echo "❌ ERROR: $BACKEND_DIR/scripts/csv_to_odp.py not accessible"
-                 fi
+                 for script in "${REQUIRED_SCRIPTS[@]}"; do
+                   if [ -f "$BACKEND_DIR/scripts/$script" ]; then
+                     echo "✅ $BACKEND_DIR/scripts/$script is accessible"
+                     # Test if script can be executed (check syntax)
+                     if $VENV_DIR/bin/python -m py_compile "$BACKEND_DIR/scripts/$script" 2>/dev/null; then
+                       echo "✅ $script syntax is valid"
+                     else
+                       echo "⚠️ WARNING: $script has syntax errors"
+                     fi
+                   else
+                     echo "❌ ERROR: $BACKEND_DIR/scripts/$script not accessible"
+                   fi
+                 done
                  
                  # Show status
           echo ""

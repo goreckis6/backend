@@ -12389,7 +12389,7 @@ app.post('/convert/avro-to-json/single', upload.single('file'), async (req, res)
 
     await fs.writeFile(inputPath, file.buffer);
 
-    const scriptPath = path.join(__dirname, '../scripts/avro_to_json.py');
+    const scriptPath = path.join(__dirname, '..', 'scripts', 'avro_to_json.py');
     console.log('AVRO to JSON: Executing Python script:', scriptPath);
     console.log('AVRO to JSON: Input file:', inputPath);
     console.log('AVRO to JSON: Output file:', outputPath);
@@ -12477,7 +12477,7 @@ app.post('/convert/avro-to-json/batch', uploadBatch, async (req, res) => {
         await fs.writeFile(inputPath, file.buffer);
 
         const python = spawn('/opt/venv/bin/python', [
-          path.join(__dirname, '../scripts/avro_to_json.py'),
+          path.join(__dirname, '..', 'scripts',avro_to_json.py'),
           inputPath,
           outputPath
         ]);
@@ -12539,7 +12539,7 @@ app.post('/convert/avro-to-ndjson/single', upload.single('file'), async (req, re
 
     await fs.writeFile(inputPath, file.buffer);
 
-    const scriptPath = path.join(__dirname, '../scripts/avro_to_ndjson.py');
+    const scriptPath = path.join(__dirname, '..', 'scripts', 'avro_to_ndjson.py');
     console.log('AVRO to NDJSON: Executing Python script:', scriptPath);
     console.log('AVRO to NDJSON: Input file:', inputPath);
     console.log('AVRO to NDJSON: Output file:', outputPath);
@@ -12627,7 +12627,7 @@ app.post('/convert/avro-to-ndjson/batch', uploadBatch, async (req, res) => {
         await fs.writeFile(inputPath, file.buffer);
 
         const python = spawn('/opt/venv/bin/python', [
-          path.join(__dirname, '../scripts/avro_to_ndjson.py'),
+          path.join(__dirname, '..', 'scripts',avro_to_ndjson.py'),
           inputPath,
           outputPath
         ]);
@@ -12689,7 +12689,7 @@ app.post('/convert/csv-to-avro/single', upload.single('file'), async (req, res) 
 
     await fs.writeFile(inputPath, file.buffer);
 
-    const scriptPath = path.join(__dirname, '../scripts/csv_to_avro.py');
+    const scriptPath = path.join(__dirname, '..', 'scripts',csv_to_avro.py');
     console.log('CSV to AVRO: Executing Python script:', scriptPath);
     console.log('CSV to AVRO: Input file:', inputPath);
     console.log('CSV to AVRO: Output file:', outputPath);
@@ -12777,7 +12777,7 @@ app.post('/convert/csv-to-avro/batch', uploadBatch, async (req, res) => {
         await fs.writeFile(inputPath, file.buffer);
 
         const python = spawn('/opt/venv/bin/python', [
-          path.join(__dirname, '../scripts/csv_to_avro.py'),
+          path.join(__dirname, '..', 'scripts',csv_to_avro.py'),
           inputPath,
           outputPath
         ]);
@@ -12841,7 +12841,7 @@ app.post('/convert/bmp-to-webp/single', upload.single('file'), async (req, res) 
 
     await fs.writeFile(inputPath, file.buffer);
 
-    const scriptPath = path.join(__dirname, '../scripts/bmp_to_webp.py');
+    const scriptPath = path.join(__dirname, '..', 'scripts',bmp_to_webp.py');
     console.log('BMP to WebP: Executing Python script:', scriptPath);
     console.log('BMP to WebP: Input file:', inputPath);
     console.log('BMP to WebP: Output file:', outputPath);
@@ -12930,7 +12930,7 @@ app.post('/convert/bmp-to-webp/batch', uploadBatch, async (req, res) => {
 
         await fs.writeFile(inputPath, file.buffer);
 
-        const scriptPath = path.join(__dirname, '../scripts/bmp_to_webp.py');
+        const scriptPath = path.join(__dirname, '..', 'scripts',bmp_to_webp.py');
         console.log('BMP to WebP batch: Executing Python script:', scriptPath);
         console.log('BMP to WebP batch: Input file:', inputPath);
         console.log('BMP to WebP batch: Output file:', outputPath);
@@ -13031,6 +13031,13 @@ app.post('/convert/bmp-to-webp/batch', uploadBatch, async (req, res) => {
 
 // Route: CR2 to ICO (Single)
 app.post('/convert/cr2-to-ico/single', upload.single('file'), async (req, res) => {
+  // Set CORS headers
+  res.set({
+    'Access-Control-Allow-Origin': '*',
+    'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+    'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept'
+  });
+  
   console.log('CR2->ICO single conversion request');
 
   // Set longer timeout for CR2 processing (10 minutes)
@@ -13072,7 +13079,7 @@ app.post('/convert/cr2-to-ico/single', upload.single('file'), async (req, res) =
 
     await fs.writeFile(inputPath, file.buffer);
 
-    const scriptPath = path.join(__dirname, '../scripts/cr2_to_ico.py');
+    const scriptPath = path.join(__dirname, '..', 'scripts', 'cr2_to_ico.py');
     console.log('CR2 to ICO: Executing Python script:', scriptPath);
     console.log('CR2 to ICO: Input file:', inputPath);
     console.log('CR2 to ICO: Output file:', outputPath);
@@ -13159,6 +13166,13 @@ app.post('/convert/cr2-to-ico/single', upload.single('file'), async (req, res) =
 
 // Route: CR2 to ICO (Batch)
 app.post('/convert/cr2-to-ico/batch', uploadBatch, async (req, res) => {
+  // Set CORS headers
+  res.set({
+    'Access-Control-Allow-Origin': '*',
+    'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+    'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept'
+  });
+  
   console.log('CR2->ICO batch conversion request');
 
   const tmpDir = path.join(os.tmpdir(), `cr2-ico-batch-${Date.now()}`);
@@ -13179,7 +13193,7 @@ app.post('/convert/cr2-to-ico/batch', uploadBatch, async (req, res) => {
 
         await fs.writeFile(inputPath, file.buffer);
 
-        const scriptPath = path.join(__dirname, '../scripts/cr2_to_ico.py');
+        const scriptPath = path.join(__dirname, '..', 'scripts', 'cr2_to_ico.py');
         console.log('CR2 to ICO batch: Executing Python script:', scriptPath);
         console.log('CR2 to ICO batch: Input file:', inputPath);
         console.log('CR2 to ICO batch: Output file:', outputPath);
@@ -13321,7 +13335,7 @@ app.post('/convert/cr2-to-webp/single', upload.single('file'), async (req, res) 
 
     await fs.writeFile(inputPath, file.buffer);
 
-    const scriptPath = path.join(__dirname, '../scripts/cr2_to_webp.py');
+    const scriptPath = path.join(__dirname, '..', 'scripts', 'cr2_to_webp.py');
     console.log('CR2 to WebP: Executing Python script:', scriptPath);
     console.log('CR2 to WebP: Input file:', inputPath);
     console.log('CR2 to WebP: Output file:', outputPath);
@@ -13408,6 +13422,13 @@ app.post('/convert/cr2-to-webp/single', upload.single('file'), async (req, res) 
 
 // Route: CR2 to WebP (Batch)
 app.post('/convert/cr2-to-webp/batch', uploadBatch, async (req, res) => {
+  // Set CORS headers
+  res.set({
+    'Access-Control-Allow-Origin': '*',
+    'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+    'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept'
+  });
+  
   console.log('CR2->WebP batch conversion request');
 
   const tmpDir = path.join(os.tmpdir(), `cr2-webp-batch-${Date.now()}`);
@@ -13428,7 +13449,7 @@ app.post('/convert/cr2-to-webp/batch', uploadBatch, async (req, res) => {
 
         await fs.writeFile(inputPath, file.buffer);
 
-        const scriptPath = path.join(__dirname, '../scripts/cr2_to_webp.py');
+        const scriptPath = path.join(__dirname, '..', 'scripts', 'cr2_to_webp.py');
         console.log('CR2 to WebP batch: Executing Python script:', scriptPath);
         console.log('CR2 to WebP batch: Input file:', inputPath);
         console.log('CR2 to WebP batch: Output file:', outputPath);
@@ -13521,6 +13542,11 @@ app.post('/convert/cr2-to-webp/batch', uploadBatch, async (req, res) => {
   } catch (error) {
     console.error('CR2 to WebP batch conversion error:', error);
     const message = error instanceof Error ? error.message : 'Unknown error';
+    res.set({
+      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+      'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept'
+    });
     res.status(500).json({ error: message });
   } finally {
     await fs.rm(tmpDir, { recursive: true, force: true }).catch(() => undefined);
