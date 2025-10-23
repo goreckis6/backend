@@ -13079,6 +13079,10 @@ app.post('/convert/cr2-to-ico/single', upload.single('file'), async (req, res) =
 
     await fs.writeFile(inputPath, file.buffer);
 
+    // Get icon size from request body (default to 64 for 1:1 square ICO)
+    const iconSize = req.body.iconSize || 64;
+    console.log('CR2 to ICO: Icon size:', iconSize);
+
     const scriptPath = path.join(__dirname, '..', 'scripts', 'cr2_to_ico.py');
     console.log('CR2 to ICO: Executing Python script:', scriptPath);
     console.log('CR2 to ICO: Input file:', inputPath);
@@ -13097,6 +13101,7 @@ app.post('/convert/cr2-to-ico/single', upload.single('file'), async (req, res) =
       scriptPath,
       inputPath,
       outputPath,
+      '--sizes', iconSize.toString(),
       '--quality', 'high'
     ]);
 
@@ -13217,6 +13222,7 @@ app.post('/convert/cr2-to-ico/batch', uploadBatch, async (req, res) => {
           scriptPath,
           inputPath,
           outputPath,
+          '--sizes', (req.body.iconSize || 64).toString(),
           '--quality', 'high'
         ]);
 
