@@ -12477,7 +12477,7 @@ app.post('/convert/avro-to-json/batch', uploadBatch, async (req, res) => {
         await fs.writeFile(inputPath, file.buffer);
 
         const python = spawn('/opt/venv/bin/python', [
-          path.join(__dirname, '..', 'scripts',avro_to_json.py'),
+          path.join(__dirname, '..', 'scripts', 'avro_to_json.py'),
           inputPath,
           outputPath
         ]);
@@ -12627,7 +12627,7 @@ app.post('/convert/avro-to-ndjson/batch', uploadBatch, async (req, res) => {
         await fs.writeFile(inputPath, file.buffer);
 
         const python = spawn('/opt/venv/bin/python', [
-          path.join(__dirname, '..', 'scripts',avro_to_ndjson.py'),
+          path.join(__dirname, '..', 'scripts', 'avro_to_ndjson.py'),
           inputPath,
           outputPath
         ]);
@@ -12689,7 +12689,7 @@ app.post('/convert/csv-to-avro/single', upload.single('file'), async (req, res) 
 
     await fs.writeFile(inputPath, file.buffer);
 
-    const scriptPath = path.join(__dirname, '..', 'scripts',csv_to_avro.py');
+    const scriptPath = path.join(__dirname, '..', 'scripts', 'csv_to_avro.py');
     console.log('CSV to AVRO: Executing Python script:', scriptPath);
     console.log('CSV to AVRO: Input file:', inputPath);
     console.log('CSV to AVRO: Output file:', outputPath);
@@ -12777,7 +12777,7 @@ app.post('/convert/csv-to-avro/batch', uploadBatch, async (req, res) => {
         await fs.writeFile(inputPath, file.buffer);
 
         const python = spawn('/opt/venv/bin/python', [
-          path.join(__dirname, '..', 'scripts',csv_to_avro.py'),
+          path.join(__dirname, '..', 'scripts', 'csv_to_avro.py'),
           inputPath,
           outputPath
         ]);
@@ -12841,7 +12841,7 @@ app.post('/convert/bmp-to-webp/single', upload.single('file'), async (req, res) 
 
     await fs.writeFile(inputPath, file.buffer);
 
-    const scriptPath = path.join(__dirname, '..', 'scripts',bmp_to_webp.py');
+    const scriptPath = path.join(__dirname, '..', 'scripts', 'bmp_to_webp.py');
     console.log('BMP to WebP: Executing Python script:', scriptPath);
     console.log('BMP to WebP: Input file:', inputPath);
     console.log('BMP to WebP: Output file:', outputPath);
@@ -12930,7 +12930,7 @@ app.post('/convert/bmp-to-webp/batch', uploadBatch, async (req, res) => {
 
         await fs.writeFile(inputPath, file.buffer);
 
-        const scriptPath = path.join(__dirname, '..', 'scripts',bmp_to_webp.py');
+        const scriptPath = path.join(__dirname, '..', 'scripts', 'bmp_to_webp.py');
         console.log('BMP to WebP batch: Executing Python script:', scriptPath);
         console.log('BMP to WebP batch: Input file:', inputPath);
         console.log('BMP to WebP batch: Output file:', outputPath);
