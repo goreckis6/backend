@@ -213,6 +213,7 @@ def main():
     print(f"Arguments: {vars(args)}")
     print(f"Original size flag: {args.original_size}")
     print(f"Sizes provided: {args.sizes}")
+    print(f"Command line args: {sys.argv}")
     
     # Check if input file exists
     if not os.path.exists(args.cr2_file):

@@ -13169,12 +13169,20 @@ app.post('/convert/cr2-to-ico/single', upload.single('file'), async (req, res) =
     }
 
     const pythonArgs = [scriptPath, inputPath, outputPath, '--quality', 'high'];
+    console.log('CR2 to ICO: Python args before size check:', pythonArgs);
+    console.log('CR2 to ICO: iconSize value:', iconSize, 'type:', typeof iconSize);
+    console.log('CR2 to ICO: iconSize !== "default":', iconSize !== 'default');
+    
     if (iconSize && iconSize !== 'default') {
       pythonArgs.push('--sizes', iconSize.toString());
+      console.log('CR2 to ICO: Added --sizes with value:', iconSize);
     } else {
       // Use original size when iconSize is 'default' or not provided
       pythonArgs.push('--original-size');
+      console.log('CR2 to ICO: Added --original-size flag');
     }
+    
+    console.log('CR2 to ICO: Final Python args:', pythonArgs);
     const python = spawn('/opt/venv/bin/python', pythonArgs);
 
     let stdout = '';
@@ -13291,16 +13299,20 @@ app.post('/convert/cr2-to-ico/batch', uploadBatch, async (req, res) => {
         }
 
         const pythonArgs = [scriptPath, inputPath, outputPath, '--quality', 'high'];
+        console.log('CR2 to ICO batch: Python args before size check:', pythonArgs);
         console.log('CR2 to ICO batch: Icon size received:', req.body.iconSize, 'Type:', typeof req.body.iconSize);
         console.log('CR2 to ICO batch: Icon size check (iconSize !== "default"):', req.body.iconSize !== 'default');
+        
         if (req.body.iconSize && req.body.iconSize !== 'default') {
           pythonArgs.push('--sizes', req.body.iconSize.toString());
-          console.log('CR2 to ICO batch: Using custom size:', req.body.iconSize);
+          console.log('CR2 to ICO batch: Added --sizes with value:', req.body.iconSize);
         } else {
           // Use original size when iconSize is 'default' or not provided
           pythonArgs.push('--original-size');
-          console.log('CR2 to ICO batch: Using original size');
+          console.log('CR2 to ICO batch: Added --original-size flag');
         }
+        
+        console.log('CR2 to ICO batch: Final Python args:', pythonArgs);
         const python = spawn('/opt/venv/bin/python', pythonArgs);
 
         let stdout = '';
