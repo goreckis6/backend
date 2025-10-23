@@ -3315,7 +3315,7 @@ const convertCsvToPdfPython = async (
     
     // Use Python script for PDF
     const pythonPath = '/opt/venv/bin/python3';
-    const scriptPath = path.join('/app/scripts/csv_to_pdf.py');
+    const scriptPath = path.join(__dirname, '..', 'scripts', 'csv_to_pdf.py');
     
     console.log('Python execution details:', {
       pythonPath,
@@ -3397,7 +3397,7 @@ const convertCsvToDocPython = async (
     
     // Use optimized Python script for DOC
     const pythonPath = '/opt/venv/bin/python3';
-    const scriptPath = path.join('/app/scripts/csv_to_doc_optimized.py');
+    const scriptPath = path.join(__dirname, '..', 'scripts', 'csv_to_doc_optimized.py');
     
     // Determine chunk size based on file size for optimal performance
     const fileSizeMB = file.buffer.length / (1024 * 1024);
@@ -3492,7 +3492,7 @@ const convertCsvToDocxPython = async (
     
     // Use optimized Python script for DOCX
     const pythonPath = '/opt/venv/bin/python3';
-    const scriptPath = path.join('/app/scripts/csv_to_docx_optimized.py');
+    const scriptPath = path.join(__dirname, '..', 'scripts', 'csv_to_docx_optimized.py');
     
     // Determine chunk size based on file size for optimal performance
     const fileSizeMB = file.buffer.length / (1024 * 1024);
@@ -3587,7 +3587,7 @@ const convertCsvToEpubPython = async (
     
     // Use Python script for EPUB
     const pythonPath = '/opt/venv/bin/python3';
-    const scriptPath = path.join('/app/scripts/csv_to_epub.py');
+    const scriptPath = path.join(__dirname, '..', 'scripts', 'csv_to_epub.py');
     
     // Determine chunk size based on file size for optimal performance
     const fileSizeMB = file.buffer.length / (1024 * 1024);
@@ -3682,7 +3682,7 @@ const convertCsvToPptPython = async (
     
     // Use Python script for PPT
     const pythonPath = '/opt/venv/bin/python3';
-    const scriptPath = path.join('/app/scripts/csv_to_ppt.py');
+    const scriptPath = path.join(__dirname, '..', 'scripts', 'csv_to_ppt.py');
     
     console.log('Python execution details:', {
       pythonPath,
@@ -3764,7 +3764,7 @@ const convertCsvToPptxPython = async (
     
     // Use Python script for PPTX
     const pythonPath = '/opt/venv/bin/python3';
-    const scriptPath = path.join('/app/scripts/csv_to_pptx.py');
+    const scriptPath = path.join(__dirname, '..', 'scripts', 'csv_to_pptx.py');
     
     console.log('Python execution details:', {
       pythonPath,
@@ -3846,7 +3846,7 @@ const convertCsvToRtfPython = async (
     
     // Use Python script for RTF
     const pythonPath = '/opt/venv/bin/python3';
-    const scriptPath = path.join('/app/scripts/csv_to_rtf.py');
+    const scriptPath = path.join(__dirname, '..', 'scripts', 'csv_to_rtf.py');
     
     console.log('Python execution details:', {
       pythonPath,
@@ -3927,7 +3927,7 @@ const convertCsvToTxtPython = async (
 
     // Use Python script for TXT
     const pythonPath = '/opt/venv/bin/python3';
-    const scriptPath = path.join('/app/scripts/csv_to_txt.py');
+    const scriptPath = path.join(__dirname, '..', 'scripts', 'csv_to_txt.py');
 
     console.log('Python execution details:', {
       pythonPath,
@@ -4008,7 +4008,7 @@ const convertCsvToXlsPython = async (
 
     // Use Python script for XLS
     const pythonPath = '/opt/venv/bin/python3';
-    const scriptPath = path.join('/app/scripts/csv_to_xls.py');
+    const scriptPath = path.join(__dirname, '..', 'scripts', 'csv_to_xls.py');
 
     console.log('Python execution details:', {
       pythonPath,
@@ -4090,7 +4090,7 @@ const convertCsvToEbookPython = async (
     // Prepare Python script arguments
     const pythonArgs = [
       'python3',
-      path.join('/app/scripts/csv_to_ebook.py'),
+      path.join(__dirname, '..', 'scripts', 'csv_to_ebook.py'),
       csvPath,
       outputPath,
       targetFormat,
@@ -4102,7 +4102,7 @@ const convertCsvToEbookPython = async (
 
     // Execute Python script using virtual environment
     const pythonPath = '/opt/venv/bin/python3';
-    const scriptPath = path.join('/app/scripts/csv_to_ebook.py');
+    const scriptPath = path.join(__dirname, '..', 'scripts', 'csv_to_ebook.py');
     
     console.log('Python execution details:', {
       pythonPath,
@@ -4249,7 +4249,7 @@ const convertCsvToHtmlPython = async (
     
     // Use Python script for HTML
     const pythonPath = '/opt/venv/bin/python3';
-    const scriptPath = path.join('/app/scripts/csv_to_html.py');
+    const scriptPath = path.join(__dirname, '..', 'scripts', 'csv_to_html.py');
     
     // Determine chunk size based on file size for optimal performance
     const fileSizeMB = file.buffer.length / (1024 * 1024);
@@ -5381,7 +5381,7 @@ const convertCsvToMdPython = async (
 
     // Use Python script for Markdown
     const pythonPath = '/opt/venv/bin/python3';
-    const scriptPath = path.join('/app/scripts/csv_to_md.py');
+    const scriptPath = path.join(__dirname, '..', 'scripts', 'csv_to_md.py');
 
     // Determine chunk size based on file size for optimal performance
     const fileSizeMB = file.buffer.length / (1024 * 1024);
@@ -5475,7 +5475,7 @@ const convertCsvToMobiPython = async (
 
     // Use Python script for MOBI
     const pythonPath = '/opt/venv/bin/python3';
-    const scriptPath = path.join('/app/scripts/csv_to_mobi.py');
+    const scriptPath = path.join(__dirname, '..', 'scripts', 'csv_to_mobi.py');
 
     // Determine chunk size based on file size for optimal performance
     const fileSizeMB = file.buffer.length / (1024 * 1024);
@@ -5571,7 +5571,7 @@ const convertCsvToOdpPython = async (
 
     // Use Python script for ODP
     const pythonPath = '/opt/venv/bin/python3';
-    const scriptPath = path.join('/app/scripts/csv_to_odp.py');
+    const scriptPath = path.join(__dirname, '..', 'scripts', 'csv_to_odp.py');
 
     // Determine chunk size based on file size for optimal performance
     const fileSizeMB = file.buffer.length / (1024 * 1024);

@@ -68,6 +68,27 @@ jobs:
           echo "🔨 Building application..."
           npm run build
           
+          # Ensure scripts directory exists and copy Python scripts
+          echo "📁 Setting up Python scripts directory..."
+          mkdir -p $BACKEND_DIR/scripts
+          rsync -av --delete scripts/ $BACKEND_DIR/scripts/ 2>/dev/null || echo "⚠️ No scripts directory found, creating empty one"
+          
+          # Ensure viewers directory exists and copy viewer scripts
+          echo "📁 Setting up viewers directory..."
+          mkdir -p $BACKEND_DIR/viewers
+          rsync -av --delete viewers/ $BACKEND_DIR/viewers/ 2>/dev/null || echo "⚠️ No viewers directory found, creating empty one"
+          
+          # Verify scripts are in place
+          echo "🔍 Verifying Python scripts..."
+          if [ -f "$BACKEND_DIR/scripts/csv_to_odp.py" ]; then
+            echo "✅ csv_to_odp.py found in $BACKEND_DIR/scripts/"
+          else
+            echo "❌ ERROR: csv_to_odp.py not found in $BACKEND_DIR/scripts/"
+            echo "📋 Available files in scripts directory:"
+            ls -la $BACKEND_DIR/scripts/ || echo "Scripts directory does not exist"
+            exit 1
+          fi
+          
           # Setup Python environment (only if not exists or needs update)
           if [ ! -d "$VENV_DIR" ] || [ ! -f "$VENV_DIR/bin/python" ]; then
             echo "🐍 Setting up Python virtual environment..."
@@ -112,10 +133,11 @@ jobs:
           pm2 stop morphy-backend 2>/dev/null || true
           pm2 delete morphy-backend 2>/dev/null || true
           
-          # Start fresh PM2 process
-          echo "▶️ Starting fresh PM2 process..."
-          pm2 start ecosystem.config.cjs
-          pm2 save --force
+                 # Start fresh PM2 process
+                 echo "▶️ Starting fresh PM2 process..."
+                 cd $BACKEND_DIR
+                 pm2 start ecosystem.config.cjs
+                 pm2 save --force
           
           # Restart Traefik with force-recreate
           echo "🔄 Restarting Traefik..."
@@ -146,27 +168,35 @@ jobs:
             echo "⚠️ WARNING: Traefik routing may not be working yet (allow 30s for SSL)"
           fi
           
-          # Check Python environment in running app
-          echo "🐍 Testing Python in running application..."
-          if $VENV_DIR/bin/python -c "import rawpy; print('✅ rawpy OK')" 2>/dev/null; then
-            echo "✅ rawpy is working"
-          else
-            echo "⚠️ WARNING: rawpy may not be working"
-          fi
-          
-          if $VENV_DIR/bin/python -c "import PIL; print('✅ Pillow OK')" 2>/dev/null; then
-            echo "✅ Pillow is working"
-          else
-            echo "⚠️ WARNING: Pillow may not be working"
-          fi
-          
-          if $VENV_DIR/bin/python -c "import odfpy; print('✅ odfpy OK')" 2>/dev/null; then
-            echo "✅ odfpy is working"
-          else
-            echo "⚠️ WARNING: odfpy may not be working"
-          fi
-          
-          # Show status
+                 # Check Python environment in running app
+                 echo "🐍 Testing Python in running application..."
+                 if $VENV_DIR/bin/python -c "import rawpy; print('✅ rawpy OK')" 2>/dev/null; then
+                   echo "✅ rawpy is working"
+                 else
+                   echo "⚠️ WARNING: rawpy may not be working"
+                 fi
+
+                 if $VENV_DIR/bin/python -c "import PIL; print('✅ Pillow OK')" 2>/dev/null; then
+                   echo "✅ Pillow is working"
+                 else
+                   echo "⚠️ WARNING: Pillow may not be working"
+                 fi
+
+                 if $VENV_DIR/bin/python -c "import odfpy; print('✅ odfpy OK')" 2>/dev/null; then
+                   echo "✅ odfpy is working"
+                 else
+                   echo "⚠️ WARNING: odfpy may not be working"
+                 fi
+                 
+                 # Verify script paths are accessible
+                 echo "📁 Verifying script paths..."
+                 if [ -f "$BACKEND_DIR/scripts/csv_to_odp.py" ]; then
+                   echo "✅ $BACKEND_DIR/scripts/csv_to_odp.py is accessible"
+                 else
+                   echo "❌ ERROR: $BACKEND_DIR/scripts/csv_to_odp.py not accessible"
+                 fi
+                 
+                 # Show status
           echo ""
           echo "📊 Deployment Status:"
           echo "===================="

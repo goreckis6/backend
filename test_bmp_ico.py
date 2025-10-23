@@ -5,7 +5,10 @@ Test script for BMP to ICO conversion
 
 import sys
 import os
-sys.path.append('/app/scripts')
+CURRENT_DIR = os.path.dirname(os.path.abspath(__file__))
+SCRIPTS_DIR = os.path.join(CURRENT_DIR, 'scripts')
+if SCRIPTS_DIR not in sys.path:
+    sys.path.append(SCRIPTS_DIR)
 
 from bmp_to_ico import create_ico_from_bmp
 
@@ -56,5 +59,6 @@ def test_bmp_conversion():
 if __name__ == "__main__":
     success = test_bmp_conversion()
     sys.exit(0 if success else 1)
+
 
 
