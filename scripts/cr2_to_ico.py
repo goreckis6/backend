@@ -128,10 +128,14 @@ def convert_cr2_to_ico(cr2_file, output_file, sizes=None, quality='high', use_or
         else:
             # Use provided sizes or default sizes
             if sizes is None:
-                sizes_to_use = [16, 32, 48, 64, 128, 256]
+                # Use original size as default instead of hardcoded sizes
+                original_width, original_height = pil_image.size
+                output_size = max(original_width, original_height)
+                sizes_to_use = [output_size]
+                print(f"Using original size as default: {original_width}x{original_height} -> {output_size}x{output_size}")
             else:
                 sizes_to_use = sizes
-            print(f"Using specified sizes: {sizes_to_use}")
+                print(f"Using specified sizes: {sizes_to_use}")
         
         # Create multiple sizes for ICO
         print(f"Creating ICO with sizes: {sizes_to_use}")
@@ -194,8 +198,8 @@ def main():
     parser = argparse.ArgumentParser(description='Convert CR2 to ICO format')
     parser.add_argument('cr2_file', help='Input CR2 file path')
     parser.add_argument('output_file', help='Output ICO file path')
-    parser.add_argument('--sizes', type=int, nargs='+', default=[16, 32, 48, 64, 128, 256],
-                        help='Icon sizes to include (default: 16 32 48 64 128 256)')
+    parser.add_argument('--sizes', type=int, nargs='+', default=None,
+                        help='Icon sizes to include (default: use original image size)')
     parser.add_argument('--original-size', action='store_true',
                         help='Use the original image size instead of predefined sizes')
     parser.add_argument('--quality', choices=['high', 'medium', 'low'], default='high',
@@ -230,11 +234,12 @@ def main():
         print("Please install Pillow: pip install Pillow")
         sys.exit(1)
     
-    # Validate sizes
-    for size in args.sizes:
-        if size < 16 or size > 256:
-            print(f"ERROR: Icon size must be between 16 and 256, got: {size}")
-            sys.exit(1)
+    # Validate sizes (only if sizes are provided)
+    if args.sizes:
+        for size in args.sizes:
+            if size < 16 or size > 256:
+                print(f"ERROR: Icon size must be between 16 and 256, got: {size}")
+                sys.exit(1)
     
     # Create output directory if it doesn't exist
     output_dir = os.path.dirname(args.output_file)
