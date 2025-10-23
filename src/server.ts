@@ -11726,7 +11726,18 @@ app.post('/convert/doc-to-epub/batch', uploadBatch, async (req, res) => {
 
 // Route: CSV to DOC (Single)
 app.post('/convert/csv-to-doc/single', upload.single('file'), async (req, res) => {
+  // Set CORS headers
+  res.set({
+    'Access-Control-Allow-Origin': '*',
+    'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+    'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept'
+  });
+  
   console.log('CSV->DOC single conversion request');
+  
+  // Set longer timeout for large CSV files (15 minutes)
+  req.setTimeout(15 * 60 * 1000);
+  res.setTimeout(15 * 60 * 1000);
   
   try {
     const file = req.file;
@@ -11740,20 +11751,39 @@ app.post('/convert/csv-to-doc/single', upload.single('file'), async (req, res) =
     res.set({
       'Content-Type': result.mime,
       'Content-Disposition': `attachment; filename="${result.filename}"`,
-      'Content-Length': result.buffer.length
+      'Content-Length': result.buffer.length,
+      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+      'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept'
     });
     
     res.send(result.buffer);
   } catch (error) {
     console.error('CSV->DOC single error:', error);
     const message = error instanceof Error ? error.message : 'Unknown error';
+    res.set({
+      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+      'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept'
+    });
     res.status(500).json({ error: message });
   }
 });
 
 // Route: CSV to DOC (Batch)
 app.post('/convert/csv-to-doc/batch', uploadBatch, async (req, res) => {
+  // Set CORS headers
+  res.set({
+    'Access-Control-Allow-Origin': '*',
+    'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+    'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept'
+  });
+  
   console.log('CSV->DOC batch conversion request');
+  
+  // Set longer timeout for large CSV files (15 minutes)
+  req.setTimeout(15 * 60 * 1000);
+  res.setTimeout(15 * 60 * 1000);
   
   try {
     const files = req.files as Express.Multer.File[];
@@ -11786,6 +11816,11 @@ app.post('/convert/csv-to-doc/batch', uploadBatch, async (req, res) => {
   } catch (error) {
     console.error('CSV->DOC batch error:', error);
     const message = error instanceof Error ? error.message : 'Unknown error';
+    res.set({
+      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+      'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept'
+    });
     res.status(500).json({ error: message });
   }
 });
@@ -13079,9 +13114,9 @@ app.post('/convert/cr2-to-ico/single', upload.single('file'), async (req, res) =
 
     await fs.writeFile(inputPath, file.buffer);
 
-    // Get icon size from request body (default to 64 for 1:1 square ICO)
-    const iconSize = req.body.iconSize || 64;
-    console.log('CR2 to ICO: Icon size:', iconSize);
+    // Get icon size from request body (use original size if not specified)
+    const iconSize = req.body.iconSize;
+    console.log('CR2 to ICO: Icon size:', iconSize || 'original size');
 
     const scriptPath = path.join(__dirname, '..', 'scripts', 'cr2_to_ico.py');
     console.log('CR2 to ICO: Executing Python script:', scriptPath);
@@ -13097,13 +13132,11 @@ app.post('/convert/cr2-to-ico/single', upload.single('file'), async (req, res) =
       return res.status(500).json({ error: 'Conversion script not found' });
     }
 
-    const python = spawn('/opt/venv/bin/python', [
-      scriptPath,
-      inputPath,
-      outputPath,
-      '--sizes', iconSize.toString(),
-      '--quality', 'high'
-    ]);
+    const pythonArgs = [scriptPath, inputPath, outputPath, '--quality', 'high'];
+    if (iconSize) {
+      pythonArgs.push('--sizes', iconSize.toString());
+    }
+    const python = spawn('/opt/venv/bin/python', pythonArgs);
 
     let stdout = '';
     let stderr = '';
@@ -13218,13 +13251,11 @@ app.post('/convert/cr2-to-ico/batch', uploadBatch, async (req, res) => {
           continue;
         }
 
-        const python = spawn('/opt/venv/bin/python', [
-          scriptPath,
-          inputPath,
-          outputPath,
-          '--sizes', (req.body.iconSize || 64).toString(),
-          '--quality', 'high'
-        ]);
+        const pythonArgs = [scriptPath, inputPath, outputPath, '--quality', 'high'];
+        if (req.body.iconSize) {
+          pythonArgs.push('--sizes', req.body.iconSize.toString());
+        }
+        const python = spawn('/opt/venv/bin/python', pythonArgs);
 
         let stdout = '';
         let stderr = '';
@@ -13809,10 +13840,10 @@ const server = app.listen(PORT, '0.0.0.0', () => {
   console.log('✅ Server started successfully');
 });
 
-// Increase timeout for large file processing (10 minutes for CR2/RAW files)
-server.timeout = 10 * 60 * 1000; // 10 minutes
-server.keepAliveTimeout = 10 * 60 * 1000; // 10 minutes
-server.headersTimeout = 10 * 60 * 1000 + 1000; // 10 minutes + 1 second
+// Increase timeout for large file processing (15 minutes for large CSV files)
+server.timeout = 15 * 60 * 1000; // 15 minutes
+server.keepAliveTimeout = 15 * 60 * 1000; // 15 minutes
+server.headersTimeout = 15 * 60 * 1000 + 1000; // 15 minutes + 1 second
 
 // Graceful shutdown
 const gracefulShutdown = (signal: string) => {
