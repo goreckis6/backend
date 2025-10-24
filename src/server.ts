@@ -13861,13 +13861,22 @@ app.post('/api/preview/tiff', upload.single('file'), async (req, res) => {
       // Try different Python commands and script paths
       const pythonCommands = ['python3', 'python'];
       const scriptPaths = [
+        path.join(process.cwd(), 'viewers', 'tiff_preview.py'),
         path.join(__dirname, '..', 'viewers', 'tiff_preview.py'),
         path.join(__dirname, '..', '..', 'viewers', 'tiff_preview.py'),
-        path.join(process.cwd(), 'viewers', 'tiff_preview.py')
+        path.join(__dirname, 'viewers', 'tiff_preview.py'),
+        '/opt/backend/viewers/tiff_preview.py'
       ];
       
       let success = false;
       let lastError = null;
+      
+      // Log all paths being checked
+      console.log('Checking for tiff_preview.py in the following locations:');
+      for (const scriptPath of scriptPaths) {
+        const exists = await fs.access(scriptPath).then(() => true).catch(() => false);
+        console.log(`  ${scriptPath} - ${exists ? 'EXISTS' : 'NOT FOUND'}`);
+      }
       
       for (const pythonCmd of pythonCommands) {
         for (const scriptPath of scriptPaths) {
@@ -13879,6 +13888,8 @@ app.post('/api/preview/tiff', upload.single('file'), async (req, res) => {
               console.log(`Script not found: ${scriptPath}`);
               continue;
             }
+            
+            console.log(`Script found! Executing: ${pythonCmd} ${scriptPath}`);
             
             const { stdout, stderr } = await execFileAsync(pythonCmd, [
               scriptPath,
