@@ -60,6 +60,11 @@ jobs:
           rm -rf .npm
           npm cache clean --force
           
+          # Force complete rebuild by removing any compiled files
+          echo "🧹 Force removing any compiled JavaScript files..."
+          find . -name "*.js" -path "./dist/*" -delete 2>/dev/null || true
+          find . -name "*.js.map" -delete 2>/dev/null || true
+          
           # Install/Update Node.js dependencies (fresh install)
           echo "📦 Installing Node.js dependencies..."
           npm ci --production=false
