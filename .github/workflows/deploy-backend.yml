@@ -303,6 +303,22 @@ jobs:
                    fi
                  done
                  
+                 # Verify viewers script paths are accessible
+                 echo "📁 Verifying viewers script paths..."
+                 for script in "${REQUIRED_VIEWERS_SCRIPTS[@]}"; do
+                   if [ -f "$BACKEND_DIR/viewers/$script" ]; then
+                     echo "✅ $BACKEND_DIR/viewers/$script is accessible"
+                     # Test if script can be executed (check syntax)
+                     if $VENV_DIR/bin/python -m py_compile "$BACKEND_DIR/viewers/$script" 2>/dev/null; then
+                       echo "✅ $script syntax is valid"
+                     else
+                       echo "⚠️ WARNING: $script has syntax errors"
+                     fi
+                   else
+                     echo "❌ ERROR: $BACKEND_DIR/viewers/$script not accessible"
+                   fi
+                 done
+                 
                  # Show status
           echo ""
           echo "📊 Deployment Status:"
