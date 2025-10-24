@@ -3374,7 +3374,7 @@ const convertCsvToPdfPython = async (
   }
 };
 
-// CSV to DOC converter using optimized Python script
+// CSV to DOC converter using Python (optimized)
 const convertCsvToDocPython = async (
   file: Express.Multer.File,
   options: Record<string, string | undefined> = {},
@@ -3469,15 +3469,17 @@ const convertCsvToDocPython = async (
   }
 };
 
-// CSV to DOCX converter using optimized Python script
-const convertCsvToDocxPython = async (
+
+
+// CSV to DOC converter using Python (optimized)
+const convertCsvToDocPython = async (
   file: Express.Multer.File,
   options: Record<string, string | undefined> = {},
   persistToDisk = false
 ): Promise<ConversionResult> => {
-  console.log(`=== CSV TO DOCX (Optimized Python) START ===`);
+  console.log(`=== CSV TO DOC (Python) START ===`);
   const startTime = Date.now();
-  const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'morphy-csv-docx-'));
+  const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'morphy-csv-doc-'));
   const originalBase = path.basename(file.originalname, path.extname(file.originalname));
   const sanitizedBase = sanitizeFilename(originalBase);
   const safeBase = `${sanitizedBase}_${randomUUID()}`;
@@ -3488,11 +3490,11 @@ const convertCsvToDocxPython = async (
     await fs.writeFile(csvPath, file.buffer);
 
     // Prepare output file
-    const outputPath = path.join(tmpDir, `${safeBase}.docx`);
+    const outputPath = path.join(tmpDir, `${safeBase}.doc`);
     
-    // Use optimized Python script for DOCX
+    // Use optimized Python script for DOC
     const pythonPath = '/opt/venv/bin/python3';
-    const scriptPath = path.join(__dirname, '..', 'scripts', 'csv_to_docx_optimized.py');
+    const scriptPath = path.join(__dirname, '..', 'scripts', 'csv_to_doc_optimized.py');
     
     // Determine chunk size based on file size for optimal performance
     const fileSizeMB = file.buffer.length / (1024 * 1024);
@@ -3528,13 +3530,101 @@ const convertCsvToDocxPython = async (
     // Check if output file was created
     const outputExists = await fs.access(outputPath).then(() => true).catch(() => false);
     if (!outputExists) {
-      throw new Error(`Optimized Python DOCX script did not produce output file: ${outputPath}`);
+      throw new Error(`Optimized Python DOC script did not produce output file: ${outputPath}`);
     }
 
     // Read output file
     const outputBuffer = await fs.readFile(outputPath);
     if (!outputBuffer || outputBuffer.length === 0) {
-      throw new Error('Optimized Python DOCX script produced empty output file');
+      throw new Error('Optimized Python DOC script produced empty output file');
+    }
+
+    const downloadName = `${sanitizedBase}.doc`;
+    const processingTime = Date.now() - startTime;
+    console.log(`CSV->DOC conversion successful:`, { 
+      filename: downloadName, 
+      size: outputBuffer.length,
+      processingTimeMs: processingTime,
+      processingTimeSec: (processingTime / 1000).toFixed(2)
+    });
+
+    if (persistToDisk) {
+      return await persistOutputBuffer(outputBuffer, downloadName, 'application/msword');
+    }
+
+    return {
+      buffer: outputBuffer,
+      filename: downloadName,
+      mime: 'application/msword'
+    };
+  } catch (error) {
+    console.error(`CSV->DOC conversion error:`, error);
+    const message = error instanceof Error ? error.message : `Unknown CSV->DOC error`;
+    throw new Error(`Failed to convert CSV to DOC: ${message}`);
+  } finally {
+    await fs.rm(tmpDir, { recursive: true, force: true }).catch(() => undefined);
+  }
+};
+
+// CSV to DOCX converter using Python
+const convertCsvToDocxPython = async (
+  file: Express.Multer.File,
+  options: Record<string, string | undefined> = {},
+  persistToDisk = false
+): Promise<ConversionResult> => {
+  console.log(`=== CSV TO DOCX (Python) START ===`);
+  const startTime = Date.now();
+  const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'morphy-csv-docx-'));
+  const originalBase = path.basename(file.originalname, path.extname(file.originalname));
+  const sanitizedBase = sanitizeFilename(originalBase);
+  const safeBase = `${sanitizedBase}_${randomUUID()}`;
+
+  try {
+    // Write CSV file to temp directory
+    const csvPath = path.join(tmpDir, `${safeBase}.csv`);
+    await fs.writeFile(csvPath, file.buffer);
+
+    // Prepare output file
+    const outputPath = path.join(tmpDir, `${safeBase}.docx`);
+    
+    // Use existing Python script for DOCX
+    const pythonPath = '/opt/venv/bin/python3';
+    const scriptPath = path.join(__dirname, '..', 'scripts', 'csv_to_docx.py');
+    
+    console.log('Python execution details:', {
+      pythonPath,
+      scriptPath,
+      csvPath,
+      outputPath,
+      title: options.title || sanitizedBase,
+      author: options.author || 'Unknown',
+      fileSize: file.buffer.length
+    });
+
+    const { stdout, stderr } = await execFileAsync(pythonPath, [
+      scriptPath,
+      csvPath,
+      outputPath,
+      '--title', options.title || sanitizedBase,
+      '--author', options.author || 'Unknown'
+    ], {
+      timeout: 300000, // 5 minutes timeout for large files
+      maxBuffer: 10 * 1024 * 1024 // 10MB buffer for large outputs
+    });
+
+    if (stdout.trim().length > 0) console.log('Python stdout:', stdout.trim());
+    if (stderr.trim().length > 0) console.warn('Python stderr:', stderr.trim());
+
+    // Check if output file was created
+    const outputExists = await fs.access(outputPath).then(() => true).catch(() => false);
+    if (!outputExists) {
+      throw new Error(`Python DOCX script did not produce output file: ${outputPath}`);
+    }
+
+    // Read output file
+    const outputBuffer = await fs.readFile(outputPath);
+    if (!outputBuffer || outputBuffer.length === 0) {
+      throw new Error('Python DOCX script produced empty output file');
     }
 
     const downloadName = `${sanitizedBase}.docx`;
@@ -6112,6 +6202,9 @@ app.post('/api/convert', conversionTimeout(5 * 60 * 1000), upload.single('file')
       } else if (!result && isCSV && targetFormat === 'doc') {
         console.log('Single: Routing to Python (CSV to DOC conversion)');
         result = await convertCsvToDocPython(file, requestOptions, true);
+      } else if (!result && isCSV && targetFormat === 'docx') {
+        console.log('Single: Routing to Python (CSV to DOCX conversion)');
+        result = await convertCsvToDocxPython(file, requestOptions, true);
       } else if (!result && isCSV && ['epub', 'html'].includes(targetFormat)) {
       console.log(`Single: Routing to Python (CSV to ${targetFormat.toUpperCase()} conversion)`);
       result = await convertCsvToEbookPython(file, targetFormat, requestOptions, true);
