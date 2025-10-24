@@ -7297,7 +7297,24 @@ app.post('/api/preview/odt', uploadDocument.single('file'), async (req, res) => 
 });
 
 // PDF Preview endpoint - convert PDF to HTML viewer with PDF.js
+app.options('/api/preview/pdf', (req, res) => {
+  res.set({
+    'Access-Control-Allow-Origin': '*',
+    'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+    'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept',
+    'Access-Control-Max-Age': '86400'
+  });
+  res.status(204).send();
+});
+
 app.post('/api/preview/pdf', uploadDocument.single('file'), async (req, res) => {
+  // Set CORS headers immediately
+  res.set({
+    'Access-Control-Allow-Origin': '*',
+    'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+    'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept'
+  });
+  
   console.log('=== PDF PREVIEW REQUEST ===');
   const tmpDir = path.join(os.tmpdir(), `pdf-preview-${Date.now()}`);
   
@@ -7372,12 +7389,22 @@ app.post('/api/preview/pdf', uploadDocument.single('file'), async (req, res) => 
       outputLength: htmlContent.length
     });
 
-    res.set('Content-Type', 'text/html');
+    res.set({
+      'Content-Type': 'text/html',
+      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+      'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept'
+    });
     res.send(htmlContent);
 
   } catch (error) {
     console.error('PDF preview error:', error);
     const message = error instanceof Error ? error.message : 'Unknown PDF preview error';
+    res.set({
+      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+      'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept'
+    });
     res.status(500).json({ error: `Failed to generate PDF preview: ${message}` });
   } finally {
     await fs.rm(tmpDir, { recursive: true, force: true }).catch(() => undefined);
@@ -13817,146 +13844,6 @@ app.post('/convert/gif-to-ico/batch', uploadBatch, async (req, res) => {
     console.error('GIF->ICO batch error:', error);
     const message = error instanceof Error ? error.message : 'Unknown error';
     res.status(500).json({ error: message });
-  }
-});
-
-// TIFF Preview endpoint - OPTIONS handler for CORS preflight
-app.options('/api/preview/tiff', (req, res) => {
-  res.set({
-    'Access-Control-Allow-Origin': '*',
-    'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
-    'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept',
-    'Access-Control-Max-Age': '86400'
-  });
-  res.status(204).send();
-});
-
-// TIFF Preview endpoint
-app.post('/api/preview/tiff', upload.single('file'), async (req, res) => {
-  // Set CORS headers immediately
-  res.set({
-    'Access-Control-Allow-Origin': '*',
-    'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
-    'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept'
-  });
-  
-  try {
-    const file = req.file;
-    if (!file) {
-      return res.status(400).json({ error: 'No file provided' });
-    }
-
-    console.log('TIFF preview request for:', file.originalname);
-    
-    // Create temporary files
-    const tempDir = os.tmpdir();
-    const inputFile = path.join(tempDir, `tiff_input_${randomUUID()}.tiff`);
-    const outputFile = path.join(tempDir, `tiff_preview_${randomUUID()}.png`);
-    
-    try {
-      // Save uploaded file
-      await fs.writeFile(inputFile, file.buffer);
-      console.log('TIFF file saved to:', inputFile);
-      
-      // Try different Python commands and script paths
-      const pythonCommands = ['python3', 'python'];
-      const scriptPaths = [
-        path.join(process.cwd(), 'viewers', 'tiff_preview.py'),
-        path.join(__dirname, '..', 'viewers', 'tiff_preview.py'),
-        path.join(__dirname, '..', '..', 'viewers', 'tiff_preview.py'),
-        path.join(__dirname, 'viewers', 'tiff_preview.py'),
-        '/opt/backend/viewers/tiff_preview.py'
-      ];
-      
-      let success = false;
-      let lastError = null;
-      
-      // Log all paths being checked
-      console.log('Checking for tiff_preview.py in the following locations:');
-      for (const scriptPath of scriptPaths) {
-        const exists = await fs.access(scriptPath).then(() => true).catch(() => false);
-        console.log(`  ${scriptPath} - ${exists ? 'EXISTS' : 'NOT FOUND'}`);
-      }
-      
-      for (const pythonCmd of pythonCommands) {
-        for (const scriptPath of scriptPaths) {
-          try {
-            console.log(`Trying ${pythonCmd} with script: ${scriptPath}`);
-            
-            // Check if script exists
-            if (!await fs.access(scriptPath).then(() => true).catch(() => false)) {
-              console.log(`Script not found: ${scriptPath}`);
-              continue;
-            }
-            
-            console.log(`Script found! Executing: ${pythonCmd} ${scriptPath}`);
-            
-            const { stdout, stderr } = await execFileAsync(pythonCmd, [
-              scriptPath,
-              inputFile,
-              outputFile,
-              '--max-dimension', '2048'
-            ]);
-            
-            console.log('Python script stdout:', stdout);
-            if (stderr) console.log('Python script stderr:', stderr);
-            
-            // Check if output file was created
-            if (await fs.access(outputFile).then(() => true).catch(() => false)) {
-              success = true;
-              break;
-            }
-          } catch (cmdError) {
-            console.log(`Command failed: ${pythonCmd} ${scriptPath}`, cmdError);
-            lastError = cmdError;
-            continue;
-          }
-        }
-        if (success) break;
-      }
-      
-      if (!success) {
-        throw new Error(`TIFF preview conversion failed. Last error: ${lastError?.message || 'No valid Python command or script found'}`);
-      }
-      
-      // Read the converted PNG file
-      const pngBuffer = await fs.readFile(outputFile);
-      console.log('TIFF preview generated successfully, size:', pngBuffer.length);
-      
-      // Set response headers
-      res.set({
-        'Content-Type': 'image/png',
-        'Content-Length': pngBuffer.length,
-        'Access-Control-Allow-Origin': '*',
-        'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
-        'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept'
-      });
-      
-      // Send the PNG preview
-      res.send(pngBuffer);
-      
-    } finally {
-      // Clean up temporary files
-      try {
-        await fs.unlink(inputFile).catch(() => undefined);
-        await fs.unlink(outputFile).catch(() => undefined);
-      } catch (cleanupError) {
-        console.warn('Cleanup error:', cleanupError);
-      }
-    }
-    
-  } catch (error) {
-    console.error('TIFF preview error:', error);
-    const message = error instanceof Error ? error.message : 'Unknown error';
-    
-    // Set CORS headers even for errors
-    res.set({
-      'Access-Control-Allow-Origin': '*',
-      'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
-      'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept'
-    });
-    
-    res.status(500).json({ error: `TIFF preview failed: ${message}` });
   }
 });
 

@@ -135,22 +135,6 @@ jobs:
           echo "📋 All available files in scripts directory:"
           ls -la $BACKEND_DIR/scripts/ || echo "Scripts directory does not exist"
           
-          # Verify viewers scripts are in place
-          echo "🔍 Verifying Python viewers scripts..."
-          REQUIRED_VIEWERS_SCRIPTS=(
-            "tiff_preview.py"
-          )
-          
-          for script in "${REQUIRED_VIEWERS_SCRIPTS[@]}"; do
-            if [ -f "$BACKEND_DIR/viewers/$script" ]; then
-              echo "✅ $script found in $BACKEND_DIR/viewers/"
-            else
-              echo "❌ ERROR: $script not found in $BACKEND_DIR/viewers/"
-            fi
-          done
-          
-          echo "📋 All available files in viewers directory:"
-          ls -la $BACKEND_DIR/viewers/ || echo "Viewers directory does not exist"
           
           # Check if any required scripts are missing
           MISSING_SCRIPTS=()
@@ -160,25 +144,10 @@ jobs:
             fi
           done
           
-          # Check if any required viewers scripts are missing
-          MISSING_VIEWERS_SCRIPTS=()
-          for script in "${REQUIRED_VIEWERS_SCRIPTS[@]}"; do
-            if [ ! -f "$BACKEND_DIR/viewers/$script" ]; then
-              MISSING_VIEWERS_SCRIPTS+=("$script")
-            fi
-          done
-          
           if [ ${#MISSING_SCRIPTS[@]} -gt 0 ]; then
             echo "❌ CRITICAL ERROR: Missing required scripts: ${MISSING_SCRIPTS[*]}"
             echo "🔧 Attempting to copy scripts again..."
             rsync -av --delete scripts/ $BACKEND_DIR/scripts/ || echo "⚠️ Failed to copy scripts again"
-            exit 1
-          fi
-          
-          if [ ${#MISSING_VIEWERS_SCRIPTS[@]} -gt 0 ]; then
-            echo "❌ CRITICAL ERROR: Missing required viewers scripts: ${MISSING_VIEWERS_SCRIPTS[*]}"
-            echo "🔧 Attempting to copy viewers scripts again..."
-            rsync -av --delete viewers/ $BACKEND_DIR/viewers/ || echo "⚠️ Failed to copy viewers scripts again"
             exit 1
           fi
           
@@ -337,21 +306,6 @@ jobs:
                    fi
                  done
                  
-                 # Verify viewers script paths are accessible
-                 echo "📁 Verifying viewers script paths..."
-                 for script in "${REQUIRED_VIEWERS_SCRIPTS[@]}"; do
-                   if [ -f "$BACKEND_DIR/viewers/$script" ]; then
-                     echo "✅ $BACKEND_DIR/viewers/$script is accessible"
-                     # Test if script can be executed (check syntax)
-                     if $VENV_DIR/bin/python -m py_compile "$BACKEND_DIR/viewers/$script" 2>/dev/null; then
-                       echo "✅ $script syntax is valid"
-                     else
-                       echo "⚠️ WARNING: $script has syntax errors"
-                     fi
-                   else
-                     echo "❌ ERROR: $BACKEND_DIR/viewers/$script not accessible"
-                   fi
-                 done
                  
                  # Show status
           echo ""
