@@ -6008,9 +6008,6 @@ app.post('/api/convert', conversionTimeout(5 * 60 * 1000), upload.single('file')
       } else if (!result && isCSV && targetFormat === 'ndjson') {
         console.log('Single: Routing to Python (CSV to NDJSON conversion)');
         result = await convertCsvToNdjsonPython(file, requestOptions, true);
-      } else if (!result && isCSV && targetFormat === 'doc') {
-        console.log('Single: Routing to Python (CSV to DOC conversion)');
-        result = await convertCsvToDocPython(file, requestOptions, true);
       } else if (!result && isCSV && targetFormat === 'docx') {
         console.log('Single: Routing to Python (CSV to DOCX conversion)');
         result = await convertCsvToDocxPython(file, requestOptions, true);
@@ -6309,9 +6306,6 @@ app.post('/api/convert/batch', conversionTimeout(10 * 60 * 1000), uploadBatch, a
       } else if (isCSV && format === 'ndjson') {
         console.log('Batch: Routing to Python (CSV to NDJSON conversion)');
         output = await convertCsvToNdjsonPython(file, requestOptions, true);
-      } else if (isCSV && format === 'doc') {
-        console.log('Batch: Routing to Python (CSV to DOC conversion)');
-        output = await convertCsvToDocPython(file, requestOptions, true);
       } else if (isCSV && format === 'docx') {
         console.log('Batch: Routing to Python (CSV to DOCX conversion)');
         output = await convertCsvToDocxPython(file, requestOptions, true);
