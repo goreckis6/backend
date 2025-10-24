@@ -11723,6 +11723,13 @@ app.post('/convert/csv-to-docx/batch', uploadBatch, async (req, res) => {
 
 // Route: CSV to EPUB (Single)
 app.post('/convert/csv-to-epub/single', upload.single('file'), async (req, res) => {
+  // Set CORS headers
+  res.set({
+    'Access-Control-Allow-Origin': '*',
+    'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+    'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept'
+  });
+  
   console.log('CSV->EPUB single conversion request');
   
   try {
@@ -11737,19 +11744,34 @@ app.post('/convert/csv-to-epub/single', upload.single('file'), async (req, res) 
     res.set({
       'Content-Type': result.mime,
       'Content-Disposition': `attachment; filename="${result.filename}"`,
-      'Content-Length': result.buffer.length
+      'Content-Length': result.buffer.length,
+      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+      'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept'
     });
     
     res.send(result.buffer);
   } catch (error) {
     console.error('CSV->EPUB single error:', error);
     const message = error instanceof Error ? error.message : 'Unknown error';
+    res.set({
+      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+      'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept'
+    });
     res.status(500).json({ error: message });
   }
 });
 
 // Route: CSV to EPUB (Batch)
 app.post('/convert/csv-to-epub/batch', uploadBatch, async (req, res) => {
+  // Set CORS headers
+  res.set({
+    'Access-Control-Allow-Origin': '*',
+    'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+    'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept'
+  });
+  
   console.log('CSV->EPUB batch conversion request');
   
   try {
@@ -11783,6 +11805,11 @@ app.post('/convert/csv-to-epub/batch', uploadBatch, async (req, res) => {
   } catch (error) {
     console.error('CSV->EPUB batch error:', error);
     const message = error instanceof Error ? error.message : 'Unknown error';
+    res.set({
+      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+      'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept'
+    });
     res.status(500).json({ error: message });
   }
 });
