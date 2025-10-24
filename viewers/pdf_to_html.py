@@ -240,7 +240,7 @@ def convert_pdf_to_html(pdf_file, output_file):
             <button id="prev-btn" class="nav-btn">◀ Previous</button>
             <button id="next-btn" class="nav-btn">Next ▶</button>
             <button id="zoom-out" class="zoom-btn">-</button>
-            <span style="color: white; font-size: 14px;" id="zoom-level">100%</span>
+            <span style="color: white; font-size: 14px;" id="zoom-level">200%</span>
             <button id="zoom-in" class="zoom-btn">+</button>
             <button onclick="window.print()" class="btn btn-print">
                 🖨️ Print
@@ -271,10 +271,14 @@ def convert_pdf_to_html(pdf_file, output_file):
         let pageNum = 1;
         let pageRendering = false;
         let pageNumPending = null;
-        let scale = 1.5;
+        let scale = 2.0; // Higher scale for better text quality
         
         const canvas = document.getElementById('pdf-canvas');
-        const ctx = canvas.getContext('2d');
+        const ctx = canvas.getContext('2d', {{ alpha: false }});
+        
+        // Set up high-quality rendering
+        ctx.imageSmoothingEnabled = true;
+        ctx.imageSmoothingQuality = 'high';
         
         function renderPage(num) {{
             pageRendering = true;
@@ -284,9 +288,14 @@ def convert_pdf_to_html(pdf_file, output_file):
                 canvas.height = viewport.height;
                 canvas.width = viewport.width;
                 
+                // Context is already set up for high-quality rendering
+                
                 const renderContext = {{
                     canvasContext: ctx,
-                    viewport: viewport
+                    viewport: viewport,
+                    enableWebGL: false,
+                    renderInteractiveForms: false,
+                    intent: 'display'
                 }};
                 
                 const renderTask = page.render(renderContext);
@@ -331,7 +340,7 @@ def convert_pdf_to_html(pdf_file, output_file):
         }}
         
         function zoomIn() {{
-            scale = Math.min(scale + 0.25, 3.0);
+            scale = Math.min(scale + 0.25, 4.0);
             document.getElementById('zoom-level').textContent = Math.round(scale * 100) + '%';
             queueRenderPage(pageNum);
         }}
@@ -417,5 +426,6 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
