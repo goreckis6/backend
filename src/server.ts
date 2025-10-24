@@ -3233,7 +3233,7 @@ const convertCsvToOdtPython = async (
     const outputPath = path.join(tmpDir, `${safeBase}.odt`);
     
     // Use Python script for ODT
-    const pythonPath = 'python3';
+    const pythonPath = '/opt/venv/bin/python3';
     const scriptPath = path.join(__dirname, '..', 'scripts', 'csv_to_odt.py');
     
     console.log('Python execution details:', {
