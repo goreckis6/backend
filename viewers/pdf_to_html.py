@@ -264,6 +264,7 @@ def convert_pdf_to_html(pdf_file, output_file):
             <span style="color: white; font-size: 14px;" id="zoom-level">150%</span>
             <button id="zoom-in" class="zoom-btn">+</button>
             <button id="zoom-reset" class="zoom-btn" style="min-width: 45px;">100%</button>
+            <button id="zoom-fit-width" class="zoom-btn" style="min-width: 60px;">Fit Width</button>
             <button onclick="window.print()" class="btn btn-print">
                 🖨️ Print
             </button>
@@ -278,7 +279,8 @@ def convert_pdf_to_html(pdf_file, output_file):
     </div>
     
     <div id="scroll-indicator" style="position: fixed; bottom: 20px; right: 20px; background: rgba(0,0,0,0.7); color: white; padding: 8px 12px; border-radius: 6px; font-size: 12px; z-index: 1001; display: none;">
-        Scroll to change pages, Ctrl+Scroll to zoom
+        Scroll to change pages, Ctrl+Scroll to zoom<br>
+        Use +/- buttons or F key for fit-to-width
     </div>
     
     <div id="loading" class="loading">
@@ -312,12 +314,20 @@ def convert_pdf_to_html(pdf_file, output_file):
             pdfDoc.getPage(num).then(function(page) {{
                 const viewport = page.getViewport({{scale: scale}});
                 
-                // Set canvas size
-                canvas.height = viewport.height;
-                canvas.width = viewport.width;
+                // Get device pixel ratio for crisp rendering
+                const devicePixelRatio = window.devicePixelRatio || 1;
+                
+                // Set canvas size with device pixel ratio
+                canvas.height = viewport.height * devicePixelRatio;
+                canvas.width = viewport.width * devicePixelRatio;
+                canvas.style.height = viewport.height + 'px';
+                canvas.style.width = viewport.width + 'px';
+                
+                // Scale context to match device pixel ratio
+                ctx.scale(devicePixelRatio, devicePixelRatio);
                 
                 // Clear canvas
-                ctx.clearRect(0, 0, canvas.width, canvas.height);
+                ctx.clearRect(0, 0, viewport.width, viewport.height);
                 
                 const renderContext = {{
                     canvasContext: ctx,
@@ -369,13 +379,13 @@ def convert_pdf_to_html(pdf_file, output_file):
         }}
         
         function zoomIn() {{
-            scale = Math.min(scale + 0.5, 4.0);
+            scale = Math.min(scale + 0.25, 5.0); // Smaller increments, higher max zoom
             document.getElementById('zoom-level').textContent = Math.round(scale * 100) + '%';
             queueRenderPage(pageNum);
         }}
         
         function zoomOut() {{
-            scale = Math.max(scale - 0.5, 0.5);
+            scale = Math.max(scale - 0.25, 0.25); // Smaller increments, lower min zoom
             document.getElementById('zoom-level').textContent = Math.round(scale * 100) + '%';
             queueRenderPage(pageNum);
         }}
@@ -386,11 +396,30 @@ def convert_pdf_to_html(pdf_file, output_file):
             queueRenderPage(pageNum);
         }}
         
+        function fitToWidth() {{
+            if (!pdfDoc) return;
+            
+            pdfDoc.getPage(pageNum).then(function(page) {{
+                const container = document.querySelector('.canvas-container');
+                const containerWidth = container.clientWidth - 40; // Account for padding
+                
+                const viewport = page.getViewport({{scale: 1}});
+                scale = containerWidth / viewport.width;
+                
+                // Ensure scale is within reasonable bounds
+                scale = Math.max(0.25, Math.min(5.0, scale));
+                
+                document.getElementById('zoom-level').textContent = Math.round(scale * 100) + '%';
+                queueRenderPage(pageNum);
+            }});
+        }}
+        
         document.getElementById('prev-btn').addEventListener('click', onPrevPage);
         document.getElementById('next-btn').addEventListener('click', onNextPage);
         document.getElementById('zoom-in').addEventListener('click', zoomIn);
         document.getElementById('zoom-out').addEventListener('click', zoomOut);
         document.getElementById('zoom-reset').addEventListener('click', resetZoom);
+        document.getElementById('zoom-fit-width').addEventListener('click', fitToWidth);
         
         // Keyboard shortcuts
         document.addEventListener('keydown', function(e) {{
@@ -398,6 +427,8 @@ def convert_pdf_to_html(pdf_file, output_file):
             if (e.key === 'ArrowRight') onNextPage();
             if (e.key === '+' || e.key === '=') zoomIn();
             if (e.key === '-') zoomOut();
+            if (e.key === '0') resetZoom();
+            if (e.key === 'f' || e.key === 'F') fitToWidth();
         }});
         
         // Mouse wheel handling
@@ -405,11 +436,11 @@ def convert_pdf_to_html(pdf_file, output_file):
             if (e.ctrlKey || e.metaKey) {{
                 // Ctrl+Scroll = Zoom
                 e.preventDefault();
-                const zoomFactor = 0.1;
+                const zoomFactor = 0.2; // More responsive zoom factor
                 if (e.deltaY < 0) {{
-                    scale = Math.min(scale + zoomFactor, 4.0);
+                    scale = Math.min(scale + zoomFactor, 5.0); // Match button max zoom
                 }} else {{
-                    scale = Math.max(scale - zoomFactor, 0.5);
+                    scale = Math.max(scale - zoomFactor, 0.25); // Match button min zoom
                 }}
                 document.getElementById('zoom-level').textContent = Math.round(scale * 100) + '%';
                 queueRenderPage(pageNum);
