@@ -221,16 +221,20 @@ jobs:
           pm2 flush  # Clear all logs
           pm2 cleardump  # Clear PM2 dump file
           
-          # Stop PM2 process completely (not reload)
-          echo "⏹️ Stopping PM2 process..."
-          pm2 stop morphy-backend 2>/dev/null || true
-          pm2 delete morphy-backend 2>/dev/null || true
+          # Kill PM2 daemon completely to clear all caches
+          echo "🔄 Killing PM2 daemon to clear all caches..."
+          pm2 kill 2>/dev/null || true
+          sleep 2
           
-                 # Start fresh PM2 process
-                 echo "▶️ Starting fresh PM2 process..."
-                 cd $BACKEND_DIR
-                 pm2 start ecosystem.config.cjs
-                 pm2 save --force
+          # Start fresh PM2 process
+          echo "▶️ Starting fresh PM2 process..."
+          cd $BACKEND_DIR
+          pm2 start ecosystem.config.cjs
+          pm2 save --force
+          
+          # Verify PM2 is running the correct file
+          echo "🔍 Verifying PM2 is running the correct file..."
+          pm2 describe morphy-backend | grep "script path" || true
           
           # Restart Traefik with force-recreate
           echo "🔄 Restarting Traefik..."
