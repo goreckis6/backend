@@ -13803,6 +13803,85 @@ app.post('/convert/gif-to-ico/batch', uploadBatch, async (req, res) => {
   }
 });
 
+// TIFF Preview endpoint
+app.post('/api/preview/tiff', upload.single('file'), async (req, res) => {
+  // Set CORS headers
+  res.set({
+    'Access-Control-Allow-Origin': '*',
+    'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+    'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept'
+  });
+  
+  try {
+    const file = req.file;
+    if (!file) {
+      return res.status(400).json({ error: 'No file provided' });
+    }
+
+    console.log('TIFF preview request for:', file.originalname);
+    
+    // Create temporary files
+    const tempDir = os.tmpdir();
+    const inputFile = path.join(tempDir, `tiff_input_${randomUUID()}.tiff`);
+    const outputFile = path.join(tempDir, `tiff_preview_${randomUUID()}.png`);
+    
+    try {
+      // Save uploaded file
+      await fs.writeFile(inputFile, file.buffer);
+      console.log('TIFF file saved to:', inputFile);
+      
+      // Run Python script to convert TIFF to PNG
+      const pythonScript = path.join(__dirname, '..', 'viewers', 'tiff_preview.py');
+      console.log('Running Python script:', pythonScript);
+      
+      const { stdout, stderr } = await execFileAsync('python3', [
+        pythonScript,
+        inputFile,
+        outputFile,
+        '--max-dimension', '2048'
+      ]);
+      
+      console.log('Python script stdout:', stdout);
+      if (stderr) console.log('Python script stderr:', stderr);
+      
+      // Check if output file was created
+      if (!await fs.access(outputFile).then(() => true).catch(() => false)) {
+        throw new Error('TIFF preview conversion failed - no output file created');
+      }
+      
+      // Read the converted PNG file
+      const pngBuffer = await fs.readFile(outputFile);
+      console.log('TIFF preview generated successfully, size:', pngBuffer.length);
+      
+      // Set response headers
+      res.set({
+        'Content-Type': 'image/png',
+        'Content-Length': pngBuffer.length,
+        'Access-Control-Allow-Origin': '*',
+        'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+        'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept'
+      });
+      
+      // Send the PNG preview
+      res.send(pngBuffer);
+      
+    } finally {
+      // Clean up temporary files
+      try {
+        await fs.unlink(inputFile).catch(() => undefined);
+        await fs.unlink(outputFile).catch(() => undefined);
+      } catch (cleanupError) {
+        console.warn('Cleanup error:', cleanupError);
+      }
+    }
+    
+  } catch (error) {
+    console.error('TIFF preview error:', error);
+    const message = error instanceof Error ? error.message : 'Unknown error';
+    res.status(500).json({ error: `TIFF preview failed: ${message}` });
+  }
+});
+
 // Start server
 const server = app.listen(PORT, '0.0.0.0', () => {
   console.log(`Morpy backend running on port ${PORT}`);
