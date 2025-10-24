@@ -3462,102 +3462,6 @@ const convertCsvToDocxPython = async (
   }
 };
 
-// CSV to EPUB converter using Python
-const convertCsvToEpubPython = async (
-  file: Express.Multer.File,
-  options: Record<string, string | undefined> = {},
-  persistToDisk = false
-): Promise<ConversionResult> => {
-  console.log(`=== CSV TO EPUB (Python) START ===`);
-  const startTime = Date.now();
-  const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'morphy-csv-epub-'));
-  const originalBase = path.basename(file.originalname, path.extname(file.originalname));
-  const sanitizedBase = sanitizeFilename(originalBase);
-  const safeBase = `${sanitizedBase}_${randomUUID()}`;
-
-  try {
-    // Write CSV file to temp directory
-    const csvPath = path.join(tmpDir, `${safeBase}.csv`);
-    await fs.writeFile(csvPath, file.buffer);
-
-    // Prepare output file
-    const outputPath = path.join(tmpDir, `${safeBase}.epub`);
-    
-    // Use Python script for EPUB
-    const pythonPath = '/opt/venv/bin/python3';
-    const scriptPath = path.join(__dirname, '..', 'scripts', 'csv_to_epub.py');
-    
-    // Determine chunk size based on file size for optimal performance
-    const fileSizeMB = file.buffer.length / (1024 * 1024);
-    const chunkSize = fileSizeMB > 10 ? 2000 : fileSizeMB > 5 ? 1500 : 1000;
-    
-    console.log('Python execution details:', {
-      pythonPath,
-      scriptPath,
-      csvPath,
-      outputPath,
-      title: options.title || sanitizedBase,
-      author: options.author || 'Unknown',
-      includeToc: options.includeToc !== 'false',
-      fileSize: file.buffer.length,
-      fileSizeMB: fileSizeMB.toFixed(2),
-      chunkSize
-    });
-    
-
-    const { stdout, stderr } = await execFileAsync(pythonPath, [
-      scriptPath,
-      csvPath,
-      outputPath,
-      '--title', options.title || sanitizedBase,
-      '--author', options.author || 'Unknown',
-      '--chunk-size', chunkSize.toString()
-    ].concat(options.includeToc === 'false' ? ['--no-toc'] : []), {
-      timeout: 300000, // 5 minutes timeout for large files
-      maxBuffer: 10 * 1024 * 1024 // 10MB buffer for large outputs
-    });
-
-    if (stdout.trim().length > 0) console.log('Python stdout:', stdout.trim());
-    if (stderr.trim().length > 0) console.warn('Python stderr:', stderr.trim());
-
-    // Check if output file was created
-    const outputExists = await fs.access(outputPath).then(() => true).catch(() => false);
-    if (!outputExists) {
-      throw new Error(`Python EPUB script did not produce output file: ${outputPath}`);
-    }
-
-    // Read output file
-    const outputBuffer = await fs.readFile(outputPath);
-    if (!outputBuffer || outputBuffer.length === 0) {
-      throw new Error('Python EPUB script produced empty output file');
-    }
-
-    const downloadName = `${sanitizedBase}.epub`;
-    const processingTime = Date.now() - startTime;
-    console.log(`CSV->EPUB conversion successful:`, { 
-      filename: downloadName, 
-      size: outputBuffer.length,
-      processingTimeMs: processingTime,
-      processingTimeSec: (processingTime / 1000).toFixed(2)
-    });
-
-    if (persistToDisk) {
-      return await persistOutputBuffer(outputBuffer, downloadName, 'application/epub+zip');
-    }
-
-    return {
-      buffer: outputBuffer,
-      filename: downloadName,
-      mime: 'application/epub+zip'
-    };
-  } catch (error) {
-    console.error(`CSV->EPUB conversion error:`, error);
-    const message = error instanceof Error ? error.message : `Unknown CSV->EPUB error`;
-    throw new Error(`Failed to convert CSV to EPUB: ${message}`);
-  } finally {
-    await fs.rm(tmpDir, { recursive: true, force: true }).catch(() => undefined);
-  }
-};
 
 // CSV to PPT converter using Python
 const convertCsvToPptPython = async (
@@ -11141,6 +11045,102 @@ const convertCsvToYamlPython = async (
   }
 };
 
+// CSV to EPUB converter using Python
+const convertCsvToEpubPython = async (
+  file: Express.Multer.File,
+  options: Record<string, string | undefined> = {},
+  persistToDisk = false
+): Promise<ConversionResult> => {
+  console.log(`=== CSV TO EPUB (Python) START ===`);
+  const startTime = Date.now();
+  const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'morphy-csv-epub-'));
+  const originalBase = path.basename(file.originalname, path.extname(file.originalname));
+  const sanitizedBase = sanitizeFilename(originalBase);
+  const safeBase = `${sanitizedBase}_${randomUUID()}`;
+
+  try {
+    // Write CSV file to temp directory
+    const csvPath = path.join(tmpDir, `${safeBase}.csv`);
+    await fs.writeFile(csvPath, file.buffer);
+
+    // Prepare output file
+    const outputPath = path.join(tmpDir, `${safeBase}.epub`);
+    
+    // Use specific Python script for EPUB
+    const pythonPath = '/opt/venv/bin/python3';
+    const scriptPath = path.join(__dirname, '..', 'scripts', 'csv_to_epub.py');
+    
+    console.log('Python execution details:', {
+      pythonPath,
+      scriptPath,
+      csvPath,
+      outputPath,
+      title: options.title || sanitizedBase,
+      author: options.author || 'Unknown',
+      includeToc: options.includeTableOfContents !== 'false',
+      fileSize: file.buffer.length
+    });
+
+    const args = [
+      scriptPath,
+      csvPath,
+      outputPath,
+      '--title', options.title || sanitizedBase,
+      '--author', options.author || 'Unknown'
+    ];
+
+    // Add --no-toc flag if table of contents is disabled
+    if (options.includeTableOfContents === 'false') {
+      args.push('--no-toc');
+    }
+
+    const { stdout, stderr } = await execFileAsync(pythonPath, args, {
+      timeout: 300000, // 5 minutes timeout for large files
+      maxBuffer: 10 * 1024 * 1024 // 10MB buffer for large outputs
+    });
+
+    if (stdout.trim().length > 0) console.log('Python stdout:', stdout.trim());
+    if (stderr.trim().length > 0) console.warn('Python stderr:', stderr.trim());
+
+    // Check if output file was created
+    const outputExists = await fs.access(outputPath).then(() => true).catch(() => false);
+    if (!outputExists) {
+      throw new Error(`Python EPUB script did not produce output file: ${outputPath}`);
+    }
+
+    // Read output file
+    const outputBuffer = await fs.readFile(outputPath);
+    if (!outputBuffer || outputBuffer.length === 0) {
+      throw new Error('Python EPUB script produced empty output file');
+    }
+
+    const downloadName = `${sanitizedBase}.epub`;
+    const processingTime = Date.now() - startTime;
+    console.log(`CSV->EPUB conversion successful:`, { 
+      filename: downloadName, 
+      size: outputBuffer.length,
+      processingTimeMs: processingTime,
+      processingTimeSec: (processingTime / 1000).toFixed(2)
+    });
+
+    if (persistToDisk) {
+      return await persistOutputBuffer(outputBuffer, downloadName, 'application/epub+zip');
+    }
+
+    return {
+      buffer: outputBuffer,
+      filename: downloadName,
+      mime: 'application/epub+zip'
+    };
+  } catch (error) {
+    console.error(`CSV->EPUB conversion error:`, error);
+    const message = error instanceof Error ? error.message : `Unknown CSV->EPUB error`;
+    throw new Error(`Failed to convert CSV to EPUB: ${message}`);
+  } finally {
+    await fs.rm(tmpDir, { recursive: true, force: true }).catch(() => undefined);
+  }
+};
+
 // Route: DOC to CSV (Single)
 app.post('/convert/doc-to-csv/single', upload.single('file'), async (req, res) => {
   console.log('DOC->CSV single conversion request');
@@ -13805,7 +13805,7 @@ app.post('/convert/gif-to-ico/batch', uploadBatch, async (req, res) => {
 
 // TIFF Preview endpoint
 app.post('/api/preview/tiff', upload.single('file'), async (req, res) => {
-  // Set CORS headers
+  // Set CORS headers immediately
   res.set({
     'Access-Control-Allow-Origin': '*',
     'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
@@ -13830,23 +13830,54 @@ app.post('/api/preview/tiff', upload.single('file'), async (req, res) => {
       await fs.writeFile(inputFile, file.buffer);
       console.log('TIFF file saved to:', inputFile);
       
-      // Run Python script to convert TIFF to PNG
-      const pythonScript = path.join(__dirname, '..', 'viewers', 'tiff_preview.py');
-      console.log('Running Python script:', pythonScript);
+      // Try different Python commands and script paths
+      const pythonCommands = ['python3', 'python'];
+      const scriptPaths = [
+        path.join(__dirname, '..', 'viewers', 'tiff_preview.py'),
+        path.join(__dirname, '..', '..', 'viewers', 'tiff_preview.py'),
+        path.join(process.cwd(), 'viewers', 'tiff_preview.py')
+      ];
       
-      const { stdout, stderr } = await execFileAsync('python3', [
-        pythonScript,
-        inputFile,
-        outputFile,
-        '--max-dimension', '2048'
-      ]);
+      let success = false;
+      let lastError = null;
       
-      console.log('Python script stdout:', stdout);
-      if (stderr) console.log('Python script stderr:', stderr);
+      for (const pythonCmd of pythonCommands) {
+        for (const scriptPath of scriptPaths) {
+          try {
+            console.log(`Trying ${pythonCmd} with script: ${scriptPath}`);
+            
+            // Check if script exists
+            if (!await fs.access(scriptPath).then(() => true).catch(() => false)) {
+              console.log(`Script not found: ${scriptPath}`);
+              continue;
+            }
+            
+            const { stdout, stderr } = await execFileAsync(pythonCmd, [
+              scriptPath,
+              inputFile,
+              outputFile,
+              '--max-dimension', '2048'
+            ]);
+            
+            console.log('Python script stdout:', stdout);
+            if (stderr) console.log('Python script stderr:', stderr);
+            
+            // Check if output file was created
+            if (await fs.access(outputFile).then(() => true).catch(() => false)) {
+              success = true;
+              break;
+            }
+          } catch (cmdError) {
+            console.log(`Command failed: ${pythonCmd} ${scriptPath}`, cmdError);
+            lastError = cmdError;
+            continue;
+          }
+        }
+        if (success) break;
+      }
       
-      // Check if output file was created
-      if (!await fs.access(outputFile).then(() => true).catch(() => false)) {
-        throw new Error('TIFF preview conversion failed - no output file created');
+      if (!success) {
+        throw new Error(`TIFF preview conversion failed. Last error: ${lastError?.message || 'No valid Python command or script found'}`);
       }
       
       // Read the converted PNG file
@@ -13878,6 +13909,14 @@ app.post('/api/preview/tiff', upload.single('file'), async (req, res) => {
   } catch (error) {
     console.error('TIFF preview error:', error);
     const message = error instanceof Error ? error.message : 'Unknown error';
+    
+    // Set CORS headers even for errors
+    res.set({
+      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+      'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept'
+    });
+    
     res.status(500).json({ error: `TIFF preview failed: ${message}` });
   }
 });

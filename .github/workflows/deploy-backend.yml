@@ -138,7 +138,7 @@ jobs:
             
             # Install Python packages
             $VENV_DIR/bin/pip install --upgrade pip
-            $VENV_DIR/bin/pip install Pillow rawpy odfpy
+            $VENV_DIR/bin/pip install Pillow rawpy odfpy ebooklib pandas
           else
             echo "✅ Python environment already exists, skipping setup..."
           fi
@@ -146,12 +146,12 @@ jobs:
           # Verify Python environment
           echo "🔍 Verifying Python environment..."
           $VENV_DIR/bin/python --version
-          if $VENV_DIR/bin/python -c "import rawpy, PIL, odfpy; print('✅ Python packages OK')"; then
+          if $VENV_DIR/bin/python -c "import rawpy, PIL, odfpy, ebooklib, pandas; print('✅ Python packages OK')"; then
             echo "✅ Python environment verified successfully"
           else
             echo "⚠️ Warning: Python packages verification failed"
             # Reinstall packages
-            $VENV_DIR/bin/pip install --upgrade --force-reinstall Pillow rawpy odfpy
+            $VENV_DIR/bin/pip install --upgrade --force-reinstall Pillow rawpy odfpy ebooklib pandas
           fi
           
           # Clear PM2 logs and dump before restart
@@ -217,6 +217,18 @@ jobs:
                    echo "✅ odfpy is working"
                  else
                    echo "⚠️ WARNING: odfpy may not be working"
+                 fi
+
+                 if $VENV_DIR/bin/python -c "import ebooklib; print('✅ ebooklib OK')" 2>/dev/null; then
+                   echo "✅ ebooklib is working"
+                 else
+                   echo "⚠️ WARNING: ebooklib may not be working"
+                 fi
+
+                 if $VENV_DIR/bin/python -c "import pandas; print('✅ pandas OK')" 2>/dev/null; then
+                   echo "✅ pandas is working"
+                 else
+                   echo "⚠️ WARNING: pandas may not be working"
                  fi
                  
                  # Verify script paths are accessible
