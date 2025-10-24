@@ -73,6 +73,31 @@ jobs:
           echo "🔨 Building application..."
           npm run build
           
+          # Verify the build was successful
+          echo "🔍 Verifying build output..."
+          if [ -f "dist/server.js" ]; then
+            echo "✅ dist/server.js created successfully"
+            echo "📊 Build size: $(du -h dist/server.js | cut -f1)"
+            
+            # Verify the new TIFF preview code is in the compiled file
+            echo "🔍 Verifying TIFF preview endpoint in compiled code..."
+            if grep -q "Checking for tiff_preview.py in the following locations" dist/server.js; then
+              echo "✅ New TIFF preview code found in compiled JavaScript"
+            else
+              echo "❌ ERROR: New TIFF preview code NOT found in compiled JavaScript"
+              echo "🔍 Checking for old code..."
+              if grep -q "scripts/tiff_preview.py" dist/server.js; then
+                echo "❌ ERROR: OLD TIFF preview code still in compiled JavaScript"
+                exit 1
+              else
+                echo "⚠️ WARNING: No TIFF preview code found in compiled JavaScript"
+              fi
+            fi
+          else
+            echo "❌ ERROR: dist/server.js not found after build"
+            exit 1
+          fi
+          
           # Ensure scripts directory exists and copy Python scripts
           echo "📁 Setting up Python scripts directory..."
           mkdir -p $BACKEND_DIR/scripts
