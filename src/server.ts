@@ -13803,6 +13803,17 @@ app.post('/convert/gif-to-ico/batch', uploadBatch, async (req, res) => {
   }
 });
 
+// TIFF Preview endpoint - OPTIONS handler for CORS preflight
+app.options('/api/preview/tiff', (req, res) => {
+  res.set({
+    'Access-Control-Allow-Origin': '*',
+    'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+    'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept',
+    'Access-Control-Max-Age': '86400'
+  });
+  res.status(204).send();
+});
+
 // TIFF Preview endpoint
 app.post('/api/preview/tiff', upload.single('file'), async (req, res) => {
   // Set CORS headers immediately
