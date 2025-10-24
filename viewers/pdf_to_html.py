@@ -261,8 +261,9 @@ def convert_pdf_to_html(pdf_file, output_file):
             <button id="prev-btn" class="nav-btn">◀ Previous</button>
             <button id="next-btn" class="nav-btn">Next ▶</button>
             <button id="zoom-out" class="zoom-btn">-</button>
-            <span style="color: white; font-size: 14px;" id="zoom-level">200%</span>
+            <span style="color: white; font-size: 14px;" id="zoom-level">150%</span>
             <button id="zoom-in" class="zoom-btn">+</button>
+            <button id="zoom-reset" class="zoom-btn" style="min-width: 45px;">100%</button>
             <button onclick="window.print()" class="btn btn-print">
                 🖨️ Print
             </button>
@@ -277,7 +278,7 @@ def convert_pdf_to_html(pdf_file, output_file):
     </div>
     
     <div id="scroll-indicator" style="position: fixed; bottom: 20px; right: 20px; background: rgba(0,0,0,0.7); color: white; padding: 8px 12px; border-radius: 6px; font-size: 12px; z-index: 1001; display: none;">
-        Use Ctrl+Scroll to zoom, Scroll to pan
+        Scroll to change pages, Ctrl+Scroll to zoom
     </div>
     
     <div id="loading" class="loading">
@@ -296,7 +297,7 @@ def convert_pdf_to_html(pdf_file, output_file):
         let pageNum = 1;
         let pageRendering = false;
         let pageNumPending = null;
-        let scale = 2.0; // Higher scale for better text quality
+        let scale = 1.5; // Good balance for text quality and performance
         
         const canvas = document.getElementById('pdf-canvas');
         const ctx = canvas.getContext('2d', {{ alpha: false }});
@@ -310,10 +311,13 @@ def convert_pdf_to_html(pdf_file, output_file):
             
             pdfDoc.getPage(num).then(function(page) {{
                 const viewport = page.getViewport({{scale: scale}});
+                
+                // Set canvas size
                 canvas.height = viewport.height;
                 canvas.width = viewport.width;
                 
-                // Context is already set up for high-quality rendering
+                // Clear canvas
+                ctx.clearRect(0, 0, canvas.width, canvas.height);
                 
                 const renderContext = {{
                     canvasContext: ctx,
@@ -365,13 +369,19 @@ def convert_pdf_to_html(pdf_file, output_file):
         }}
         
         function zoomIn() {{
-            scale = Math.min(scale + 0.25, 4.0);
+            scale = Math.min(scale + 0.5, 4.0);
             document.getElementById('zoom-level').textContent = Math.round(scale * 100) + '%';
             queueRenderPage(pageNum);
         }}
         
         function zoomOut() {{
-            scale = Math.max(scale - 0.25, 0.5);
+            scale = Math.max(scale - 0.5, 0.5);
+            document.getElementById('zoom-level').textContent = Math.round(scale * 100) + '%';
+            queueRenderPage(pageNum);
+        }}
+        
+        function resetZoom() {{
+            scale = 1.0;
             document.getElementById('zoom-level').textContent = Math.round(scale * 100) + '%';
             queueRenderPage(pageNum);
         }}
@@ -380,6 +390,7 @@ def convert_pdf_to_html(pdf_file, output_file):
         document.getElementById('next-btn').addEventListener('click', onNextPage);
         document.getElementById('zoom-in').addEventListener('click', zoomIn);
         document.getElementById('zoom-out').addEventListener('click', zoomOut);
+        document.getElementById('zoom-reset').addEventListener('click', resetZoom);
         
         // Keyboard shortcuts
         document.addEventListener('keydown', function(e) {{
@@ -389,14 +400,28 @@ def convert_pdf_to_html(pdf_file, output_file):
             if (e.key === '-') zoomOut();
         }});
         
-        // Mouse wheel zoom
+        // Mouse wheel handling
         document.addEventListener('wheel', function(e) {{
             if (e.ctrlKey || e.metaKey) {{
+                // Ctrl+Scroll = Zoom
                 e.preventDefault();
+                const zoomFactor = 0.1;
                 if (e.deltaY < 0) {{
-                    zoomIn();
+                    scale = Math.min(scale + zoomFactor, 4.0);
                 }} else {{
-                    zoomOut();
+                    scale = Math.max(scale - zoomFactor, 0.5);
+                }}
+                document.getElementById('zoom-level').textContent = Math.round(scale * 100) + '%';
+                queueRenderPage(pageNum);
+            }} else {{
+                // Regular scroll = Change pages
+                e.preventDefault();
+                if (e.deltaY > 0) {{
+                    // Scroll down = Next page
+                    onNextPage();
+                }} else {{
+                    // Scroll up = Previous page
+                    onPrevPage();
                 }}
             }}
         }}, {{ passive: false }});
