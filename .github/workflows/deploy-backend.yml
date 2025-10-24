@@ -136,9 +136,9 @@ jobs:
             sudo chown -R debian:debian $VENV_DIR
             python3 -m venv $VENV_DIR
             
-            # Install Python packages
+            # Install Python packages from requirements.txt
             $VENV_DIR/bin/pip install --upgrade pip
-            $VENV_DIR/bin/pip install Pillow rawpy odfpy ebooklib pandas
+            $VENV_DIR/bin/pip install -r requirements.txt
           else
             echo "✅ Python environment already exists, skipping setup..."
           fi
@@ -146,12 +146,12 @@ jobs:
           # Verify Python environment
           echo "🔍 Verifying Python environment..."
           $VENV_DIR/bin/python --version
-          if $VENV_DIR/bin/python -c "import rawpy, PIL, odfpy, ebooklib, pandas; print('✅ Python packages OK')"; then
+          if $VENV_DIR/bin/python -c "import pandas, lxml, bs4, html5lib, jinja2, ebooklib, odfpy, reportlab, pptx, docx, openpyxl, xlrd, PIL, rawpy, pillow_heif, ghostscript, markdown, chardet, pyarrow; print('✅ Python packages OK')"; then
             echo "✅ Python environment verified successfully"
           else
             echo "⚠️ Warning: Python packages verification failed"
             # Reinstall packages
-            $VENV_DIR/bin/pip install --upgrade --force-reinstall Pillow rawpy odfpy ebooklib pandas
+            $VENV_DIR/bin/pip install --upgrade --force-reinstall -r requirements.txt
           fi
           
           # Clear PM2 logs and dump before restart
@@ -229,6 +229,30 @@ jobs:
                    echo "✅ pandas is working"
                  else
                    echo "⚠️ WARNING: pandas may not be working"
+                 fi
+
+                 if $VENV_DIR/bin/python -c "import lxml; print('✅ lxml OK')" 2>/dev/null; then
+                   echo "✅ lxml is working"
+                 else
+                   echo "⚠️ WARNING: lxml may not be working"
+                 fi
+
+                 if $VENV_DIR/bin/python -c "import bs4; print('✅ beautifulsoup4 OK')" 2>/dev/null; then
+                   echo "✅ beautifulsoup4 is working"
+                 else
+                   echo "⚠️ WARNING: beautifulsoup4 may not be working"
+                 fi
+
+                 if $VENV_DIR/bin/python -c "import docx; print('✅ python-docx OK')" 2>/dev/null; then
+                   echo "✅ python-docx is working"
+                 else
+                   echo "⚠️ WARNING: python-docx may not be working"
+                 fi
+
+                 if $VENV_DIR/bin/python -c "import openpyxl; print('✅ openpyxl OK')" 2>/dev/null; then
+                   echo "✅ openpyxl is working"
+                 else
+                   echo "⚠️ WARNING: openpyxl may not be working"
                  fi
                  
                  # Verify script paths are accessible
