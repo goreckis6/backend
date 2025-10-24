@@ -179,6 +179,27 @@ def convert_pdf_to_html(pdf_file, output_file):
             display: flex;
             justify-content: center;
             padding: 20px;
+            scroll-behavior: smooth;
+        }}
+        
+        .canvas-container::-webkit-scrollbar {{
+            width: 12px;
+            height: 12px;
+        }}
+        
+        .canvas-container::-webkit-scrollbar-track {{
+            background: #404040;
+            border-radius: 6px;
+        }}
+        
+        .canvas-container::-webkit-scrollbar-thumb {{
+            background: #666;
+            border-radius: 6px;
+            border: 2px solid #404040;
+        }}
+        
+        .canvas-container::-webkit-scrollbar-thumb:hover {{
+            background: #777;
         }}
         
         #pdf-canvas {{
@@ -253,6 +274,10 @@ def convert_pdf_to_html(pdf_file, output_file):
     
     <div class="canvas-container">
         <canvas id="pdf-canvas"></canvas>
+    </div>
+    
+    <div id="scroll-indicator" style="position: fixed; bottom: 20px; right: 20px; background: rgba(0,0,0,0.7); color: white; padding: 8px 12px; border-radius: 6px; font-size: 12px; z-index: 1001; display: none;">
+        Use Ctrl+Scroll to zoom, Scroll to pan
     </div>
     
     <div id="loading" class="loading">
@@ -364,6 +389,18 @@ def convert_pdf_to_html(pdf_file, output_file):
             if (e.key === '-') zoomOut();
         }});
         
+        // Mouse wheel zoom
+        document.addEventListener('wheel', function(e) {{
+            if (e.ctrlKey || e.metaKey) {{
+                e.preventDefault();
+                if (e.deltaY < 0) {{
+                    zoomIn();
+                }} else {{
+                    zoomOut();
+                }}
+            }}
+        }}, {{ passive: false }});
+        
         loadingTask.promise.then(function(pdfDoc_) {{
             pdfDoc = pdfDoc_;
             document.getElementById('page-count').textContent = pdfDoc.numPages;
@@ -371,6 +408,13 @@ def convert_pdf_to_html(pdf_file, output_file):
             
             renderPage(pageNum);
             updateButtons();
+            
+            // Show scroll indicator briefly
+            const scrollIndicator = document.getElementById('scroll-indicator');
+            scrollIndicator.style.display = 'block';
+            setTimeout(function() {{
+                scrollIndicator.style.display = 'none';
+            }}, 3000);
         }}).catch(function(error) {{
             console.error('Error loading PDF:', error);
             document.getElementById('loading').innerHTML = '<p>Error loading PDF: ' + error.message + '</p>';
