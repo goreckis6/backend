@@ -12137,6 +12137,13 @@ app.post('/convert/csv-to-mobi/single', upload.single('file'), async (req, res) 
 
 // Route: CSV to MOBI (Batch)
 app.post('/convert/csv-to-mobi/batch', uploadBatch, async (req, res) => {
+  // Set CORS headers
+  res.set({
+    'Access-Control-Allow-Origin': '*',
+    'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+    'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept'
+  });
+  
   console.log('CSV->MOBI batch conversion request');
   
   try {
@@ -12166,10 +12173,20 @@ app.post('/convert/csv-to-mobi/batch', uploadBatch, async (req, res) => {
       }
     }
 
+    res.set({
+      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+      'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept'
+    });
     res.json({ results });
   } catch (error) {
     console.error('CSV->MOBI batch error:', error);
     const message = error instanceof Error ? error.message : 'Unknown error';
+    res.set({
+      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+      'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept'
+    });
     res.status(500).json({ error: message });
   }
 });
