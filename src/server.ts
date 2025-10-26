@@ -11835,6 +11835,66 @@ app.post('/convert/csv-to-docx/batch', uploadBatch, async (req, res) => {
   }
 });
 
+// Route: CSV to XLSX (Batch)
+app.post('/convert/csv-to-xlsx/batch', uploadBatch, async (req, res) => {
+  // Set CORS headers
+  res.set({
+    'Access-Control-Allow-Origin': '*',
+    'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+    'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept'
+  });
+  
+  console.log('CSV->XLSX batch conversion request');
+  
+  // Set longer timeout for large CSV files (15 minutes)
+  req.setTimeout(15 * 60 * 1000);
+  res.setTimeout(15 * 60 * 1000);
+  
+  try {
+    const files = req.files as Express.Multer.File[];
+    if (!files || files.length === 0) {
+      return res.status(400).json({ error: 'No files provided' });
+    }
+
+    const options = req.body || {};
+    const results = [];
+
+    for (const file of files) {
+      try {
+        const result = await convertCsvToXlsxPython(file, options, true);
+        results.push({
+          success: true,
+          originalName: file.originalname,
+          outputFilename: result.filename,
+          downloadPath: result.downloadUrl,
+          size: result.size
+        });
+      } catch (error) {
+        results.push({
+          success: false,
+          originalName: file.originalname,
+          error: error instanceof Error ? error.message : 'Conversion failed'
+        });
+      }
+    }
+
+    res.json({ 
+      success: true,
+      processed: results.length,
+      results 
+    });
+  } catch (error) {
+    console.error('CSV->XLSX batch error:', error);
+    const message = error instanceof Error ? error.message : 'Unknown error';
+    res.set({
+      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+      'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept'
+    });
+    res.status(500).json({ error: message });
+  }
+});
+
 // Route: CSV to EPUB (Single)
 app.post('/convert/csv-to-epub/single', upload.single('file'), async (req, res) => {
   // Set CORS headers
