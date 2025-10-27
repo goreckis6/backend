@@ -9,71 +9,9 @@ import os
 import sys
 import pandas as pd
 import traceback
+import yaml
 
-def sanitize_key(key):
-    """Sanitize key for YAML compatibility."""
-    # YAML keys can contain most characters, but we sanitize for safety
-    sanitized = str(key).strip()
-    # Replace problematic characters
-    sanitized = sanitized.replace(':', '_')
-    sanitized = sanitized.replace('#', '_')
-    return sanitized or 'key'
-
-def escape_yaml_string(value):
-    """Escape special characters in YAML strings."""
-    if pd.isna(value):
-        return 'null'
-    
-    s = str(value)
-    
-    # Check if string needs quoting
-    needs_quoting = False
-    
-    # Check for special YAML values that need quoting
-    if s.lower() in ['yes', 'no', 'true', 'false', 'on', 'off', 'null', '~']:
-        needs_quoting = True
-    
-    # Check for special characters
-    if any(c in s for c in [':', '{', '}', '[', ']', ',', '&', '*', '#', '?', '|', '-', '<', '>', '=', '!', '%', '@', '`']):
-        needs_quoting = True
-    
-    # Check if starts with special characters
-    if s and s[0] in [' ', '\t', '\n', '\r', '"', "'", '>', '|', '-', '?', ':']:
-        needs_quoting = True
-    
-    # Check if it looks like a number but should be a string
-    try:
-        float(s)
-        needs_quoting = True
-    except ValueError:
-        pass
-    
-    if needs_quoting or '\n' in s or '"' in s or "'" in s:
-        # Use double quotes and escape
-        s = s.replace('\\', '\\\\')
-        s = s.replace('"', '\\"')
-        s = s.replace('\n', '\\n')
-        s = s.replace('\r', '\\r')
-        s = s.replace('\t', '\\t')
-        return f'"{s}"'
-    
-    return s
-
-def convert_value_to_yaml(value):
-    """Convert Python value to YAML representation."""
-    if pd.isna(value):
-        return 'null'
-    
-    if isinstance(value, bool):
-        return 'true' if value else 'false'
-    
-    if isinstance(value, (int, float)):
-        return str(value)
-    
-    # String value
-    return escape_yaml_string(value)
-
-def convert_csv_to_yaml(csv_file, yaml_file, structure='list', root_key='data', flow_style=False):
+def convert_csv_to_yaml(csv_file, yaml_file, structure='list', root_key='data', flow_style=False, indent=2, allow_unicode=True):
     """
     Convert CSV to YAML format.
     
@@ -83,6 +21,8 @@ def convert_csv_to_yaml(csv_file, yaml_file, structure='list', root_key='data', 
         structure (str): Output structure ('list' or 'dict')
         root_key (str): Root key name for the data
         flow_style (bool): Use flow style (compact) instead of block style
+        indent (int): YAML indentation (2, 4, or 6 spaces)
+        allow_unicode (bool): Allow Unicode characters in output
     
     Returns:
         bool: True if conversion successful, False otherwise
@@ -103,62 +43,80 @@ def convert_csv_to_yaml(csv_file, yaml_file, structure='list', root_key='data', 
         if rows == 0:
             raise ValueError("CSV file is empty (no data rows)")
         
-        # Sanitize column names
+        # Keep original column names (PyYAML handles sanitization)
         original_columns = df.columns.tolist()
-        sanitized_columns = [sanitize_key(col) for col in original_columns]
-        df.columns = sanitized_columns
         
-        print(f"Columns: {', '.join(sanitized_columns[:10])}", flush=True)
-        if len(sanitized_columns) > 10:
-            print(f"... and {len(sanitized_columns) - 10} more columns", flush=True)
+        print(f"Columns: {', '.join(original_columns[:10])}", flush=True)
+        if len(original_columns) > 10:
+            print(f"... and {len(original_columns) - 10} more columns", flush=True)
         
-        # Start building YAML
-        yaml_lines = []
-        
-        # Add header comment
-        yaml_lines.append(f"# YAML generated from CSV file: {os.path.basename(csv_file)}")
-        yaml_lines.append(f"# Generated: {pd.Timestamp.now()}")
-        yaml_lines.append(f"# Rows: {rows}, Columns: {cols}")
-        yaml_lines.append("")
+        # Build data structure
+        yaml_data = {
+            'metadata': {
+                'source_file': os.path.basename(csv_file),
+                'generated': pd.Timestamp.now().isoformat(),
+                'rows': int(rows),
+                'columns': int(cols)
+            }
+        }
         
         if structure == 'list':
             # List of dictionaries (most common for CSV data)
-            yaml_lines.append(f"{root_key}:")
-            
+            data_list = []
             for index, row in df.iterrows():
-                yaml_lines.append(f"  - ")
-                
-                for col in sanitized_columns:
+                row_dict = {}
+                for col in original_columns:
                     value = row[col]
-                    yaml_value = convert_value_to_yaml(value)
-                    yaml_lines.append(f"    {col}: {yaml_value}")
+                    if pd.isna(value):
+                        row_dict[col] = None
+                    elif isinstance(value, (int, float)) and not isinstance(value, bool):
+                        row_dict[col] = value
+                    elif isinstance(value, bool):
+                        row_dict[col] = value
+                    else:
+                        row_dict[col] = str(value)
+                data_list.append(row_dict)
                 
                 # Progress logging for large files
                 if (index + 1) % 1000 == 0:
                     print(f"Processed {index + 1} of {rows} rows...", flush=True)
-        
+            
+            yaml_data[root_key] = data_list
         else:  # dict structure
             # Dictionary with indexed entries
-            yaml_lines.append(f"{root_key}:")
-            
+            data_dict = {}
             for index, row in df.iterrows():
                 entry_key = f"entry_{index}"
-                yaml_lines.append(f"  {entry_key}:")
-                
-                for col in sanitized_columns:
+                row_dict = {}
+                for col in original_columns:
                     value = row[col]
-                    yaml_value = convert_value_to_yaml(value)
-                    yaml_lines.append(f"    {col}: {yaml_value}")
+                    if pd.isna(value):
+                        row_dict[col] = None
+                    elif isinstance(value, (int, float)) and not isinstance(value, bool):
+                        row_dict[col] = value
+                    elif isinstance(value, bool):
+                        row_dict[col] = value
+                    else:
+                        row_dict[col] = str(value)
+                data_dict[entry_key] = row_dict
                 
                 # Progress logging
                 if (index + 1) % 1000 == 0:
                     print(f"Processed {index + 1} of {rows} rows...", flush=True)
+            
+            yaml_data[root_key] = data_dict
         
-        # Write to YAML file
+        # Write to YAML file using PyYAML
         print(f"Writing YAML file...", flush=True)
-        with open(yaml_file, 'w', encoding='utf-8') as f:
-            f.write('\n'.join(yaml_lines))
-            f.write('\n')  # Add final newline
+        with open(yaml_file, 'w', encoding='utf-8' if allow_unicode else 'ascii', errors='ignore' if not allow_unicode else 'strict') as f:
+            yaml.dump(
+                yaml_data, 
+                f, 
+                default_flow_style=flow_style,
+                indent=int(indent),
+                allow_unicode=allow_unicode,
+                sort_keys=False
+            )
         
         # Verify output file
         if not os.path.exists(yaml_file):
@@ -202,8 +160,25 @@ def main():
     parser.add_argument('--flow-style',
                        action='store_true',
                        help='Use flow style (compact) instead of block style')
+    parser.add_argument('--indent',
+                       type=int,
+                       default=2,
+                       choices=[2, 4, 6],
+                       help='YAML indentation (2, 4, or 6 spaces)')
+    parser.add_argument('--default-flow-style',
+                       type=str,
+                       default='false',
+                       help='Use flow style (true/false)')
+    parser.add_argument('--allow-unicode',
+                       type=str,
+                       default='true',
+                       help='Allow Unicode characters (true/false)')
     
     args = parser.parse_args()
+    
+    # Convert string booleans to actual booleans
+    flow_style = args.default_flow_style.lower() == 'true'
+    allow_unicode = args.allow_unicode.lower() == 'true'
     
     print("=== CSV to YAML Converter ===", flush=True)
     print(f"Python version: {sys.version}", flush=True)
@@ -225,7 +200,9 @@ def main():
         args.yaml_file, 
         args.structure,
         args.root_key,
-        args.flow_style
+        flow_style,
+        args.indent,
+        allow_unicode
     )
     
     if success:
