@@ -13632,14 +13632,16 @@ app.post('/convert/dng-to-ico/single', upload.single('file'), async (req, res) =
     const pythonArgs = [scriptPath, inputPath, outputPath, '--quality', 'high'];
     console.log('DNG to ICO: iconSize value:', iconSize, 'type:', typeof iconSize);
     
-    // SIMPLIFIED: Only pass --sizes if user selected a specific size
-    // If iconSize is 'default' or not provided, don't pass --sizes at all
-    // Python script will use original image size by default
+    // Pass icon sizes - use all standard sizes for ICO format
     if (iconSize && iconSize !== 'default') {
-      pythonArgs.push('--sizes', iconSize.toString());
-      console.log('DNG to ICO: Using custom size:', iconSize);
+      // User selected a specific size - create ICO with that size and standard sizes
+      const selectedSize = parseInt(iconSize.toString());
+      pythonArgs.push('--sizes', '16', '32', '48', '64', '128', '256', selectedSize.toString());
+      console.log('DNG to ICO: Using size:', selectedSize, 'plus standard sizes');
     } else {
-      console.log('DNG to ICO: Using ORIGINAL image size (no --sizes parameter)');
+      // Use default ICO sizes
+      pythonArgs.push('--sizes', '16', '32', '48', '64', '128', '256');
+      console.log('DNG to ICO: Using standard ICO sizes');
     }
     
     console.log('DNG to ICO: Final Python command:', pythonArgs.join(' '));
@@ -13784,12 +13786,16 @@ app.post('/convert/dng-to-ico/batch', uploadBatch, async (req, res) => {
         const pythonArgs = [scriptPath, inputPath, outputPath, '--quality', 'high'];
         console.log('DNG to ICO batch: iconSize value:', req.body.iconSize, 'type:', typeof req.body.iconSize);
         
-        // SIMPLIFIED: Only pass --sizes if user selected a specific size
+        // Pass icon sizes - use all standard sizes for ICO format
         if (req.body.iconSize && req.body.iconSize !== 'default') {
-          pythonArgs.push('--sizes', req.body.iconSize.toString());
-          console.log('DNG to ICO batch: Using custom size:', req.body.iconSize);
+          // User selected a specific size - create ICO with that size and standard sizes
+          const selectedSize = parseInt(req.body.iconSize.toString());
+          pythonArgs.push('--sizes', '16', '32', '48', '64', '128', '256', selectedSize.toString());
+          console.log('DNG to ICO batch: Using size:', selectedSize, 'plus standard sizes');
         } else {
-          console.log('DNG to ICO batch: Using ORIGINAL image size (no --sizes parameter)');
+          // Use default ICO sizes
+          pythonArgs.push('--sizes', '16', '32', '48', '64', '128', '256');
+          console.log('DNG to ICO batch: Using standard ICO sizes');
         }
         
         console.log('DNG to ICO batch: Final Python command:', pythonArgs.join(' '));
