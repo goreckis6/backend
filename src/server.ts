@@ -792,8 +792,8 @@ const convertDngToIcoPython = async (
     // Prepare output file
     const outputPath = path.join(tmpDir, `${safeBase}.ico`);
 
-    // Use Python script for ICO
-    const pythonPath = 'python3';
+    // Use Python script for ICO with virtual environment
+    const pythonPath = '/opt/venv/bin/python';
     const scriptPath = path.join(__dirname, '..', 'scripts', 'dng_to_ico.py');
     
     // Check if Python script exists
