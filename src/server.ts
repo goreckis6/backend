@@ -10758,8 +10758,8 @@ const convertCsvToTomlPython = async (
     // Prepare output file
     const outputPath = path.join(tmpDir, `${safeBase}.toml`);
     
-    // Use Python script for TOML
-    const pythonPath = 'python3';
+    // Use Python script for TOML with virtual environment
+    const pythonPath = '/opt/venv/bin/python';
     const scriptPath = path.join(__dirname, '..', 'scripts', 'csv_to_toml.py');
     
     console.log('Python execution details:', {
@@ -10767,8 +10767,7 @@ const convertCsvToTomlPython = async (
       scriptPath,
       csvPath,
       outputPath,
-      structure: options.structure || 'array',
-      sectionName: options.sectionName || 'data',
+      indent: options.indent || '2',
       fileSize: file.buffer.length
     });
 
@@ -10776,8 +10775,7 @@ const convertCsvToTomlPython = async (
       scriptPath,
       csvPath,
       outputPath,
-      '--structure', options.structure || 'array',
-      '--section-name', options.sectionName || 'data'
+      '--indent', options.indent || '2'
     ];
 
     const { stdout, stderr } = await execFileAsync(pythonPath, args);
