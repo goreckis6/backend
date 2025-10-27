@@ -1344,8 +1344,8 @@ const convertCsvToJsonPython = async (
     // Prepare output file
     const outputPath = path.join(tmpDir, `${safeBase}.json`);
 
-    // Use Python script for JSON
-    const pythonPath = 'python3';
+    // Use Python script for JSON with virtual environment
+    const pythonPath = '/opt/venv/bin/python';
     const scriptPath = path.join(__dirname, '..', 'scripts', 'csv_to_json.py');
     
     // Check if Python script exists
@@ -1457,8 +1457,8 @@ const convertCsvToNdjsonPython = async (
     // Prepare output file
     const outputPath = path.join(tmpDir, `${safeBase}.ndjson`);
 
-    // Use Python script for NDJSON
-    const pythonPath = 'python3';
+    // Use Python script for NDJSON with virtual environment
+    const pythonPath = '/opt/venv/bin/python';
     const scriptPath = path.join(__dirname, '..', 'scripts', 'csv_to_ndjson.py');
     
     // Check if Python script exists
