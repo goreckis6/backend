@@ -13743,6 +13743,11 @@ app.post('/convert/dng-to-ico/batch', uploadBatch, async (req, res) => {
   try {
     const files = req.files as Express.Multer.File[];
     if (!files || files.length === 0) {
+      res.set({
+        'Access-Control-Allow-Origin': '*',
+        'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+        'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept'
+      });
       return res.status(400).json({ error: 'No files uploaded' });
     }
     await fs.mkdir(tmpDir, { recursive: true });
@@ -13856,6 +13861,11 @@ app.post('/convert/dng-to-ico/batch', uploadBatch, async (req, res) => {
   } catch (error) {
     console.error('DNG to ICO batch conversion error:', error);
     const message = error instanceof Error ? error.message : 'Unknown error';
+    res.set({
+      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+      'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept'
+    });
     res.status(500).json({ error: message });
   } finally {
     await fs.rm(tmpDir, { recursive: true, force: true }).catch(() => undefined);
