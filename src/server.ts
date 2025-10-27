@@ -11430,8 +11430,8 @@ const convertCsvToSqlPython = async (
     // Prepare output file
     const outputPath = path.join(tmpDir, `${safeBase}.sql`);
     
-    // Use Python script for SQL
-    const pythonPath = 'python3';
+    // Use Python script for SQL with virtual environment
+    const pythonPath = '/opt/venv/bin/python';
     const scriptPath = path.join(__dirname, '..', 'scripts', 'csv_to_sql.py');
     
     console.log('Python execution details:', {
