@@ -634,7 +634,13 @@ const convertDngToWebpPython = async (
     }
 
     // Parse options
-    const quality = parseInt(options.quality || '95');
+    // Convert quality from 0-1 range to 1-100 range for WebP
+    let qualityValue = parseFloat(options.quality || '0.95');
+    if (qualityValue <= 1) {
+      // Convert from 0-1 scale to 1-100 scale
+      qualityValue = Math.round(qualityValue * 100);
+    }
+    const quality = Math.max(1, Math.min(100, qualityValue)); // Ensure between 1-100
     const lossless = options.lossless === 'true';
     const width = options.width ? parseInt(options.width) : undefined;
     const height = options.height ? parseInt(options.height) : undefined;
