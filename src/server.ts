@@ -591,7 +591,7 @@ const convertDngToWebpPython = async (
     const outputPath = path.join(tmpDir, `${safeBase}.webp`);
 
     // Use Python script for WebP
-    const pythonPath = 'python3';
+    const pythonPath = '/opt/venv/bin/python';
     const scriptPath = path.join(__dirname, '..', 'scripts', 'dng_to_webp.py');
     
     // Check if Python script exists
@@ -3144,7 +3144,7 @@ const convertCsvToMobiOptimized = async (
     const outputPath = path.join(tmpDir, `${safeBase}.mobi`);
     
     // Use optimized Python script for MOBI
-    const pythonPath = 'python3';
+    const pythonPath = '/opt/venv/bin/python';
     const scriptPath = path.join(__dirname, '..', 'scripts', 'csv_to_mobi_optimized.py');
     
     console.log('Python execution details:', {
@@ -6531,7 +6531,7 @@ app.post('/api/preview/heic', upload.single('file'), async (req, res) => {
     const pngPath = path.join(tmpDir, `preview.png`);
 
     // Use Python script for HEIC to PNG conversion
-    const pythonPath = 'python3';
+    const pythonPath = '/opt/venv/bin/python';
     const scriptPath = path.join(__dirname, '..', 'scripts', 'heic_preview.py');
     
     // Check if Python script exists
@@ -6625,7 +6625,7 @@ app.post('/api/preview/tiff', upload.single('file'), async (req, res) => {
     const pngPath = path.join(tmpDir, `preview.png`);
 
     // Use Python script for TIFF to PNG conversion
-    const pythonPath = 'python3';
+    const pythonPath = '/opt/venv/bin/python';
     const scriptPath = path.join(__dirname, '..', 'scripts', 'tiff_preview.py');
     
     // Check if Python script exists
@@ -11342,7 +11342,7 @@ const convertDocToCsvPython = async (
     const outputPath = path.join(tmpDir, `${safeBase}.csv`);
     
     // Use Python script for DOC to CSV
-    const pythonPath = 'python3';
+    const pythonPath = '/opt/venv/bin/python';
     const scriptPath = path.join(__dirname, '..', 'scripts', 'doc_to_csv.py');
     
     console.log('Python execution details:', {
@@ -11603,7 +11603,7 @@ async function convertDocToEpubPython(
     await fs.writeFile(docPath, file.buffer);
 
     // Execute Python script
-    const pythonPath = 'python3';
+    const pythonPath = '/opt/venv/bin/python';
     const scriptPath = path.join(__dirname, '..', 'scripts', 'doc_to_epub.py');
     
     console.log('Python execution details:', {
