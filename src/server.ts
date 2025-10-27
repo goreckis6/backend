@@ -13652,36 +13652,54 @@ app.post('/convert/dng-to-ico/single', upload.single('file'), async (req, res) =
       console.log('DNG to ICO: stdout:', stdout);
       console.log('DNG to ICO: stderr:', stderr);
       
+      // Ensure CORS headers are set before responding
+      const corsHeaders = {
+        'Access-Control-Allow-Origin': '*',
+        'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+        'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept'
+      };
+      
       try {
         if (code === 0 && await fs.access(outputPath).then(() => true).catch(() => false)) {
           const outputBuffer = await fs.readFile(outputPath);
           console.log('DNG to ICO: Output file size:', outputBuffer.length);
+          
+          // Check if response has been sent
+          if (res.headersSent) {
+            console.log('DNG to ICO: Response already sent, skipping');
+            return;
+          }
+          
           res.set({
             'Content-Type': 'image/x-icon',
             'Content-Disposition': `attachment; filename="${path.basename(outputPath)}"`,
-            'Access-Control-Allow-Origin': '*',
-            'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
-            'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept'
+            ...corsHeaders
           });
           res.send(outputBuffer);
           
         } else {
           console.error('DNG to ICO conversion failed. Code:', code, 'Stderr:', stderr);
-          res.set({
-            'Access-Control-Allow-Origin': '*',
-            'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
-            'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept'
-          });
+          
+          // Check if response has been sent
+          if (res.headersSent) {
+            console.log('DNG to ICO: Response already sent, skipping');
+            return;
+          }
+          
+          res.set(corsHeaders);
           res.status(500).json({ error: 'Conversion failed', details: stderr });
         }
       } catch (error) {
         console.error('Error handling conversion result:', error);
-        res.set({
-          'Access-Control-Allow-Origin': '*',
-          'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
-          'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept'
-        });
-        res.status(500).json({ error: 'Conversion failed', details: error.message });
+        
+        // Check if response has been sent
+        if (res.headersSent) {
+          console.log('DNG to ICO: Response already sent, skipping error response');
+          return;
+        }
+        
+        res.set(corsHeaders);
+        res.status(500).json({ error: 'Conversion failed', details: error instanceof Error ? error.message : 'Unknown error' });
       } finally {
         await fs.rm(tmpDir, { recursive: true, force: true }).catch(() => undefined);
       }
