@@ -5591,7 +5591,7 @@ const uploadBatch = uploadBatchMulter.array('files', 20);
 // Handle preflight OPTIONS requests
 app.options('*', (req, res) => {
   console.log('OPTIONS preflight request received');
-  res.header('Access-Control-Allow-Origin', 'https://morphy-1-ulvv.onrender.com');
+  res.header('Access-Control-Allow-Origin', '*');
   res.header('Access-Control-Allow-Credentials', 'true');
   res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
   res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization, Accept');
