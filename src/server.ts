@@ -720,16 +720,16 @@ const convertDngToWebpPython = async (
       console.error('Full Python stderr:', stderr);
       
       // Try to provide more helpful error message based on stderr
-      let errorMessage = `Python WebP script did not produce output file: ${outputPath}.`;
+      let errorMessage = `Python WebP script did not produce output file.`;
       
       if (stderr.includes('ModuleNotFoundError') || stderr.includes('No module named')) {
-        errorMessage += ' Missing Python dependencies (rawpy or Pillow). Please install them.';
+        errorMessage = 'Missing Python dependencies (rawpy or Pillow). Please install them.';
       } else if (stderr.includes('ERROR:') || stderr.includes('Failed')) {
-        errorMessage += ` Python error: ${stderr.substring(0, 200)}`;
-      } else if (stdout.includes('ERROR:') || stdout.includes('Failed')) {
-        errorMessage += ` Python error: ${stdout.substring(0, 200)}`;
+        errorMessage = `Python error: ${stderr}`;
+      } else if (stdout.includes('ERROR:')) {
+        errorMessage = `Python error: ${stdout}`;
       } else {
-        errorMessage += ' Check Python environment and dependencies.';
+        errorMessage = `Conversion failed. Check logs for details. stderr: ${stderr}, stdout: ${stdout}`;
       }
       
       throw new Error(errorMessage);
