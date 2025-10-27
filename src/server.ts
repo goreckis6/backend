@@ -11518,8 +11518,8 @@ const convertCsvToParquetPython = async (
     // Prepare output file
     const outputPath = path.join(tmpDir, `${safeBase}.parquet`);
     
-    // Use Python script for Parquet
-    const pythonPath = 'python3';
+    // Use Python script for Parquet with virtual environment
+    const pythonPath = '/opt/venv/bin/python';
     const scriptPath = path.join(__dirname, '..', 'scripts', 'csv_to_parquet.py');
     
     console.log('Python execution details:', {
