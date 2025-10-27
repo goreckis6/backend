@@ -13596,6 +13596,11 @@ app.post('/convert/dng-to-ico/single', upload.single('file'), async (req, res) =
   try {
     const file = req.file;
     if (!file) {
+      res.set({
+        'Access-Control-Allow-Origin': '*',
+        'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+        'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept'
+      });
       return res.status(400).json({ error: 'No file uploaded' });
     }
     await fs.mkdir(tmpDir, { recursive: true });
