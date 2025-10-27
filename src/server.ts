@@ -10922,8 +10922,8 @@ const convertCsvToXmlPython = async (
     // Prepare output file
     const outputPath = path.join(tmpDir, `${safeBase}.xml`);
     
-    // Use Python script for XML
-    const pythonPath = 'python3';
+    // Use Python script for XML with virtual environment
+    const pythonPath = '/opt/venv/bin/python';
     const scriptPath = path.join(__dirname, '..', 'scripts', 'csv_to_xml.py');
     
     console.log('Python execution details:', {
@@ -11094,8 +11094,8 @@ const convertCsvToYamlPython = async (
     // Prepare output file
     const outputPath = path.join(tmpDir, `${safeBase}.yaml`);
     
-    // Use Python script for YAML
-    const pythonPath = 'python3';
+    // Use Python script for YAML with virtual environment
+    const pythonPath = '/opt/venv/bin/python';
     const scriptPath = path.join(__dirname, '..', 'scripts', 'csv_to_yaml.py');
     
     console.log('Python execution details:', {
@@ -11103,8 +11103,9 @@ const convertCsvToYamlPython = async (
       scriptPath,
       csvPath,
       outputPath,
-      structure: options.structure || 'list',
-      rootKey: options.rootKey || 'data',
+      indent: options.indent || '2',
+      defaultFlowStyle: options.defaultFlowStyle || 'false',
+      allowUnicode: options.allowUnicode || 'true',
       fileSize: file.buffer.length
     });
 
@@ -11112,8 +11113,9 @@ const convertCsvToYamlPython = async (
       scriptPath,
       csvPath,
       outputPath,
-      '--structure', options.structure || 'list',
-      '--root-key', options.rootKey || 'data'
+      '--indent', options.indent || '2',
+      '--default-flow-style', options.defaultFlowStyle || 'false',
+      '--allow-unicode', options.allowUnicode || 'true'
     ];
 
     const { stdout, stderr } = await execFileAsync(pythonPath, args);
