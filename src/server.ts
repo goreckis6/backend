@@ -13833,6 +13833,122 @@ app.post('/convert/dng-to-ico/batch', uploadBatch, async (req, res) => {
   }
 });
 
+// Route: DNG to WebP (Single)
+app.post('/convert/dng-to-webp/single', upload.single('file'), async (req, res) => {
+  // Set CORS headers
+  res.set({
+    'Access-Control-Allow-Origin': '*',
+    'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+    'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept'
+  });
+  
+  console.log('DNG->WebP single conversion request');
+
+  // Set longer timeout for DNG processing (10 minutes)
+  req.setTimeout(10 * 60 * 1000);
+  res.setTimeout(10 * 60 * 1000);
+  
+  // Handle timeout gracefully with CORS headers
+  const timeoutHandler = () => {
+    console.log('DNG to WebP: Request timeout - sending timeout response');
+    res.set({
+      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+      'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept'
+    });
+    if (!res.headersSent) {
+      res.status(408).json({ 
+        error: 'Conversion timeout', 
+        message: 'DNG to WebP conversion is taking longer than expected. Please try with a smaller file or contact support.',
+        timeout: true
+      });
+    }
+  };
+  
+  // Set timeout handler
+  req.on('timeout', timeoutHandler);
+  res.on('timeout', timeoutHandler);
+
+  try {
+    const file = req.file;
+    if (!file) {
+      return res.status(400).json({ error: 'No file uploaded' });
+    }
+
+    const options = req.body || {};
+    const result = await convertDngToWebpPython(file, options, false);
+
+    res.set({
+      'Content-Type': result.mime,
+      'Content-Disposition': `attachment; filename="${result.filename}"`,
+      'Content-Length': result.buffer.length,
+      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+      'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept'
+    });
+
+    res.send(result.buffer);
+  } catch (error) {
+    console.error('DNG->WebP single conversion error:', error);
+    const message = error instanceof Error ? error.message : 'Unknown error';
+    res.set({
+      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+      'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept'
+    });
+    res.status(500).json({ error: message });
+  }
+});
+
+// Route: DNG to WebP (Batch)
+app.post('/convert/dng-to-webp/batch', uploadBatch, async (req, res) => {
+  // Set CORS headers
+  res.set({
+    'Access-Control-Allow-Origin': '*',
+    'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+    'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept'
+  });
+  
+  console.log('DNG->WebP batch conversion request');
+
+  try {
+    const files = req.files as Express.Multer.File[] | undefined;
+    if (!files || files.length === 0) {
+      return res.status(400).json({ error: 'No files uploaded' });
+    }
+
+    const options = req.body || {};
+    const results = [];
+    
+    for (const file of files) {
+      try {
+        const result = await convertDngToWebpPython(file, options, true);
+        results.push({
+          originalName: file.originalname,
+          outputFilename: result.filename,
+          success: true,
+          downloadPath: result.downloadUrl,
+          size: result.size
+        });
+      } catch (error) {
+        results.push({
+          originalName: file.originalname,
+          outputFilename: '',
+          size: 0,
+          success: false,
+          error: error instanceof Error ? error.message : 'Unknown error'
+        });
+      }
+    }
+    
+    res.json({ success: true, results });
+  } catch (error) {
+    console.error('DNG->WebP batch conversion error:', error);
+    const message = error instanceof Error ? error.message : 'Unknown error';
+    res.status(500).json({ error: message });
+  }
+});
+
 // Route: CR2 to WebP (Single)
 app.post('/convert/cr2-to-webp/single', upload.single('file'), async (req, res) => {
   console.log('CR2->WebP single conversion request');
