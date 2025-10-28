@@ -5540,6 +5540,9 @@ const convertCsvToOdpPython = async (
 const app = express();
 const PORT = parseInt(process.env.PORT || '3000', 10);
 
+// Trust proxy - required for deployment behind reverse proxies (Nginx, AWS ALB, etc.)
+app.set('trust proxy', true);
+
 // Rate limiting to prevent abuse
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
