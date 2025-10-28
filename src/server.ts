@@ -5540,14 +5540,17 @@ const convertCsvToOdpPython = async (
 const app = express();
 const PORT = parseInt(process.env.PORT || '3000', 10);
 
-// Trust proxy - required for deployment behind reverse proxies (Nginx, AWS ALB, etc.)
-app.set('trust proxy', true);
+// Trust proxy - Trust only the first proxy (Traefik in Docker network)
+// This is more secure than 'true' which would allow anyone to spoof IPs
+app.set('trust proxy', 1);
 
 // Rate limiting to prevent abuse
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
   max: 100, // Limit each IP to 100 requests per 15 minutes
   message: 'Too many requests from this IP, please try again after 15 minutes',
+  // Validate that the configuration is correct
+  validate: { trustProxy: false }, // Disable validation since we're explicitly setting trust proxy
 });
 
 // Configure helmet with appropriate settings for large file uploads
