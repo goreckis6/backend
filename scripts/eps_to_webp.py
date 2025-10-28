@@ -9,29 +9,9 @@ import sys
 import argparse
 import tempfile
 import traceback
+import subprocess
+import shutil
 from PIL import Image, ImageOps
-
-# Try to import ghostscript and set the path
-try:
-    import ghostscript
-    # Set Ghostscript path if available
-    ghostscript_paths = [
-        '/usr/bin/gs',
-        '/usr/local/bin/gs',
-        '/opt/venv/bin/gs',
-        'gs'  # Let it find in PATH
-    ]
-    
-    for gs_path in ghostscript_paths:
-        if os.path.exists(gs_path) or gs_path == 'gs':
-            try:
-                ghostscript.Ghostscript.set_ghostscript_path(gs_path)
-                print(f"Ghostscript path set to: {gs_path}")
-                break
-            except:
-                continue
-except ImportError:
-    print("Warning: ghostscript Python library not available")
 
 def convert_eps_to_webp(eps_file, output_file, quality=80, lossless=False):
     """
@@ -61,27 +41,54 @@ def convert_eps_to_webp(eps_file, output_file, quality=80, lossless=False):
         file_size = os.path.getsize(eps_file)
         print(f"EPS file size: {file_size} bytes")
         
-        # Open EPS file with Pillow
-        print("Opening EPS file with Pillow...")
+        # Check if Ghostscript is available
+        gs_path = shutil.which('gs')
+        if not gs_path:
+            print("ERROR: Ghostscript (gs) command not found in PATH")
+            print("Please ensure Ghostscript is installed and available in PATH")
+            return False
+        
+        print(f"Using Ghostscript at: {gs_path}")
+        
+        # Create a temporary PNG file first
+        temp_png = output_file.replace('.webp', '_temp.png')
+        
         try:
-            # Try to open EPS file - this may fail if Ghostscript is not available
-            with Image.open(eps_file) as eps_image:
-                print(f"EPS image info: {eps_image.size}, mode: {eps_image.mode}")
+            # Convert EPS to PNG using Ghostscript
+            gs_cmd = [
+                gs_path,
+                '-dNOPAUSE',
+                '-dBATCH',
+                '-dSAFER',
+                '-sDEVICE=png16m',
+                '-r300',  # 300 DPI
+                f'-sOutputFile={temp_png}',
+                eps_file
+            ]
+            
+            print(f"Running Ghostscript command: {' '.join(gs_cmd)}")
+            result = subprocess.run(gs_cmd, capture_output=True, text=True, timeout=60)
+            
+            if result.returncode != 0:
+                print(f"ERROR: Ghostscript failed: {result.stderr}")
+                return False
+            
+            if not os.path.exists(temp_png):
+                print("ERROR: Ghostscript did not create PNG file")
+                return False
+            
+            print(f"Ghostscript created PNG: {os.path.getsize(temp_png)} bytes")
+            
+            # Now convert PNG to WebP using Pillow
+            with Image.open(temp_png) as png_image:
+                if png_image.mode != 'RGB':
+                    png_image = png_image.convert('RGB')
                 
-                # Convert to RGB if necessary
-                if eps_image.mode != 'RGB':
-                    print(f"Converting from {eps_image.mode} to RGB...")
-                    eps_image = eps_image.convert('RGB')
-                
-                # Save as WebP
-                print("Saving WebP file...")
-                
-                # Prepare WebP save options
                 webp_options = {
                     'format': 'WebP',
                     'quality': quality,
                     'lossless': lossless,
-                    'method': 6  # Best compression method
+                    'method': 6
                 }
                 
                 if lossless:
@@ -90,105 +97,35 @@ def convert_eps_to_webp(eps_file, output_file, quality=80, lossless=False):
                 else:
                     print(f"Using lossy compression with quality {quality}")
                 
-                eps_image.save(output_file, **webp_options)
-                print("WebP file saved successfully")
-                
-                # Verify the output file
-                if os.path.exists(output_file):
-                    file_size = os.path.getsize(output_file)
-                    print(f"WebP file created successfully: {file_size} bytes")
-                    
-                    # Verify it's a valid WebP file
-                    try:
-                        with Image.open(output_file) as verify_img:
-                            print(f"Verified WebP file: {verify_img.size}, mode: {verify_img.mode}")
-                            return True
-                    except Exception as verify_error:
-                        print(f"ERROR: Output file is not a valid WebP: {verify_error}")
-                        return False
-                else:
-                    print("ERROR: WebP file was not created")
-                    return False
-                    
-        except Exception as eps_error:
-            print(f"ERROR: Failed to open EPS file: {eps_error}")
-            print("This might not be a valid EPS file or the file is corrupted")
-            print("Trying alternative approach...")
+                png_image.save(output_file, **webp_options)
+                print("WebP file saved successfully via Ghostscript")
             
-            # Try alternative approach using subprocess to call Ghostscript directly
-            try:
-                import subprocess
-                import shutil
+            # Clean up temporary PNG file
+            os.remove(temp_png)
+            
+            # Verify the output file
+            if os.path.exists(output_file):
+                file_size = os.path.getsize(output_file)
+                print(f"WebP file created successfully: {file_size} bytes")
                 
-                # Check if gs command is available
-                gs_path = shutil.which('gs')
-                if not gs_path:
-                    print("ERROR: Ghostscript (gs) command not found in PATH")
+                # Verify it's a valid WebP file
+                try:
+                    with Image.open(output_file) as verify_img:
+                        print(f"Verified WebP file: {verify_img.size}, mode: {verify_img.mode}")
+                        return True
+                except Exception as verify_error:
+                    print(f"ERROR: Output file is not a valid WebP: {verify_error}")
                     return False
-                
-                print(f"Using Ghostscript at: {gs_path}")
-                
-                # Create a temporary PNG file first
-                temp_png = output_file.replace('.webp', '_temp.png')
-                
-                # Convert EPS to PNG using Ghostscript
-                gs_cmd = [
-                    gs_path,
-                    '-dNOPAUSE',
-                    '-dBATCH',
-                    '-dSAFER',
-                    '-sDEVICE=png16m',
-                    '-r300',  # 300 DPI
-                    f'-sOutputFile={temp_png}',
-                    eps_file
-                ]
-                
-                print(f"Running Ghostscript command: {' '.join(gs_cmd)}")
-                result = subprocess.run(gs_cmd, capture_output=True, text=True, timeout=60)
-                
-                if result.returncode != 0:
-                    print(f"ERROR: Ghostscript failed: {result.stderr}")
-                    return False
-                
-                if not os.path.exists(temp_png):
-                    print("ERROR: Ghostscript did not create PNG file")
-                    return False
-                
-                print(f"Ghostscript created PNG: {os.path.getsize(temp_png)} bytes")
-                
-                # Now convert PNG to WebP using Pillow
-                with Image.open(temp_png) as png_image:
-                    if png_image.mode != 'RGB':
-                        png_image = png_image.convert('RGB')
-                    
-                    webp_options = {
-                        'format': 'WebP',
-                        'quality': quality,
-                        'lossless': lossless,
-                        'method': 6
-                    }
-                    
-                    if lossless:
-                        webp_options['quality'] = 100
-                    
-                    png_image.save(output_file, **webp_options)
-                    print("WebP file saved successfully via Ghostscript")
-                
-                # Clean up temporary PNG file
-                os.remove(temp_png)
-                
-                # Verify the output file
-                if os.path.exists(output_file):
-                    file_size = os.path.getsize(output_file)
-                    print(f"WebP file created successfully: {file_size} bytes")
-                    return True
-                else:
-                    print("ERROR: WebP file was not created")
-                    return False
-                    
-            except Exception as gs_error:
-                print(f"ERROR: Ghostscript approach also failed: {gs_error}")
+            else:
+                print("ERROR: WebP file was not created")
                 return False
+                
+        except Exception as gs_error:
+            print(f"ERROR: Ghostscript conversion failed: {gs_error}")
+            # Clean up temp file if it exists
+            if os.path.exists(temp_png):
+                os.remove(temp_png)
+            return False
                     
     except Exception as e:
         print(f"ERROR: Failed to convert EPS to WebP: {e}")
