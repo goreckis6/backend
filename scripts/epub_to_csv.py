@@ -13,6 +13,7 @@ from ebooklib import epub
 from bs4 import BeautifulSoup
 import re
 import traceback
+import zipfile
 
 def clean_text(text):
     """Clean and normalize text content"""
@@ -25,6 +26,48 @@ def clean_text(text):
     text = text.strip()
     return text
 
+def validate_epub_file(epub_file):
+    """
+    Validate that the file is a valid EPUB file
+    
+    Args:
+        epub_file (str): Path to the EPUB file
+        
+    Returns:
+        bool: True if valid EPUB, False otherwise
+    """
+    try:
+        # Check if it's a valid ZIP file
+        with zipfile.ZipFile(epub_file, 'r') as zip_file:
+            # Check for required EPUB files
+            file_list = zip_file.namelist()
+            
+            # EPUB should have mimetype file
+            if 'mimetype' not in file_list:
+                print("ERROR: File is missing 'mimetype' - not a valid EPUB")
+                return False
+            
+            # Check mimetype content
+            mimetype_content = zip_file.read('mimetype').decode('utf-8').strip()
+            if mimetype_content != 'application/epub+zip':
+                print(f"ERROR: Invalid mimetype '{mimetype_content}' - should be 'application/epub+zip'")
+                return False
+            
+            # Check for META-INF directory
+            if not any(f.startswith('META-INF/') for f in file_list):
+                print("ERROR: File is missing META-INF directory - not a valid EPUB")
+                return False
+            
+            print("EPUB file validation passed")
+            return True
+            
+    except zipfile.BadZipFile:
+        print("ERROR: File is not a valid ZIP archive")
+        return False
+    except Exception as e:
+        print(f"ERROR: Failed to validate EPUB file: {e}")
+        return False
+
 def extract_epub_content(epub_file):
     """
     Extract content from EPUB file and return structured data
@@ -34,10 +77,29 @@ def extract_epub_content(epub_file):
     """
     print(f"Reading EPUB file: {epub_file}")
     
+    # Check if file exists and is readable
+    if not os.path.exists(epub_file):
+        print(f"ERROR: Input file does not exist: {epub_file}")
+        return None
+    
+    # Check file size
+    file_size = os.path.getsize(epub_file)
+    print(f"EPUB file size: {file_size} bytes")
+    
+    if file_size == 0:
+        print("ERROR: Input file is empty")
+        return None
+    
+    # Validate EPUB file structure
+    if not validate_epub_file(epub_file):
+        return None
+    
     try:
         book = epub.read_epub(epub_file)
     except Exception as e:
         print(f"ERROR: Failed to read EPUB file: {e}")
+        print("This usually means the file is not a valid EPUB file or is corrupted.")
+        print("EPUB files are ZIP archives with a specific structure.")
         return None
     
     # Get metadata
