@@ -25,11 +25,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     python3-venv \
     && rm -rf /var/lib/apt/lists/*
 
-# Set environment variables for Ghostscript and Python
-ENV GS_LIB=/usr/share/ghostscript/9.56.1/lib
-ENV GS_FONTS=/usr/share/fonts/type1/gsfonts
-ENV GS_FONTPATH=/usr/share/fonts/type1/gsfonts
-ENV PATH="/opt/venv/bin:$PATH"
+# Set environment variables for Python and ensure Ghostscript is in PATH
+ENV PATH="/opt/venv/bin:/usr/bin:$PATH"
+ENV GS_PROG=/usr/bin/gs
 
 # Install Python dependencies in virtual environment
 COPY requirements.txt ./
