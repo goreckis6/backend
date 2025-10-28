@@ -13971,8 +13971,23 @@ app.post('/convert/eps-to-webp/single', upload.single('file'), async (req, res) 
       return res.status(500).json({ error: 'Conversion script not found' });
     }
 
-    // Get quality from request body
-    const quality = req.body.quality || 80;
+    // Get quality from request body and convert string values to numeric
+    let quality = req.body.quality || 80;
+    if (typeof quality === 'string') {
+      switch (quality.toLowerCase()) {
+        case 'high':
+          quality = 90;
+          break;
+        case 'medium':
+          quality = 70;
+          break;
+        case 'low':
+          quality = 50;
+          break;
+        default:
+          quality = parseInt(quality) || 80;
+      }
+    }
     const lossless = req.body.lossless === 'true' || req.body.lossless === true;
     
     const pythonArgs = [scriptPath, inputPath, outputPath, '--quality', quality.toString()];
@@ -14047,8 +14062,23 @@ app.post('/convert/eps-to-webp/batch', uploadBatch, async (req, res) => {
 
     const results = [];
 
-    // Get quality and lossless from request body
-    const quality = req.body.quality || 80;
+    // Get quality and lossless from request body and convert string values to numeric
+    let quality = req.body.quality || 80;
+    if (typeof quality === 'string') {
+      switch (quality.toLowerCase()) {
+        case 'high':
+          quality = 90;
+          break;
+        case 'medium':
+          quality = 70;
+          break;
+        case 'low':
+          quality = 50;
+          break;
+        default:
+          quality = parseInt(quality) || 80;
+      }
+    }
     const lossless = req.body.lossless === 'true' || req.body.lossless === true;
 
     for (const file of files) {
@@ -14157,84 +14187,6 @@ app.post('/convert/eps-to-webp/batch', uploadBatch, async (req, res) => {
     res.status(500).json({ error: message });
   } finally {
     await fs.rm(tmpDir, { recursive: true, force: true }).catch(() => undefined);
-  }
-});
-
-// GIF to ICO conversion routes
-app.post('/convert/gif-to-ico/single', upload.single('file'), async (req, res) => {
-  // Set CORS headers
-  res.set({
-    'Access-Control-Allow-Origin': '*',
-    'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
-    'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept'
-  });
-  
-  try {
-    const file = req.file;
-    if (!file) {
-      return res.status(400).json({ error: 'No file provided' });
-    }
-
-    const options = req.body || {};
-    const result = await convertGifToIcoPython(file, options, false);
-    
-    res.set({
-      'Content-Type': result.mime,
-      'Content-Disposition': `attachment; filename="${result.filename}"`,
-      'Content-Length': result.buffer.length,
-      'Access-Control-Allow-Origin': '*',
-      'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
-      'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept'
-    });
-    
-    res.send(result.buffer);
-  } catch (error) {
-    console.error('GIF->ICO single error:', error);
-    const message = error instanceof Error ? error.message : 'Unknown error';
-    res.status(500).json({ error: message });
-  }
-});
-
-app.post('/convert/gif-to-ico/batch', uploadBatch, async (req, res) => {
-  // Set CORS headers
-  res.set({
-    'Access-Control-Allow-Origin': '*',
-    'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
-    'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept'
-  });
-  
-  try {
-    const files = req.files as Express.Multer.File[] | undefined;
-    if (!files || files.length === 0) {
-      return res.status(400).json({ error: 'No files provided' });
-    }
-
-    const options = req.body || {};
-    const results = [];
-    
-    for (const file of files) {
-      try {
-        const result = await convertGifToIcoPython(file, options, true);
-        results.push({
-          originalName: file.originalname,
-          outputFilename: result.filename,
-          success: true,
-          storedFilename: result.filename
-        });
-      } catch (error) {
-        results.push({
-          originalName: file.originalname,
-          success: false,
-          error: error instanceof Error ? error.message : 'Unknown error'
-        });
-      }
-    }
-    
-    res.json({ success: true, results });
-  } catch (error) {
-    console.error('GIF->ICO batch error:', error);
-    const message = error instanceof Error ? error.message : 'Unknown error';
-    res.status(500).json({ error: message });
   }
 });
 
