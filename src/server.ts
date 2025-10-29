@@ -15252,6 +15252,254 @@ app.post('/convert/docx-to-mobi/batch', uploadBatch, async (req, res) => {
   }
 });
 
+// Route: DOCX to ODT (Single)
+app.post('/convert/docx-to-odt/single', upload.single('file'), async (req, res) => {
+  // Set CORS headers
+  res.set({
+    'Access-Control-Allow-Origin': '*',
+    'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+    'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept'
+  });
+  
+  console.log('DOCX->ODT single conversion request');
+
+  const tmpDir = path.join(os.tmpdir(), `docx-odt-${Date.now()}`);
+
+  try {
+    const file = req.file;
+    if (!file) {
+      return res.status(400).json({ error: 'No file uploaded' });
+    }
+    await fs.mkdir(tmpDir, { recursive: true });
+
+    const inputPath = path.join(tmpDir, file.originalname);
+    const outputPath = path.join(tmpDir, file.originalname.replace(/\.docx$/i, '.odt'));
+
+    await fs.writeFile(inputPath, file.buffer);
+
+    const scriptPath = path.join(__dirname, '..', 'scripts', 'docx_to_odt.py');
+    console.log('DOCX to ODT: Executing Python script:', scriptPath);
+    console.log('DOCX to ODT: Input file:', inputPath);
+    console.log('DOCX to ODT: Output file:', outputPath);
+    
+    // Check if script exists
+    try {
+      await fs.access(scriptPath);
+      console.log('DOCX to ODT: Script exists');
+    } catch (error) {
+      console.error('DOCX to ODT: Script does not exist:', scriptPath);
+      return res.status(500).json({ error: 'Conversion script not found' });
+    }
+
+    // Get options from request body
+    const preserveFormatting = req.body.preserveFormatting !== 'false';
+
+    const pythonArgs = [scriptPath, inputPath, outputPath];
+    if (!preserveFormatting) {
+      pythonArgs.push('--no-formatting');
+    }
+
+    const python = spawn('/opt/venv/bin/python', pythonArgs);
+
+    let stdout = '';
+    let stderr = '';
+
+    python.stdout.on('data', (data: Buffer) => {
+      stdout += data.toString();
+      console.log('DOCX to ODT stdout:', data.toString());
+    });
+
+    python.stderr.on('data', (data: Buffer) => {
+      stderr += data.toString();
+      console.log('DOCX to ODT stderr:', data.toString());
+    });
+
+    python.on('close', async (code: number) => {
+      console.log('DOCX to ODT: Python script finished with code:', code);
+      console.log('DOCX to ODT: stdout:', stdout);
+      console.log('DOCX to ODT: stderr:', stderr);
+      
+      try {
+        if (code === 0 && await fs.access(outputPath).then(() => true).catch(() => false)) {
+          const outputBuffer = await fs.readFile(outputPath);
+          console.log('DOCX to ODT: Output file size:', outputBuffer.length);
+          res.set({
+            'Content-Type': 'application/vnd.oasis.opendocument.text',
+            'Content-Disposition': `attachment; filename="${path.basename(outputPath)}"`,
+            'Access-Control-Allow-Origin': '*',
+            'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+            'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept'
+          });
+          res.send(outputBuffer);
+          
+        } else {
+          console.error('DOCX to ODT conversion failed. Code:', code, 'Stderr:', stderr);
+          res.set({
+            'Access-Control-Allow-Origin': '*',
+            'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+            'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept'
+          });
+          res.status(500).json({ error: 'Conversion failed', details: stderr });
+        }
+      } catch (error) {
+        console.error('Error handling conversion result:', error);
+        res.set({
+          'Access-Control-Allow-Origin': '*',
+          'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+          'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept'
+        });
+        res.status(500).json({ error: 'Conversion failed', details: error instanceof Error ? error.message : 'Unknown error' });
+      } finally {
+        await fs.rm(tmpDir, { recursive: true, force: true }).catch(() => undefined);
+      }
+    });
+  } catch (error) {
+    console.error('DOCX to ODT conversion error:', error);
+    const message = error instanceof Error ? error.message : 'Unknown error';
+    res.set({
+      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+      'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept'
+    });
+    res.status(500).json({ error: message });
+  }
+});
+
+// Route: DOCX to ODT (Batch)
+app.post('/convert/docx-to-odt/batch', uploadBatch, async (req, res) => {
+  // Set CORS headers
+  res.set({
+    'Access-Control-Allow-Origin': '*',
+    'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+    'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept'
+  });
+  
+  console.log('DOCX->ODT batch conversion request');
+
+  const tmpDir = path.join(os.tmpdir(), `docx-odt-batch-${Date.now()}`);
+
+  try {
+    const files = req.files as Express.Multer.File[];
+    if (!files || files.length === 0) {
+      return res.status(400).json({ error: 'No files uploaded' });
+    }
+    await fs.mkdir(tmpDir, { recursive: true });
+
+    const results = [];
+
+    // Get options from request body
+    const preserveFormatting = req.body.preserveFormatting !== 'false';
+
+    for (const file of files) {
+      try {
+        const inputPath = path.join(tmpDir, file.originalname);
+        const outputPath = path.join(tmpDir, file.originalname.replace(/\.docx$/i, '.odt'));
+
+        await fs.writeFile(inputPath, file.buffer);
+
+        const scriptPath = path.join(__dirname, '..', 'scripts', 'docx_to_odt.py');
+        console.log('DOCX to ODT batch: Executing Python script:', scriptPath);
+        console.log('DOCX to ODT batch: Input file:', inputPath);
+        console.log('DOCX to ODT batch: Output file:', outputPath);
+
+        try {
+          await fs.access(scriptPath);
+          console.log('DOCX to ODT batch: Script exists');
+        } catch (error) {
+          console.error('DOCX to ODT batch: Script does not exist:', scriptPath);
+          results.push({
+            originalName: file.originalname,
+            outputFilename: '',
+            size: 0,
+            success: false,
+            error: 'Conversion script not found'
+          });
+          continue;
+        }
+
+        const pythonArgs = [scriptPath, inputPath, outputPath];
+        if (!preserveFormatting) {
+          pythonArgs.push('--no-formatting');
+        }
+
+        const python = spawn('/opt/venv/bin/python', pythonArgs);
+
+        let stdout = '';
+        let stderr = '';
+
+        python.stdout.on('data', (data: Buffer) => {
+          stdout += data.toString();
+          console.log('DOCX to ODT batch stdout:', data.toString());
+        });
+
+        python.stderr.on('data', (data: Buffer) => {
+          stderr += data.toString();
+          console.log('DOCX to ODT batch stderr:', data.toString());
+        });
+
+        await new Promise<void>((resolve, reject) => {
+          python.on('close', async (code: number) => {
+            console.log('DOCX to ODT batch: Python script finished with code:', code);
+            
+            try {
+              if (code === 0 && await fs.access(outputPath).then(() => true).catch(() => false)) {
+                const outputBuffer = await fs.readFile(outputPath);
+                console.log('DOCX to ODT batch: Output file size:', outputBuffer.length);
+                results.push({
+                  originalName: file.originalname,
+                  outputFilename: path.basename(outputPath),
+                  size: outputBuffer.length,
+                  success: true,
+                  downloadPath: `data:application/vnd.oasis.opendocument.text;base64,${outputBuffer.toString('base64')}`
+                });
+                resolve();
+              } else {
+                console.error('DOCX to ODT batch conversion failed. Code:', code, 'Stderr:', stderr);
+                results.push({
+                  originalName: file.originalname,
+                  outputFilename: '',
+                  size: 0,
+                  success: false,
+                  error: stderr || `Conversion failed with code ${code}`
+                });
+                resolve(); // Continue with other files
+              }
+            } catch (error) {
+              console.error('Error handling batch conversion result:', error);
+              results.push({
+                originalName: file.originalname,
+                outputFilename: '',
+                size: 0,
+                success: false,
+                error: error instanceof Error ? error.message : 'Unknown error'
+              });
+              resolve(); // Continue with other files
+            }
+          });
+        });
+      } catch (error) {
+        console.error('DOCX to ODT batch conversion error for file:', file.originalname, error);
+        results.push({
+          originalName: file.originalname,
+          outputFilename: '',
+          size: 0,
+          success: false,
+          error: error instanceof Error ? error.message : 'Unknown error'
+        });
+      }
+    }
+
+    res.json({ success: true, results });
+    
+  } catch (error) {
+    console.error('DOCX to ODT batch conversion error:', error);
+    const message = error instanceof Error ? error.message : 'Unknown error';
+    res.status(500).json({ error: message });
+  } finally {
+    await fs.rm(tmpDir, { recursive: true, force: true }).catch(() => undefined);
+  }
+});
+
 // Start server
 const server = app.listen(PORT, '0.0.0.0', () => {
   console.log(`Morpy backend running on port ${PORT}`);
