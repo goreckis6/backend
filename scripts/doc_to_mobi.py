@@ -359,8 +359,7 @@ def convert_doc_to_mobi(doc_file, output_file, include_images=True, preserve_for
             temp_epub,
             output_file,
             '--output-profile', 'kindle' if kindle_optimized else 'default',
-            '--mobi-file-type', 'new',  # 'new' for KF8, 'old' for Mobipocket
-            '--no-default-epub-cover'  # Prevent Calibre from adding a generic cover
+            '--mobi-file-type', 'new'  # 'new' for KF8, 'old' for Mobipocket
         ]
         
         # Extract title and author from DOCX for Calibre metadata
