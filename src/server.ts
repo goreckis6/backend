@@ -16693,6 +16693,8 @@ app.post('/convert/heic-to-svg/single', upload.single('file'), async (req, res) 
     // Get options from request body
     const quality = parseInt(req.body.quality) || 95;
     const preserveTransparency = req.body.preserveTransparency !== 'false';
+    // Use 4096 as default max dimension for faster conversion (can be adjusted)
+    const maxDimension = parseInt(req.body.maxDimension) || 4096;
 
     const pythonArgs = [scriptPath, inputPath, outputPath];
     if (quality !== 95) {
@@ -16700,6 +16702,9 @@ app.post('/convert/heic-to-svg/single', upload.single('file'), async (req, res) 
     }
     if (!preserveTransparency) {
       pythonArgs.push('--no-transparency');
+    }
+    if (maxDimension !== 8192) {
+      pythonArgs.push('--max-dimension', maxDimension.toString());
     }
 
     const python = spawn('/opt/venv/bin/python', pythonArgs);
@@ -16793,6 +16798,8 @@ app.post('/convert/heic-to-svg/batch', uploadBatch, async (req, res) => {
     // Get options from request body
     const quality = parseInt(req.body.quality) || 95;
     const preserveTransparency = req.body.preserveTransparency !== 'false';
+    // Use 4096 as default max dimension for faster conversion (can be adjusted)
+    const maxDimension = parseInt(req.body.maxDimension) || 4096;
 
     for (const file of files) {
       try {
@@ -16827,6 +16834,9 @@ app.post('/convert/heic-to-svg/batch', uploadBatch, async (req, res) => {
         }
         if (!preserveTransparency) {
           pythonArgs.push('--no-transparency');
+        }
+        if (maxDimension !== 8192) {
+          pythonArgs.push('--max-dimension', maxDimension.toString());
         }
 
         const python = spawn('/opt/venv/bin/python', pythonArgs);
