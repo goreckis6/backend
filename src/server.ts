@@ -6517,14 +6517,37 @@ app.get('/test-python', async (req, res) => {
   }
 });
 
+// HEIC Preview endpoint - OPTIONS for CORS preflight
+app.options('/api/preview/heic', (req, res) => {
+  res.set({
+    'Access-Control-Allow-Origin': '*',
+    'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+    'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept',
+    'Access-Control-Max-Age': '86400'
+  });
+  res.sendStatus(200);
+});
+
 // HEIC Preview endpoint - converts HEIC to PNG for web viewing
 app.post('/api/preview/heic', upload.single('file'), async (req, res) => {
+  // Set CORS headers
+  res.set({
+    'Access-Control-Allow-Origin': '*',
+    'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+    'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept'
+  });
+
   console.log('=== HEIC PREVIEW REQUEST ===');
   const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'morphy-heic-preview-'));
 
   try {
     const file = req.file;
     if (!file) {
+      res.set({
+        'Access-Control-Allow-Origin': '*',
+        'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+        'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept'
+      });
       return res.status(400).json({ error: 'No file uploaded' });
     }
 
@@ -6599,12 +6622,22 @@ app.post('/api/preview/heic', upload.single('file'), async (req, res) => {
     });
 
     // Send PNG as response
-    res.set('Content-Type', 'image/png');
+    res.set({
+      'Content-Type': 'image/png',
+      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+      'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept'
+    });
     res.send(pngBuffer);
 
   } catch (error) {
     console.error('HEIC preview error:', error);
     const message = error instanceof Error ? error.message : 'Unknown HEIC preview error';
+    res.set({
+      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+      'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept'
+    });
     res.status(500).json({ error: `Failed to generate HEIC preview: ${message}` });
   } finally {
     await fs.rm(tmpDir, { recursive: true, force: true }).catch(() => undefined);
