@@ -18,6 +18,11 @@ try:
     HAS_PANDAS = True
 except ImportError:
     HAS_PANDAS = False
+try:
+    from docx import Document
+    HAS_DOCX = True
+except ImportError:
+    HAS_DOCX = False
 
 
 def find_libreoffice():
@@ -88,7 +93,7 @@ def convert_doc_to_csv_libreoffice(doc_file, output_file, delimiter=',', extract
             print("ERROR: LibreOffice not found. Please ensure LibreOffice is installed.")
             return False
         
-        # Create temporary directory for LibreOffice conversion
+        # Create temporary directory for conversion
         temp_dir = tempfile.mkdtemp()
         
         try:
@@ -97,19 +102,12 @@ def convert_doc_to_csv_libreoffice(doc_file, output_file, delimiter=',', extract
             if output_dir and not os.path.exists(output_dir):
                 os.makedirs(output_dir, exist_ok=True)
             
-            # LibreOffice can convert DOC to CSV
-            # Strategy: Convert DOC to CSV using LibreOffice's filter
+            # Strategy: DOC -> DOCX (using LibreOffice) -> CSV (using python-docx and pandas)
+            # Step 1: Convert DOC to DOCX using LibreOffice
+            base_name = os.path.splitext(os.path.basename(doc_file))[0]
+            intermediate_docx = os.path.join(temp_dir, f"{base_name}.docx")
             
-            # Map delimiter to LibreOffice filter option
-            filter_map = {
-                ',': 'Text - txt - csv (StarCalc)',
-                ';': 'Text - txt - csv (StarCalc)',
-                '\t': 'Text - txt - csv (StarCalc)',
-                '|': 'Text - txt - csv (StarCalc)'
-            }
-            
-            # Use LibreOffice to convert DOC to CSV
-            # LibreOffice --convert-to csv:Text - txt - csv (StarCalc) --outdir temp_dir doc_file
+            print("Step 1: Converting DOC to DOCX using LibreOffice...")
             cmd = [
                 libreoffice,
                 '--headless',
@@ -120,7 +118,7 @@ def convert_doc_to_csv_libreoffice(doc_file, output_file, delimiter=',', extract
                 '--nolockcheck',
                 '--nologo',
                 '--norestore',
-                '--convert-to', 'csv',
+                '--convert-to', 'docx',
                 '--outdir', temp_dir,
                 doc_file
             ]
@@ -146,67 +144,69 @@ def convert_doc_to_csv_libreoffice(doc_file, output_file, delimiter=',', extract
             
             if result.stdout:
                 print(f"LibreOffice stdout: {result.stdout}")
-            if result.stderr:
+            if result.stderr and 'Error:' not in result.stderr:
                 print(f"LibreOffice stderr: {result.stderr}")
             
-            # LibreOffice creates filename.csv in temp_dir
-            base_name = os.path.splitext(os.path.basename(doc_file))[0]
-            libreoffice_csv = os.path.join(temp_dir, f"{base_name}.csv")
-            
-            if os.path.exists(libreoffice_csv):
-                print(f"LibreOffice created CSV: {libreoffice_csv}")
-                
-                # Read the CSV created by LibreOffice and adjust delimiter if needed
-                if HAS_PANDAS:
-                    # Use pandas to handle delimiter conversion
-                    try:
-                        # Try to read with different delimiters to find the right one
-                        df = None
-                        for delim in [',', ';', '\t']:
-                            try:
-                                df = pd.read_csv(libreoffice_csv, delimiter=delim, encoding='utf-8', header=None)
-                                print(f"Successfully read CSV with delimiter '{delim}'")
-                                break
-                            except Exception:
-                                continue
-                        
-                        if df is None:
-                            # Try reading with comma as default
-                            df = pd.read_csv(libreoffice_csv, encoding='utf-8', header=None, on_bad_lines='skip')
-                        
-                        # Adjust delimiter if needed
-                        if delimiter != ',':
-                            # Convert to desired delimiter
-                            if delimiter == ';':
-                                df.to_csv(output_file, sep=';', index=False, header=False, encoding='utf-8')
-                            elif delimiter == '\t':
-                                df.to_csv(output_file, sep='\t', index=False, header=False, encoding='utf-8')
-                            elif delimiter == '|':
-                                df.to_csv(output_file, sep='|', index=False, header=False, encoding='utf-8')
-                            else:
-                                df.to_csv(output_file, sep=',', index=False, header=False, encoding='utf-8')
-                        else:
-                            # Just copy/rename if delimiter matches
-                            shutil.copy2(libreoffice_csv, output_file)
-                    except Exception as e:
-                        print(f"Warning: Could not process CSV with pandas: {e}")
-                        # Fallback: just copy the file
-                        shutil.copy2(libreoffice_csv, output_file)
-                else:
-                    # No pandas available, just copy the file
-                    shutil.copy2(libreoffice_csv, output_file)
-                
-                # Verify output file
-                if os.path.exists(output_file):
-                    output_size = os.path.getsize(output_file)
-                    print(f"CSV file created successfully: {output_size} bytes")
-                    return True
-                else:
-                    print(f"ERROR: CSV file was not created at {output_file}")
-                    return False
-            else:
-                print(f"ERROR: LibreOffice did not create CSV file: {libreoffice_csv}")
+            # Check if DOCX was created
+            if not os.path.exists(intermediate_docx):
+                print(f"ERROR: LibreOffice did not create DOCX file: {intermediate_docx}")
                 print(f"Contents of temp directory {temp_dir}: {os.listdir(temp_dir)}")
+                return False
+            
+            print(f"Step 1 complete: DOCX created at {intermediate_docx}")
+            
+            # Step 2: Extract tables from DOCX and convert to CSV
+            if not HAS_DOCX:
+                print("ERROR: python-docx is required but not available. Please install python-docx.")
+                return False
+            
+            print("Step 2: Extracting tables from DOCX...")
+            doc = Document(intermediate_docx)
+            
+            # Collect all table data
+            all_rows = []
+            
+            if extract_tables and len(doc.tables) > 0:
+                print(f"Found {len(doc.tables)} table(s) in document")
+                for table_idx, table in enumerate(doc.tables):
+                    print(f"Processing table {table_idx + 1}...")
+                    for row in table.rows:
+                        row_data = []
+                        for cell in row.cells:
+                            cell_text = cell.text.strip().replace('\n', ' ').replace('\r', '')
+                            row_data.append(cell_text)
+                        if any(cell for cell in row_data):  # Only add non-empty rows
+                            all_rows.append(row_data)
+            
+            # Include paragraphs if requested and no tables found
+            if include_paragraphs and len(all_rows) == 0:
+                print("No tables found, extracting paragraphs...")
+                for para in doc.paragraphs:
+                    para_text = para.text.strip()
+                    if para_text:
+                        all_rows.append([para_text])
+            
+            if len(all_rows) == 0:
+                print("WARNING: No data extracted from document")
+                # Create empty CSV file
+                with open(output_file, 'w', encoding='utf-8', newline='') as f:
+                    writer = csv.writer(f, delimiter=delimiter)
+                    pass  # Empty file
+            else:
+                # Write to CSV with specified delimiter
+                print(f"Writing {len(all_rows)} rows to CSV...")
+                with open(output_file, 'w', encoding='utf-8', newline='') as f:
+                    writer = csv.writer(f, delimiter=delimiter)
+                    for row in all_rows:
+                        writer.writerow(row)
+            
+            # Verify output file
+            if os.path.exists(output_file):
+                output_size = os.path.getsize(output_file)
+                print(f"CSV file created successfully: {output_size} bytes, {len(all_rows)} rows")
+                return True
+            else:
+                print(f"ERROR: CSV file was not created at {output_file}")
                 return False
                 
         finally:
