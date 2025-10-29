@@ -14452,6 +14452,270 @@ app.post('/convert/epub-to-csv/batch', uploadBatch, async (req, res) => {
   }
 });
 
+// Route: DOCX to CSV (Single)
+app.post('/convert/docx-to-csv/single', upload.single('file'), async (req, res) => {
+  // Set CORS headers
+  res.set({
+    'Access-Control-Allow-Origin': '*',
+    'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+    'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept'
+  });
+  
+  console.log('DOCX->CSV single conversion request');
+
+  const tmpDir = path.join(os.tmpdir(), `docx-csv-${Date.now()}`);
+
+  try {
+    const file = req.file;
+    if (!file) {
+      return res.status(400).json({ error: 'No file uploaded' });
+    }
+    await fs.mkdir(tmpDir, { recursive: true });
+
+    const inputPath = path.join(tmpDir, file.originalname);
+    const outputPath = path.join(tmpDir, file.originalname.replace(/\.docx$/i, '.csv'));
+
+    await fs.writeFile(inputPath, file.buffer);
+
+    const scriptPath = path.join(__dirname, '..', 'scripts', 'docx_to_csv.py');
+    console.log('DOCX to CSV: Executing Python script:', scriptPath);
+    console.log('DOCX to CSV: Input file:', inputPath);
+    console.log('DOCX to CSV: Output file:', outputPath);
+    
+    // Check if script exists
+    try {
+      await fs.access(scriptPath);
+      console.log('DOCX to CSV: Script exists');
+    } catch (error) {
+      console.error('DOCX to CSV: Script does not exist:', scriptPath);
+      return res.status(500).json({ error: 'Conversion script not found' });
+    }
+
+    // Get options from request body
+    const extractTables = req.body.extractTables !== 'false';
+    const includeParagraphs = req.body.includeParagraphs !== 'false';
+    const delimiter = req.body.delimiter || ',';
+
+    const pythonArgs = [scriptPath, inputPath, outputPath];
+    if (!extractTables) {
+      pythonArgs.push('--no-tables');
+    }
+    if (!includeParagraphs) {
+      pythonArgs.push('--no-paragraphs');
+    }
+    if (delimiter !== ',') {
+      pythonArgs.push('--delimiter', delimiter);
+    }
+
+    const python = spawn('/opt/venv/bin/python', pythonArgs);
+
+    let stdout = '';
+    let stderr = '';
+
+    python.stdout.on('data', (data: Buffer) => {
+      stdout += data.toString();
+      console.log('DOCX to CSV stdout:', data.toString());
+    });
+
+    python.stderr.on('data', (data: Buffer) => {
+      stderr += data.toString();
+      console.log('DOCX to CSV stderr:', data.toString());
+    });
+
+    python.on('close', async (code: number) => {
+      console.log('DOCX to CSV: Python script finished with code:', code);
+      console.log('DOCX to CSV: stdout:', stdout);
+      console.log('DOCX to CSV: stderr:', stderr);
+      
+      try {
+        if (code === 0 && await fs.access(outputPath).then(() => true).catch(() => false)) {
+          const outputBuffer = await fs.readFile(outputPath);
+          console.log('DOCX to CSV: Output file size:', outputBuffer.length);
+          res.set({
+            'Content-Type': 'text/csv',
+            'Content-Disposition': `attachment; filename="${path.basename(outputPath)}"`,
+            'Access-Control-Allow-Origin': '*',
+            'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+            'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept'
+          });
+          res.send(outputBuffer);
+          
+        } else {
+          console.error('DOCX to CSV conversion failed. Code:', code, 'Stderr:', stderr);
+          res.set({
+            'Access-Control-Allow-Origin': '*',
+            'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+            'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept'
+          });
+          res.status(500).json({ error: 'Conversion failed', details: stderr });
+        }
+      } catch (error) {
+        console.error('Error handling conversion result:', error);
+        res.set({
+          'Access-Control-Allow-Origin': '*',
+          'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+          'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept'
+        });
+        res.status(500).json({ error: 'Conversion failed', details: error instanceof Error ? error.message : 'Unknown error' });
+      } finally {
+        await fs.rm(tmpDir, { recursive: true, force: true }).catch(() => undefined);
+      }
+    });
+  } catch (error) {
+    console.error('DOCX to CSV conversion error:', error);
+    const message = error instanceof Error ? error.message : 'Unknown error';
+    res.set({
+      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+      'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept'
+    });
+    res.status(500).json({ error: message });
+  }
+});
+
+// Route: DOCX to CSV (Batch)
+app.post('/convert/docx-to-csv/batch', uploadBatch, async (req, res) => {
+  // Set CORS headers
+  res.set({
+    'Access-Control-Allow-Origin': '*',
+    'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+    'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept'
+  });
+  
+  console.log('DOCX->CSV batch conversion request');
+
+  const tmpDir = path.join(os.tmpdir(), `docx-csv-batch-${Date.now()}`);
+
+  try {
+    const files = req.files as Express.Multer.File[];
+    if (!files || files.length === 0) {
+      return res.status(400).json({ error: 'No files uploaded' });
+    }
+    await fs.mkdir(tmpDir, { recursive: true });
+
+    const results = [];
+
+    // Get options from request body
+    const extractTables = req.body.extractTables !== 'false';
+    const includeParagraphs = req.body.includeParagraphs !== 'false';
+    const delimiter = req.body.delimiter || ',';
+
+    for (const file of files) {
+      try {
+        const inputPath = path.join(tmpDir, file.originalname);
+        const outputPath = path.join(tmpDir, file.originalname.replace(/\.docx$/i, '.csv'));
+
+        await fs.writeFile(inputPath, file.buffer);
+
+        const scriptPath = path.join(__dirname, '..', 'scripts', 'docx_to_csv.py');
+        console.log('DOCX to CSV batch: Executing Python script:', scriptPath);
+        console.log('DOCX to CSV batch: Input file:', inputPath);
+        console.log('DOCX to CSV batch: Output file:', outputPath);
+
+        try {
+          await fs.access(scriptPath);
+          console.log('DOCX to CSV batch: Script exists');
+        } catch (error) {
+          console.error('DOCX to CSV batch: Script does not exist:', scriptPath);
+          results.push({
+            originalName: file.originalname,
+            outputFilename: '',
+            size: 0,
+            success: false,
+            error: 'Conversion script not found'
+          });
+          continue;
+        }
+
+        const pythonArgs = [scriptPath, inputPath, outputPath];
+        if (!extractTables) {
+          pythonArgs.push('--no-tables');
+        }
+        if (!includeParagraphs) {
+          pythonArgs.push('--no-paragraphs');
+        }
+        if (delimiter !== ',') {
+          pythonArgs.push('--delimiter', delimiter);
+        }
+
+        const python = spawn('/opt/venv/bin/python', pythonArgs);
+
+        let stdout = '';
+        let stderr = '';
+
+        python.stdout.on('data', (data: Buffer) => {
+          stdout += data.toString();
+          console.log('DOCX to CSV batch stdout:', data.toString());
+        });
+
+        python.stderr.on('data', (data: Buffer) => {
+          stderr += data.toString();
+          console.log('DOCX to CSV batch stderr:', data.toString());
+        });
+
+        await new Promise<void>((resolve, reject) => {
+          python.on('close', async (code: number) => {
+            console.log('DOCX to CSV batch: Python script finished with code:', code);
+            
+            try {
+              if (code === 0 && await fs.access(outputPath).then(() => true).catch(() => false)) {
+                const outputBuffer = await fs.readFile(outputPath);
+                console.log('DOCX to CSV batch: Output file size:', outputBuffer.length);
+                results.push({
+                  originalName: file.originalname,
+                  outputFilename: path.basename(outputPath),
+                  size: outputBuffer.length,
+                  success: true,
+                  downloadPath: `data:text/csv;base64,${outputBuffer.toString('base64')}`
+                });
+                resolve();
+              } else {
+                console.error('DOCX to CSV batch conversion failed. Code:', code, 'Stderr:', stderr);
+                results.push({
+                  originalName: file.originalname,
+                  outputFilename: '',
+                  size: 0,
+                  success: false,
+                  error: stderr || `Conversion failed with code ${code}`
+                });
+                resolve(); // Continue with other files
+              }
+            } catch (error) {
+              console.error('Error handling batch conversion result:', error);
+              results.push({
+                originalName: file.originalname,
+                outputFilename: '',
+                size: 0,
+                success: false,
+                error: error instanceof Error ? error.message : 'Unknown error'
+              });
+              resolve(); // Continue with other files
+            }
+          });
+        });
+      } catch (error) {
+        console.error('DOCX to CSV batch conversion error for file:', file.originalname, error);
+        results.push({
+          originalName: file.originalname,
+          outputFilename: '',
+          size: 0,
+          success: false,
+          error: error instanceof Error ? error.message : 'Unknown error'
+        });
+      }
+    }
+
+    res.json({ success: true, results });
+    
+  } catch (error) {
+    console.error('DOCX to CSV batch conversion error:', error);
+    const message = error instanceof Error ? error.message : 'Unknown error';
+    res.status(500).json({ error: message });
+  } finally {
+    await fs.rm(tmpDir, { recursive: true, force: true }).catch(() => undefined);
+  }
+});
+
 // Start server
 const server = app.listen(PORT, '0.0.0.0', () => {
   console.log(`Morpy backend running on port ${PORT}`);
