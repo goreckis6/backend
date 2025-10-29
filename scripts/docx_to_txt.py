@@ -3,6 +3,7 @@
 DOCX to TXT Converter
 Converts Microsoft Word DOCX files to plain text (TXT) format
 Uses Pandoc for clean text output (recommended for TXT)
+Falls back to python-docx if Pandoc is not available
 """
 
 import os
@@ -12,6 +13,11 @@ import traceback
 import subprocess
 import tempfile
 import shutil
+try:
+    from docx import Document
+    HAS_DOCX = True
+except ImportError:
+    HAS_DOCX = False
 
 
 def find_pandoc():
@@ -37,6 +43,57 @@ def find_pandoc():
             continue
     
     return None
+
+
+def extract_text_with_docx(docx_file, preserve_line_breaks=True, remove_formatting=True):
+    """
+    Extract text from DOCX using python-docx (fallback method)
+    
+    Args:
+        docx_file (str): Path to input DOCX file
+        preserve_line_breaks (bool): Preserve line breaks
+        remove_formatting (bool): Remove formatting (always true for plain text)
+        
+    Returns:
+        str: Extracted text content
+    """
+    if not HAS_DOCX:
+        return None
+    
+    try:
+        print("Using python-docx to extract text from DOCX...")
+        doc = Document(docx_file)
+        
+        text_parts = []
+        
+        for paragraph in doc.paragraphs:
+            para_text = paragraph.text.strip()
+            if para_text:
+                if preserve_line_breaks:
+                    text_parts.append(para_text)
+                else:
+                    text_parts.append(para_text.replace('\n', ' '))
+        
+        # Extract text from tables if any
+        for table in doc.tables:
+            for row in table.rows:
+                row_texts = []
+                for cell in row.cells:
+                    cell_text = cell.text.strip()
+                    if cell_text:
+                        row_texts.append(cell_text)
+                if row_texts:
+                    text_parts.append(' | '.join(row_texts))
+        
+        full_text = '\n'.join(text_parts) if preserve_line_breaks else ' '.join(text_parts)
+        
+        print(f"Extracted {len(full_text)} characters using python-docx")
+        return full_text
+        
+    except Exception as e:
+        print(f"Error extracting text with python-docx: {e}")
+        traceback.print_exc()
+        return None
 
 
 def convert_docx_to_txt(docx_file, output_file, preserve_line_breaks=True, remove_formatting=True):
@@ -75,8 +132,26 @@ def convert_docx_to_txt(docx_file, output_file, preserve_line_breaks=True, remov
         pandoc = find_pandoc()
         
         if not pandoc:
-            print("ERROR: Pandoc not found. Please ensure Pandoc is installed.")
-            return False
+            print("WARNING: Pandoc not found. Trying fallback method with python-docx...")
+            
+            # Try fallback method using python-docx
+            if HAS_DOCX:
+                extracted_text = extract_text_with_docx(docx_file, preserve_line_breaks, remove_formatting)
+                
+                if extracted_text is not None:
+                    # Write extracted text to output file
+                    with open(output_file, 'w', encoding='utf-8') as f:
+                        f.write(extracted_text)
+                    
+                    output_size = os.path.getsize(output_file)
+                    print(f"TXT file created successfully using python-docx: {output_size} bytes")
+                    return True
+                else:
+                    print("ERROR: Failed to extract text using python-docx")
+                    return False
+            else:
+                print("ERROR: Pandoc not found and python-docx is not available. Please ensure Pandoc is installed or python-docx is in requirements.txt")
+                return False
         
         # Create output directory if needed
         output_dir = os.path.dirname(output_file)

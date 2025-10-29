@@ -18,6 +18,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     unoconv \
     calibre \
     exiftool \
+    pandoc \
     psmisc \
     fonts-dejavu fonts-liberation locales \
     python3 \

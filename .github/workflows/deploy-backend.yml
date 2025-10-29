@@ -122,6 +122,7 @@ jobs:
             "csv_to_html.py"
             "csv_to_md.py"
             "csv_to_mobi.py"
+            "docx_to_txt.py"
           )
           
           for script in "${REQUIRED_SCRIPTS[@]}"; do
@@ -159,7 +160,8 @@ jobs:
             libjpeg-dev libpng-dev libtiff-dev libraw-dev \
             build-essential libffi-dev \
             libreoffice libreoffice-writer libreoffice-calc libreoffice-impress \
-            calibre
+            calibre \
+            pandoc
 
           # Setup Python environment (only if not exists or needs update)
           if [ ! -d "$VENV_DIR" ] || [ ! -f "$VENV_DIR/bin/python" ]; then
@@ -309,6 +311,15 @@ jobs:
                    ebook-convert --version 2>/dev/null || echo "⚠️ Could not get Calibre version"
                  else
                    echo "❌ ERROR: Calibre (ebook-convert) not found"
+                 fi
+
+                 # Verify Pandoc installation
+                 echo "🔍 Verifying Pandoc installation..."
+                 if which pandoc >/dev/null 2>&1; then
+                   echo "✅ Pandoc is installed"
+                   pandoc --version 2>/dev/null || echo "⚠️ Could not get Pandoc version"
+                 else
+                   echo "❌ ERROR: Pandoc not found"
                  fi
 
                  # Verify Ghostscript installation
