@@ -16984,12 +16984,33 @@ app.post('/convert/heic-to-pdf/single', upload.single('file'), async (req, res) 
       });
       return res.status(400).json({ error: 'No file uploaded' });
     }
-    await fs.mkdir(tmpDir, { recursive: true });
+    try {
+      await fs.mkdir(tmpDir, { recursive: true });
+    } catch (mkdirError) {
+      console.error('HEIC to PDF: Failed to create temp directory:', mkdirError);
+      res.set({
+        'Access-Control-Allow-Origin': '*',
+        'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+        'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept'
+      });
+      return res.status(500).json({ error: 'Failed to create temporary directory', details: mkdirError instanceof Error ? mkdirError.message : 'Unknown error' });
+    }
 
     const inputPath = path.join(tmpDir, file.originalname);
     const outputPath = path.join(tmpDir, file.originalname.replace(/\.(heic|heif)$/i, '.pdf'));
 
-    await fs.writeFile(inputPath, file.buffer);
+    try {
+      await fs.writeFile(inputPath, file.buffer);
+    } catch (writeError) {
+      console.error('HEIC to PDF: Failed to write input file:', writeError);
+      res.set({
+        'Access-Control-Allow-Origin': '*',
+        'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+        'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept'
+      });
+      await fs.rm(tmpDir, { recursive: true, force: true }).catch(() => undefined);
+      return res.status(500).json({ error: 'Failed to write input file', details: writeError instanceof Error ? writeError.message : 'Unknown error' });
+    }
 
     const scriptPath = path.join(__dirname, '..', 'scripts', 'heic_to_pdf.py');
     console.log('HEIC to PDF: Executing Python script:', scriptPath);
@@ -17002,6 +17023,11 @@ app.post('/convert/heic-to-pdf/single', upload.single('file'), async (req, res) 
       console.log('HEIC to PDF: Script exists');
     } catch (error) {
       console.error('HEIC to PDF: Script does not exist:', scriptPath);
+      res.set({
+        'Access-Control-Allow-Origin': '*',
+        'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+        'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept'
+      });
       return res.status(500).json({ error: 'Conversion script not found' });
     }
 
@@ -17030,6 +17056,20 @@ app.post('/convert/heic-to-pdf/single', upload.single('file'), async (req, res) 
     let stdout = '';
     let stderr = '';
 
+    // Handle spawn errors (if process fails to start)
+    python.on('error', async (error: Error) => {
+      console.error('HEIC to PDF: Failed to start Python process:', error);
+      if (!res.headersSent) {
+        res.set({
+          'Access-Control-Allow-Origin': '*',
+          'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+          'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept'
+        });
+        res.status(500).json({ error: 'Failed to start conversion process', details: error.message });
+      }
+      await fs.rm(tmpDir, { recursive: true, force: true }).catch(() => undefined);
+    });
+
     python.stdout.on('data', (data: Buffer) => {
       stdout += data.toString();
       console.log('HEIC to PDF stdout:', data.toString());
@@ -17040,41 +17080,61 @@ app.post('/convert/heic-to-pdf/single', upload.single('file'), async (req, res) 
       console.log('HEIC to PDF stderr:', data.toString());
     });
 
-    python.on('close', async (code: number) => {
-      console.log('HEIC to PDF: Python script finished with code:', code);
-      console.log('HEIC to PDF: stdout:', stdout);
-      console.log('HEIC to PDF: stderr:', stderr);
-      
-      try {
-        if (code === 0 && await fs.access(outputPath).then(() => true).catch(() => false)) {
-          const outputBuffer = await fs.readFile(outputPath);
-          console.log('HEIC to PDF: Output file size:', outputBuffer.length);
-          res.set({
-            'Content-Type': 'application/pdf',
-            'Content-Disposition': `attachment; filename="${path.basename(outputPath)}"`,
-            'Access-Control-Allow-Origin': '*',
-            'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
-            'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept'
-          });
-          res.send(outputBuffer);
-          
-        } else {
-          console.error('HEIC to PDF conversion failed. Code:', code, 'Stderr:', stderr);
-          res.set({
-            'Access-Control-Allow-Origin': '*',
-            'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
-            'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept'
-          });
-          res.status(500).json({ error: 'Conversion failed', details: stderr });
-        }
-      } catch (error) {
-        console.error('Error handling conversion result:', error);
+    // Set a timeout for the conversion (5 minutes)
+    const timeout = setTimeout(async () => {
+      console.error('HEIC to PDF: Conversion timeout after 5 minutes');
+      python.kill();
+      if (!res.headersSent) {
         res.set({
           'Access-Control-Allow-Origin': '*',
           'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
           'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept'
         });
-        res.status(500).json({ error: 'Conversion failed', details: error instanceof Error ? error.message : 'Unknown error' });
+        res.status(500).json({ error: 'Conversion timeout. The file may be too large or complex.' });
+      }
+      await fs.rm(tmpDir, { recursive: true, force: true }).catch(() => undefined);
+    }, 5 * 60 * 1000);
+
+    python.on('close', async (code: number) => {
+      clearTimeout(timeout);
+      console.log('HEIC to PDF: Python script finished with code:', code);
+      console.log('HEIC to PDF: stdout:', stdout);
+      console.log('HEIC to PDF: stderr:', stderr);
+      
+      try {
+        if (!res.headersSent) {
+          if (code === 0 && await fs.access(outputPath).then(() => true).catch(() => false)) {
+            const outputBuffer = await fs.readFile(outputPath);
+            console.log('HEIC to PDF: Output file size:', outputBuffer.length);
+            res.set({
+              'Content-Type': 'application/pdf',
+              'Content-Disposition': `attachment; filename="${path.basename(outputPath)}"`,
+              'Access-Control-Allow-Origin': '*',
+              'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+              'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept'
+            });
+            res.send(outputBuffer);
+            
+          } else {
+            console.error('HEIC to PDF conversion failed. Code:', code, 'Stderr:', stderr);
+            res.set({
+              'Access-Control-Allow-Origin': '*',
+              'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+              'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept'
+            });
+            res.status(500).json({ error: 'Conversion failed', details: stderr });
+          }
+        }
+      } catch (error) {
+        console.error('Error handling conversion result:', error);
+        if (!res.headersSent) {
+          res.set({
+            'Access-Control-Allow-Origin': '*',
+            'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+            'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept'
+          });
+          res.status(500).json({ error: 'Conversion failed', details: error instanceof Error ? error.message : 'Unknown error' });
+        }
       } finally {
         await fs.rm(tmpDir, { recursive: true, force: true }).catch(() => undefined);
       }
