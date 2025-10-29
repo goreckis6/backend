@@ -175,19 +175,25 @@ jobs:
             # Install Python packages from requirements.txt
             $VENV_DIR/bin/pip install --upgrade pip
             $VENV_DIR/bin/pip install -r requirements.txt
+            # Install additional image processing libraries
+            $VENV_DIR/bin/pip install pillow pillow-heif wand
           else
             echo "✅ Python environment already exists, skipping setup..."
+            # Ensure image processing libraries are installed
+            $VENV_DIR/bin/pip install --upgrade pillow pillow-heif wand
           fi
           
           # Verify Python environment
           echo "🔍 Verifying Python environment..."
           $VENV_DIR/bin/python --version
-          if $VENV_DIR/bin/python -c "import pandas, lxml, bs4, html5lib, jinja2, ebooklib, odfpy, reportlab, pptx, docx, openpyxl, xlrd, PIL, rawpy, pillow_heif, ghostscript, markdown, chardet, pyarrow; print('✅ Python packages OK')"; then
+          if $VENV_DIR/bin/python -c "import pandas, lxml, bs4, html5lib, jinja2, ebooklib, odfpy, reportlab, pptx, docx, openpyxl, xlrd, PIL, rawpy, pillow_heif, wand, ghostscript, markdown, chardet, pyarrow; print('✅ Python packages OK')"; then
             echo "✅ Python environment verified successfully"
           else
             echo "⚠️ Warning: Python packages verification failed"
             # Reinstall packages
             $VENV_DIR/bin/pip install --upgrade --force-reinstall -r requirements.txt
+            # Ensure image processing libraries are installed
+            $VENV_DIR/bin/pip install --upgrade --force-reinstall pillow pillow-heif wand
           fi
           
           # Clear PM2 logs and dump before restart

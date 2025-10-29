@@ -13,6 +13,7 @@ xlrd>=2.0.1
 Pillow>=10.0.0
 rawpy>=0.18.0
 pillow-heif>=0.13.0
+Wand>=0.6.11
 markdown>=3.5.0
 chardet>=5.0.0
 pyarrow>=14.0.0
