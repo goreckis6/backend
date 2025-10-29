@@ -16123,6 +16123,278 @@ app.post('/convert/doc-to-epub/batch', uploadBatch, async (req, res) => {
   }
 });
 
+// Route: DOC to MOBI (Single)
+app.post('/convert/doc-to-mobi/single', upload.single('file'), async (req, res) => {
+  // Set CORS headers
+  res.set({
+    'Access-Control-Allow-Origin': '*',
+    'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+    'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept'
+  });
+  
+  console.log('DOC->MOBI single conversion request');
+
+  const tmpDir = path.join(os.tmpdir(), `doc-mobi-${Date.now()}`);
+
+  try {
+    const file = req.file;
+    if (!file) {
+      return res.status(400).json({ error: 'No file uploaded' });
+    }
+    await fs.mkdir(tmpDir, { recursive: true });
+
+    const inputPath = path.join(tmpDir, file.originalname);
+    const outputPath = path.join(tmpDir, file.originalname.replace(/\.doc$/i, '.mobi'));
+
+    await fs.writeFile(inputPath, file.buffer);
+
+    const scriptPath = path.join(__dirname, '..', 'scripts', 'doc_to_mobi.py');
+    console.log('DOC to MOBI: Executing Python script:', scriptPath);
+    console.log('DOC to MOBI: Input file:', inputPath);
+    console.log('DOC to MOBI: Output file:', outputPath);
+    
+    // Check if script exists
+    try {
+      await fs.access(scriptPath);
+      console.log('DOC to MOBI: Script exists');
+    } catch (error) {
+      console.error('DOC to MOBI: Script does not exist:', scriptPath);
+      return res.status(500).json({ error: 'Conversion script not found' });
+    }
+
+    // Get options from request body
+    const includeImages = req.body.includeImages !== 'false';
+    const preserveFormatting = req.body.preserveFormatting !== 'false';
+    const generateToc = req.body.generateToc !== 'false';
+    const kindleOptimized = req.body.kindleOptimized !== 'false';
+
+    const pythonArgs = [scriptPath, inputPath, outputPath];
+    if (!includeImages) {
+      pythonArgs.push('--no-images');
+    }
+    if (!preserveFormatting) {
+      pythonArgs.push('--no-formatting');
+    }
+    if (!generateToc) {
+      pythonArgs.push('--no-toc');
+    }
+    if (!kindleOptimized) {
+      pythonArgs.push('--no-kindle-optimize');
+    }
+
+    const python = spawn('/opt/venv/bin/python', pythonArgs);
+
+    let stdout = '';
+    let stderr = '';
+
+    python.stdout.on('data', (data: Buffer) => {
+      stdout += data.toString();
+      console.log('DOC to MOBI stdout:', data.toString());
+    });
+
+    python.stderr.on('data', (data: Buffer) => {
+      stderr += data.toString();
+      console.log('DOC to MOBI stderr:', data.toString());
+    });
+
+    python.on('close', async (code: number) => {
+      console.log('DOC to MOBI: Python script finished with code:', code);
+      console.log('DOC to MOBI: stdout:', stdout);
+      console.log('DOC to MOBI: stderr:', stderr);
+      
+      try {
+        if (code === 0 && await fs.access(outputPath).then(() => true).catch(() => false)) {
+          const outputBuffer = await fs.readFile(outputPath);
+          console.log('DOC to MOBI: Output file size:', outputBuffer.length);
+          res.set({
+            'Content-Type': 'application/x-mobipocket-ebook',
+            'Content-Disposition': `attachment; filename="${path.basename(outputPath)}"`,
+            'Access-Control-Allow-Origin': '*',
+            'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+            'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept'
+          });
+          res.send(outputBuffer);
+          
+        } else {
+          console.error('DOC to MOBI conversion failed. Code:', code, 'Stderr:', stderr);
+          res.set({
+            'Access-Control-Allow-Origin': '*',
+            'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+            'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept'
+          });
+          res.status(500).json({ error: 'Conversion failed', details: stderr });
+        }
+      } catch (error) {
+        console.error('Error handling conversion result:', error);
+        res.set({
+          'Access-Control-Allow-Origin': '*',
+          'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+          'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept'
+        });
+        res.status(500).json({ error: 'Conversion failed', details: error instanceof Error ? error.message : 'Unknown error' });
+      } finally {
+        await fs.rm(tmpDir, { recursive: true, force: true }).catch(() => undefined);
+      }
+    });
+  } catch (error) {
+    console.error('DOC to MOBI conversion error:', error);
+    const message = error instanceof Error ? error.message : 'Unknown error';
+    res.set({
+      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+      'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept'
+    });
+    res.status(500).json({ error: message });
+  }
+});
+
+// Route: DOC to MOBI (Batch)
+app.post('/convert/doc-to-mobi/batch', uploadBatch, async (req, res) => {
+  // Set CORS headers
+  res.set({
+    'Access-Control-Allow-Origin': '*',
+    'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+    'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept'
+  });
+  
+  console.log('DOC->MOBI batch conversion request');
+
+  const tmpDir = path.join(os.tmpdir(), `doc-mobi-batch-${Date.now()}`);
+
+  try {
+    const files = req.files as Express.Multer.File[];
+    if (!files || files.length === 0) {
+      return res.status(400).json({ error: 'No files uploaded' });
+    }
+    await fs.mkdir(tmpDir, { recursive: true });
+
+    const results = [];
+
+    // Get options from request body
+    const includeImages = req.body.includeImages !== 'false';
+    const preserveFormatting = req.body.preserveFormatting !== 'false';
+    const generateToc = req.body.generateToc !== 'false';
+    const kindleOptimized = req.body.kindleOptimized !== 'false';
+
+    for (const file of files) {
+      try {
+        const inputPath = path.join(tmpDir, file.originalname);
+        const outputPath = path.join(tmpDir, file.originalname.replace(/\.doc$/i, '.mobi'));
+
+        await fs.writeFile(inputPath, file.buffer);
+
+        const scriptPath = path.join(__dirname, '..', 'scripts', 'doc_to_mobi.py');
+        console.log('DOC to MOBI batch: Executing Python script:', scriptPath);
+        console.log('DOC to MOBI batch: Input file:', inputPath);
+        console.log('DOC to MOBI batch: Output file:', outputPath);
+
+        try {
+          await fs.access(scriptPath);
+          console.log('DOC to MOBI batch: Script exists');
+        } catch (error) {
+          console.error('DOC to MOBI batch: Script does not exist:', scriptPath);
+          results.push({
+            originalName: file.originalname,
+            outputFilename: '',
+            size: 0,
+            success: false,
+            error: 'Conversion script not found'
+          });
+          continue;
+        }
+
+        const pythonArgs = [scriptPath, inputPath, outputPath];
+        if (!includeImages) {
+          pythonArgs.push('--no-images');
+        }
+        if (!preserveFormatting) {
+          pythonArgs.push('--no-formatting');
+        }
+        if (!generateToc) {
+          pythonArgs.push('--no-toc');
+        }
+        if (!kindleOptimized) {
+          pythonArgs.push('--no-kindle-optimize');
+        }
+
+        const python = spawn('/opt/venv/bin/python', pythonArgs);
+
+        let stdout = '';
+        let stderr = '';
+
+        python.stdout.on('data', (data: Buffer) => {
+          stdout += data.toString();
+          console.log('DOC to MOBI batch stdout:', data.toString());
+        });
+
+        python.stderr.on('data', (data: Buffer) => {
+          stderr += data.toString();
+          console.log('DOC to MOBI batch stderr:', data.toString());
+        });
+
+        await new Promise<void>((resolve, reject) => {
+          python.on('close', async (code: number) => {
+            console.log('DOC to MOBI batch: Python script finished with code:', code);
+            
+            try {
+              if (code === 0 && await fs.access(outputPath).then(() => true).catch(() => false)) {
+                const outputBuffer = await fs.readFile(outputPath);
+                console.log('DOC to MOBI batch: Output file size:', outputBuffer.length);
+                results.push({
+                  originalName: file.originalname,
+                  outputFilename: path.basename(outputPath),
+                  size: outputBuffer.length,
+                  success: true,
+                  downloadPath: `data:application/x-mobipocket-ebook;base64,${outputBuffer.toString('base64')}`
+                });
+                resolve();
+              } else {
+                console.error('DOC to MOBI batch conversion failed. Code:', code, 'Stderr:', stderr);
+                results.push({
+                  originalName: file.originalname,
+                  outputFilename: '',
+                  size: 0,
+                  success: false,
+                  error: stderr || `Conversion failed with code ${code}`
+                });
+                resolve(); // Continue with other files
+              }
+            } catch (error) {
+              console.error('Error handling batch conversion result:', error);
+              results.push({
+                originalName: file.originalname,
+                outputFilename: '',
+                size: 0,
+                success: false,
+                error: error instanceof Error ? error.message : 'Unknown error'
+              });
+              resolve(); // Continue with other files
+            }
+          });
+        });
+      } catch (error) {
+        console.error('DOC to MOBI batch conversion error for file:', file.originalname, error);
+        results.push({
+          originalName: file.originalname,
+          outputFilename: '',
+          size: 0,
+          success: false,
+          error: error instanceof Error ? error.message : 'Unknown error'
+        });
+      }
+    }
+
+    res.json({ success: true, results });
+    
+  } catch (error) {
+    console.error('DOC to MOBI batch conversion error:', error);
+    const message = error instanceof Error ? error.message : 'Unknown error';
+    res.status(500).json({ error: message });
+  } finally {
+    await fs.rm(tmpDir, { recursive: true, force: true }).catch(() => undefined);
+  }
+});
+
 // Start server
 const server = app.listen(PORT, '0.0.0.0', () => {
   console.log(`Morpy backend running on port ${PORT}`);
