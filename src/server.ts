@@ -15859,6 +15859,270 @@ app.post('/convert/doc-to-csv/batch', uploadBatch, async (req, res) => {
   }
 });
 
+// Route: DOC to EPUB (Single)
+app.post('/convert/doc-to-epub/single', upload.single('file'), async (req, res) => {
+  // Set CORS headers
+  res.set({
+    'Access-Control-Allow-Origin': '*',
+    'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+    'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept'
+  });
+  
+  console.log('DOC->EPUB single conversion request');
+
+  const tmpDir = path.join(os.tmpdir(), `doc-epub-${Date.now()}`);
+
+  try {
+    const file = req.file;
+    if (!file) {
+      return res.status(400).json({ error: 'No file uploaded' });
+    }
+    await fs.mkdir(tmpDir, { recursive: true });
+
+    const inputPath = path.join(tmpDir, file.originalname);
+    const outputPath = path.join(tmpDir, file.originalname.replace(/\.doc$/i, '.epub'));
+
+    await fs.writeFile(inputPath, file.buffer);
+
+    const scriptPath = path.join(__dirname, '..', 'scripts', 'doc_to_epub.py');
+    console.log('DOC to EPUB: Executing Python script:', scriptPath);
+    console.log('DOC to EPUB: Input file:', inputPath);
+    console.log('DOC to EPUB: Output file:', outputPath);
+    
+    // Check if script exists
+    try {
+      await fs.access(scriptPath);
+      console.log('DOC to EPUB: Script exists');
+    } catch (error) {
+      console.error('DOC to EPUB: Script does not exist:', scriptPath);
+      return res.status(500).json({ error: 'Conversion script not found' });
+    }
+
+    // Get options from request body
+    const includeImages = req.body.includeImages !== 'false';
+    const preserveFormatting = req.body.preserveFormatting !== 'false';
+    const generateToc = req.body.generateToc !== 'false';
+
+    const pythonArgs = [scriptPath, inputPath, outputPath];
+    if (!includeImages) {
+      pythonArgs.push('--no-images');
+    }
+    if (!preserveFormatting) {
+      pythonArgs.push('--no-formatting');
+    }
+    if (!generateToc) {
+      pythonArgs.push('--no-toc');
+    }
+
+    const python = spawn('/opt/venv/bin/python', pythonArgs);
+
+    let stdout = '';
+    let stderr = '';
+
+    python.stdout.on('data', (data: Buffer) => {
+      stdout += data.toString();
+      console.log('DOC to EPUB stdout:', data.toString());
+    });
+
+    python.stderr.on('data', (data: Buffer) => {
+      stderr += data.toString();
+      console.log('DOC to EPUB stderr:', data.toString());
+    });
+
+    python.on('close', async (code: number) => {
+      console.log('DOC to EPUB: Python script finished with code:', code);
+      console.log('DOC to EPUB: stdout:', stdout);
+      console.log('DOC to EPUB: stderr:', stderr);
+      
+      try {
+        if (code === 0 && await fs.access(outputPath).then(() => true).catch(() => false)) {
+          const outputBuffer = await fs.readFile(outputPath);
+          console.log('DOC to EPUB: Output file size:', outputBuffer.length);
+          res.set({
+            'Content-Type': 'application/epub+zip',
+            'Content-Disposition': `attachment; filename="${path.basename(outputPath)}"`,
+            'Access-Control-Allow-Origin': '*',
+            'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+            'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept'
+          });
+          res.send(outputBuffer);
+          
+        } else {
+          console.error('DOC to EPUB conversion failed. Code:', code, 'Stderr:', stderr);
+          res.set({
+            'Access-Control-Allow-Origin': '*',
+            'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+            'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept'
+          });
+          res.status(500).json({ error: 'Conversion failed', details: stderr });
+        }
+      } catch (error) {
+        console.error('Error handling conversion result:', error);
+        res.set({
+          'Access-Control-Allow-Origin': '*',
+          'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+          'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept'
+        });
+        res.status(500).json({ error: 'Conversion failed', details: error instanceof Error ? error.message : 'Unknown error' });
+      } finally {
+        await fs.rm(tmpDir, { recursive: true, force: true }).catch(() => undefined);
+      }
+    });
+  } catch (error) {
+    console.error('DOC to EPUB conversion error:', error);
+    const message = error instanceof Error ? error.message : 'Unknown error';
+    res.set({
+      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+      'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept'
+    });
+    res.status(500).json({ error: message });
+  }
+});
+
+// Route: DOC to EPUB (Batch)
+app.post('/convert/doc-to-epub/batch', uploadBatch, async (req, res) => {
+  // Set CORS headers
+  res.set({
+    'Access-Control-Allow-Origin': '*',
+    'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+    'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept'
+  });
+  
+  console.log('DOC->EPUB batch conversion request');
+
+  const tmpDir = path.join(os.tmpdir(), `doc-epub-batch-${Date.now()}`);
+
+  try {
+    const files = req.files as Express.Multer.File[];
+    if (!files || files.length === 0) {
+      return res.status(400).json({ error: 'No files uploaded' });
+    }
+    await fs.mkdir(tmpDir, { recursive: true });
+
+    const results = [];
+
+    // Get options from request body
+    const includeImages = req.body.includeImages !== 'false';
+    const preserveFormatting = req.body.preserveFormatting !== 'false';
+    const generateToc = req.body.generateToc !== 'false';
+
+    for (const file of files) {
+      try {
+        const inputPath = path.join(tmpDir, file.originalname);
+        const outputPath = path.join(tmpDir, file.originalname.replace(/\.doc$/i, '.epub'));
+
+        await fs.writeFile(inputPath, file.buffer);
+
+        const scriptPath = path.join(__dirname, '..', 'scripts', 'doc_to_epub.py');
+        console.log('DOC to EPUB batch: Executing Python script:', scriptPath);
+        console.log('DOC to EPUB batch: Input file:', inputPath);
+        console.log('DOC to EPUB batch: Output file:', outputPath);
+
+        try {
+          await fs.access(scriptPath);
+          console.log('DOC to EPUB batch: Script exists');
+        } catch (error) {
+          console.error('DOC to EPUB batch: Script does not exist:', scriptPath);
+          results.push({
+            originalName: file.originalname,
+            outputFilename: '',
+            size: 0,
+            success: false,
+            error: 'Conversion script not found'
+          });
+          continue;
+        }
+
+        const pythonArgs = [scriptPath, inputPath, outputPath];
+        if (!includeImages) {
+          pythonArgs.push('--no-images');
+        }
+        if (!preserveFormatting) {
+          pythonArgs.push('--no-formatting');
+        }
+        if (!generateToc) {
+          pythonArgs.push('--no-toc');
+        }
+
+        const python = spawn('/opt/venv/bin/python', pythonArgs);
+
+        let stdout = '';
+        let stderr = '';
+
+        python.stdout.on('data', (data: Buffer) => {
+          stdout += data.toString();
+          console.log('DOC to EPUB batch stdout:', data.toString());
+        });
+
+        python.stderr.on('data', (data: Buffer) => {
+          stderr += data.toString();
+          console.log('DOC to EPUB batch stderr:', data.toString());
+        });
+
+        await new Promise<void>((resolve, reject) => {
+          python.on('close', async (code: number) => {
+            console.log('DOC to EPUB batch: Python script finished with code:', code);
+            
+            try {
+              if (code === 0 && await fs.access(outputPath).then(() => true).catch(() => false)) {
+                const outputBuffer = await fs.readFile(outputPath);
+                console.log('DOC to EPUB batch: Output file size:', outputBuffer.length);
+                results.push({
+                  originalName: file.originalname,
+                  outputFilename: path.basename(outputPath),
+                  size: outputBuffer.length,
+                  success: true,
+                  downloadPath: `data:application/epub+zip;base64,${outputBuffer.toString('base64')}`
+                });
+                resolve();
+              } else {
+                console.error('DOC to EPUB batch conversion failed. Code:', code, 'Stderr:', stderr);
+                results.push({
+                  originalName: file.originalname,
+                  outputFilename: '',
+                  size: 0,
+                  success: false,
+                  error: stderr || `Conversion failed with code ${code}`
+                });
+                resolve(); // Continue with other files
+              }
+            } catch (error) {
+              console.error('Error handling batch conversion result:', error);
+              results.push({
+                originalName: file.originalname,
+                outputFilename: '',
+                size: 0,
+                success: false,
+                error: error instanceof Error ? error.message : 'Unknown error'
+              });
+              resolve(); // Continue with other files
+            }
+          });
+        });
+      } catch (error) {
+        console.error('DOC to EPUB batch conversion error for file:', file.originalname, error);
+        results.push({
+          originalName: file.originalname,
+          outputFilename: '',
+          size: 0,
+          success: false,
+          error: error instanceof Error ? error.message : 'Unknown error'
+        });
+      }
+    }
+
+    res.json({ success: true, results });
+    
+  } catch (error) {
+    console.error('DOC to EPUB batch conversion error:', error);
+    const message = error instanceof Error ? error.message : 'Unknown error';
+    res.status(500).json({ error: message });
+  } finally {
+    await fs.rm(tmpDir, { recursive: true, force: true }).catch(() => undefined);
+  }
+});
+
 // Start server
 const server = app.listen(PORT, '0.0.0.0', () => {
   console.log(`Morpy backend running on port ${PORT}`);
