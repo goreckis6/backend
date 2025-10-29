@@ -16950,6 +16950,17 @@ app.post('/convert/heic-to-svg/batch', uploadBatch, async (req, res) => {
   }
 });
 
+// Route: HEIC to PDF (Single) - OPTIONS for CORS preflight
+app.options('/convert/heic-to-pdf/single', (req, res) => {
+  res.set({
+    'Access-Control-Allow-Origin': '*',
+    'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+    'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept',
+    'Access-Control-Max-Age': '86400'
+  });
+  res.sendStatus(200);
+});
+
 // Route: HEIC to PDF (Single)
 app.post('/convert/heic-to-pdf/single', upload.single('file'), async (req, res) => {
   // Set CORS headers
@@ -16966,6 +16977,11 @@ app.post('/convert/heic-to-pdf/single', upload.single('file'), async (req, res) 
   try {
     const file = req.file;
     if (!file) {
+      res.set({
+        'Access-Control-Allow-Origin': '*',
+        'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+        'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept'
+      });
       return res.status(400).json({ error: 'No file uploaded' });
     }
     await fs.mkdir(tmpDir, { recursive: true });
@@ -17075,6 +17091,17 @@ app.post('/convert/heic-to-pdf/single', upload.single('file'), async (req, res) 
   }
 });
 
+// Route: HEIC to PDF (Batch) - OPTIONS for CORS preflight
+app.options('/convert/heic-to-pdf/batch', (req, res) => {
+  res.set({
+    'Access-Control-Allow-Origin': '*',
+    'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+    'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept',
+    'Access-Control-Max-Age': '86400'
+  });
+  res.sendStatus(200);
+});
+
 // Route: HEIC to PDF (Batch)
 app.post('/convert/heic-to-pdf/batch', uploadBatch, async (req, res) => {
   // Set CORS headers
@@ -17091,6 +17118,11 @@ app.post('/convert/heic-to-pdf/batch', uploadBatch, async (req, res) => {
   try {
     const files = req.files as Express.Multer.File[];
     if (!files || files.length === 0) {
+      res.set({
+        'Access-Control-Allow-Origin': '*',
+        'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+        'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept'
+      });
       return res.status(400).json({ error: 'No files uploaded' });
     }
     await fs.mkdir(tmpDir, { recursive: true });
@@ -17211,11 +17243,21 @@ app.post('/convert/heic-to-pdf/batch', uploadBatch, async (req, res) => {
       }
     }
 
+    res.set({
+      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+      'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept'
+    });
     res.json({ success: true, results });
     
   } catch (error) {
     console.error('HEIC to PDF batch conversion error:', error);
     const message = error instanceof Error ? error.message : 'Unknown error';
+    res.set({
+      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+      'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept'
+    });
     res.status(500).json({ error: message });
   } finally {
     await fs.rm(tmpDir, { recursive: true, force: true }).catch(() => undefined);
