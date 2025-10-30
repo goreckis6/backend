@@ -6560,26 +6560,32 @@ app.post('/api/preview/docx', upload.single('file'), async (req, res) => {
     await fs.writeFile(inputPath, file.buffer);
 
     const scriptPath = path.join(__dirname, '..', 'scripts', 'docx_to_html.py');
-    try { await fs.access(scriptPath); } catch { return res.status(500).json({ error: 'Preview script not found' }); }
-
-    // Fast preview flags (restore no-images for stability/speed)
-    const args = [
-      scriptPath,
-      inputPath,
-      outputPath,
-      '--no-images',
-      '--max-paragraphs', '200',  // cap content
-      '--max-chars', '200000',    // cap size
-      '--no-prettify'             // avoid expensive formatting
-    ];
-
     const { execFile } = await import('child_process');
     const { promisify } = await import('util');
     const execFileAsync = promisify(execFile);
+
+    let usedPandocFallback = false;
     try {
+      await fs.access(scriptPath);
+      // Fast preview flags (restore no-images for stability/speed)
+      const args = [
+        scriptPath,
+        inputPath,
+        outputPath,
+        '--no-images',
+        '--max-paragraphs', '200',
+        '--max-chars', '200000',
+        '--no-prettify'
+      ];
       await execFileAsync('/opt/venv/bin/python', args);
-    } catch (e: any) {
-      return res.status(500).json({ error: 'Preview generation failed', details: e?.stderr || e?.message || '' });
+    } catch {
+      // Fallback to pandoc if script missing or fails access
+      usedPandocFallback = true;
+      try {
+        await execFileAsync('pandoc', [inputPath, '-f', 'docx', '-t', 'html', '-o', outputPath]);
+      } catch (e: any) {
+        return res.status(500).json({ error: 'Preview generation failed', details: e?.stderr || e?.message || (usedPandocFallback ? 'Pandoc fallback failed' : '') });
+      }
     }
 
     // Read and return HTML
