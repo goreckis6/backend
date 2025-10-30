@@ -9048,8 +9048,25 @@ app.post('/api/preview/dng', uploadDocument.single('file'), async (req, res) => 
   }
 });
 
+// ARW Preview endpoint - OPTIONS for CORS preflight
+app.options('/api/preview/arw', (req, res) => {
+  res.set({
+    'Access-Control-Allow-Origin': '*',
+    'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+    'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept',
+    'Access-Control-Max-Age': '86400'
+  });
+  res.sendStatus(200);
+});
+
 // ARW Preview endpoint - convert ARW (Sony RAW) to web-viewable image
 app.post('/api/preview/arw', uploadDocument.single('file'), async (req, res) => {
+  res.set({
+    'Access-Control-Allow-Origin': '*',
+    'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+    'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept'
+  });
+
   console.log('=== ARW PREVIEW REQUEST ===');
   const tmpDir = path.join(os.tmpdir(), `arw-preview-${Date.now()}`);
   
@@ -9058,6 +9075,11 @@ app.post('/api/preview/arw', uploadDocument.single('file'), async (req, res) => 
     
     const file = req.file;
     if (!file) {
+      res.set({
+        'Access-Control-Allow-Origin': '*',
+        'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+        'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept'
+      });
       return res.status(400).json({ error: 'No file uploaded' });
     }
 
@@ -9072,7 +9094,7 @@ app.post('/api/preview/arw', uploadDocument.single('file'), async (req, res) => 
     await fs.writeFile(arwPath, file.buffer);
 
     // Use Python script to convert ARW to JPEG
-    const pythonPath = process.env.PYTHON_PATH || 'python3';
+    const pythonPath = '/opt/venv/bin/python';
     const scriptPath = path.join(__dirname, '..', 'viewers', 'arw_to_image.py');
     const outputPath = path.join(tmpDir, 'output.jpg');
     const metadataPath = path.join(tmpDir, 'metadata.json');
@@ -9081,6 +9103,11 @@ app.post('/api/preview/arw', uploadDocument.single('file'), async (req, res) => 
     const scriptExists = await fs.access(scriptPath).then(() => true).catch(() => false);
     if (!scriptExists) {
       console.error(`ARW script not found: ${scriptPath}`);
+      res.set({
+        'Access-Control-Allow-Origin': '*',
+        'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+        'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept'
+      });
       return res.status(500).json({ error: 'ARW preview script not found' });
     }
 
@@ -9140,6 +9167,11 @@ app.post('/api/preview/arw', uploadDocument.single('file'), async (req, res) => 
     const base64Image = imageBuffer.toString('base64');
     const imageDataUrl = `data:image/jpeg;base64,${base64Image}`;
 
+    res.set({
+      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+      'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept'
+    });
     res.json({
       imageUrl: imageDataUrl,
       metadata
@@ -9148,6 +9180,11 @@ app.post('/api/preview/arw', uploadDocument.single('file'), async (req, res) => 
   } catch (error) {
     console.error('ARW preview error:', error);
     const message = error instanceof Error ? error.message : 'Unknown ARW preview error';
+    res.set({
+      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+      'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept'
+    });
     res.status(500).json({ error: `Failed to generate ARW preview: ${message}` });
   } finally {
     await fs.rm(tmpDir, { recursive: true, force: true }).catch(() => undefined);
@@ -9260,8 +9297,25 @@ app.post('/api/preview/x3f', uploadDocument.single('file'), async (req, res) => 
   }
 });
 
+// DCR Preview endpoint - OPTIONS for CORS preflight
+app.options('/api/preview/dcr', (req, res) => {
+  res.set({
+    'Access-Control-Allow-Origin': '*',
+    'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+    'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept',
+    'Access-Control-Max-Age': '86400'
+  });
+  res.sendStatus(200);
+});
+
 // DCR Preview endpoint - convert DCR (Kodak RAW) to web-viewable image
 app.post('/api/preview/dcr', uploadDocument.single('file'), async (req, res) => {
+  res.set({
+    'Access-Control-Allow-Origin': '*',
+    'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+    'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept'
+  });
+
   console.log('=== DCR PREVIEW REQUEST ===');
   const tmpDir = path.join(os.tmpdir(), `dcr-preview-${Date.now()}`);
   
@@ -9270,6 +9324,11 @@ app.post('/api/preview/dcr', uploadDocument.single('file'), async (req, res) => 
     
     const file = req.file;
     if (!file) {
+      res.set({
+        'Access-Control-Allow-Origin': '*',
+        'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+        'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept'
+      });
       return res.status(400).json({ error: 'No file uploaded' });
     }
 
@@ -9284,7 +9343,7 @@ app.post('/api/preview/dcr', uploadDocument.single('file'), async (req, res) => 
     await fs.writeFile(dcrPath, file.buffer);
 
     // Use Python script to convert DCR to JPEG
-    const pythonPath = process.env.PYTHON_PATH || 'python3';
+    const pythonPath = '/opt/venv/bin/python';
     const scriptPath = path.join(__dirname, '..', 'viewers', 'dcr_to_image.py');
     const outputPath = path.join(tmpDir, 'output.jpg');
     const metadataPath = path.join(tmpDir, 'metadata.json');
@@ -9293,6 +9352,11 @@ app.post('/api/preview/dcr', uploadDocument.single('file'), async (req, res) => 
     const scriptExists = await fs.access(scriptPath).then(() => true).catch(() => false);
     if (!scriptExists) {
       console.error(`DCR script not found: ${scriptPath}`);
+      res.set({
+        'Access-Control-Allow-Origin': '*',
+        'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+        'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept'
+      });
       return res.status(500).json({ error: 'DCR preview script not found' });
     }
 
@@ -9352,6 +9416,11 @@ app.post('/api/preview/dcr', uploadDocument.single('file'), async (req, res) => 
     const base64Image = imageBuffer.toString('base64');
     const imageDataUrl = `data:image/jpeg;base64,${base64Image}`;
 
+    res.set({
+      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+      'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept'
+    });
     res.json({
       imageUrl: imageDataUrl,
       metadata
@@ -9360,6 +9429,11 @@ app.post('/api/preview/dcr', uploadDocument.single('file'), async (req, res) => 
   } catch (error) {
     console.error('DCR preview error:', error);
     const message = error instanceof Error ? error.message : 'Unknown DCR preview error';
+    res.set({
+      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+      'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept'
+    });
     res.status(500).json({ error: `Failed to generate DCR preview: ${message}` });
   } finally {
     await fs.rm(tmpDir, { recursive: true, force: true }).catch(() => undefined);
