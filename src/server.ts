@@ -6562,11 +6562,12 @@ app.post('/api/preview/docx', upload.single('file'), async (req, res) => {
     const scriptPath = path.join(__dirname, '..', 'scripts', 'docx_to_html.py');
     try { await fs.access(scriptPath); } catch { return res.status(500).json({ error: 'Preview script not found' }); }
 
-    // Fast preview flags (allow images)
+    // Fast preview flags (restore no-images for stability/speed)
     const args = [
       scriptPath,
       inputPath,
       outputPath,
+      '--no-images',
       '--max-paragraphs', '200',  // cap content
       '--max-chars', '200000',    // cap size
       '--no-prettify'             // avoid expensive formatting
