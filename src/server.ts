@@ -7096,6 +7096,39 @@ app.post('/convert/heic-to-png/batch', uploadBatch, async (req, res) => {
   }
 });
 
+// X3F Preview endpoint - OPTIONS for CORS preflight
+app.options('/api/preview/x3f', (req, res) => {
+  res.set({
+    'Access-Control-Allow-Origin': '*',
+    'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+    'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept',
+    'Access-Control-Max-Age': '86400'
+  });
+  res.sendStatus(200);
+});
+
+// X3F Preview endpoint - placeholder that returns CORS-safe response
+app.post('/api/preview/x3f', upload.single('file'), async (req, res) => {
+  res.set({
+    'Access-Control-Allow-Origin': '*',
+    'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+    'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept'
+  });
+
+  try {
+    const file = req.file;
+    if (!file) {
+      return res.status(400).json({ error: 'No file uploaded' });
+    }
+
+    // Not implemented preview generator yet; respond clearly with CORS headers
+    return res.status(501).json({ error: 'X3F preview not implemented yet. Please download or convert the file.' });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Unknown error';
+    return res.status(500).json({ error: message });
+  }
+});
+
 // Route: HEIC to EPS (Single) - OPTIONS for CORS preflight
 app.options('/convert/heic-to-eps/single', (req, res) => {
   res.set({
