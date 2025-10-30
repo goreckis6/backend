@@ -62,7 +62,7 @@ def convert_doc_to_csv_libreoffice(doc_file, output_file, delimiter=',', extract
         delimiter (str): CSV delimiter (comma, semicolon, tab, pipe)
         extract_tables (bool): Extract tables from DOC
         include_paragraphs (bool): Include paragraphs as data rows
-        
+    
     Returns:
         bool: True if conversion successful, False otherwise
     """
@@ -108,41 +108,41 @@ def convert_doc_to_csv_libreoffice(doc_file, output_file, delimiter=',', extract
             intermediate_docx = os.path.join(temp_dir, f"{base_name}.docx")
             
             print("Step 1: Converting DOC to DOCX using LibreOffice...")
-            cmd = [
+        cmd = [
                 libreoffice,
-                '--headless',
-                '--invisible',
-                '--nocrashreport',
-                '--nodefault',
-                '--nofirststartwizard',
-                '--nolockcheck',
-                '--nologo',
-                '--norestore',
+            '--headless',
+            '--invisible',
+            '--nocrashreport',
+            '--nodefault',
+            '--nofirststartwizard',
+            '--nolockcheck',
+            '--nologo',
+            '--norestore',
                 '--convert-to', 'docx',
                 '--outdir', temp_dir,
-                doc_file
-            ]
-            
+            doc_file
+        ]
+        
             # Set LibreOffice environment
-            env = os.environ.copy()
-            env['SAL_USE_VCLPLUGIN'] = 'svp'
-            env['HOME'] = '/tmp'
-            env['LANG'] = 'en_US.UTF-8'
-            env['LC_ALL'] = 'en_US.UTF-8'
-            
+        env = os.environ.copy()
+        env['SAL_USE_VCLPLUGIN'] = 'svp'
+        env['HOME'] = '/tmp'
+        env['LANG'] = 'en_US.UTF-8'
+        env['LC_ALL'] = 'en_US.UTF-8'
+        
             print(f"Running LibreOffice: {' '.join(cmd)}")
-            
-            result = subprocess.run(
-                cmd,
-                capture_output=True,
-                text=True,
+        
+        result = subprocess.run(
+            cmd,
+            capture_output=True,
+            text=True,
                 timeout=300,  # 5 minute timeout
-                env=env,
-                encoding='utf-8',
-                errors='replace'
-            )
-            
-            if result.stdout:
+            env=env,
+            encoding='utf-8',
+            errors='replace'
+        )
+        
+        if result.stdout:
                 print(f"LibreOffice stdout: {result.stdout}")
             if result.stderr and 'Error:' not in result.stderr:
                 print(f"LibreOffice stderr: {result.stderr}")
@@ -151,7 +151,7 @@ def convert_doc_to_csv_libreoffice(doc_file, output_file, delimiter=',', extract
             if not os.path.exists(intermediate_docx):
                 print(f"ERROR: LibreOffice did not create DOCX file: {intermediate_docx}")
                 print(f"Contents of temp directory {temp_dir}: {os.listdir(temp_dir)}")
-                return False
+            return False
             
             print(f"Step 1 complete: DOCX created at {intermediate_docx}")
             
@@ -199,8 +199,8 @@ def convert_doc_to_csv_libreoffice(doc_file, output_file, delimiter=',', extract
                     writer = csv.writer(f, delimiter=delimiter)
                     for row in all_rows:
                         writer.writerow(row)
-            
-            # Verify output file
+        
+        # Verify output file
             if os.path.exists(output_file):
                 output_size = os.path.getsize(output_file)
                 print(f"CSV file created successfully: {output_size} bytes, {len(all_rows)} rows")
@@ -244,7 +244,7 @@ def main():
     print(f"Arguments: {vars(args)}")
     
     success = convert_doc_to_csv_libreoffice(
-        args.doc_file,
+        args.doc_file, 
         args.output_file,
         delimiter=args.delimiter,
         extract_tables=not args.no_tables,

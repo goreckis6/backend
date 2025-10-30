@@ -6644,6 +6644,326 @@ app.post('/api/preview/heic', upload.single('file'), async (req, res) => {
   }
 });
 
+// Route: HEIC to PNG (Single) - OPTIONS for CORS preflight
+app.options('/convert/heic-to-png/single', (req, res) => {
+  res.set({
+    'Access-Control-Allow-Origin': '*',
+    'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+    'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept',
+    'Access-Control-Max-Age': '86400'
+  });
+  res.sendStatus(200);
+});
+
+// Route: HEIC to PNG (Single)
+app.post('/convert/heic-to-png/single', upload.single('file'), async (req, res) => {
+  // Set CORS headers
+  res.set({
+    'Access-Control-Allow-Origin': '*',
+    'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+    'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept'
+  });
+
+  console.log('HEIC->PNG single conversion request');
+
+  const tmpDir = path.join(os.tmpdir(), `heic-png-${Date.now()}`);
+
+  try {
+    const file = req.file;
+    if (!file) {
+      res.set({
+        'Access-Control-Allow-Origin': '*',
+        'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+        'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept'
+      });
+      return res.status(400).json({ error: 'No file uploaded' });
+    }
+
+    try {
+      await fs.mkdir(tmpDir, { recursive: true });
+    } catch (mkdirError) {
+      console.error('HEIC to PNG: Failed to create temp directory:', mkdirError);
+      res.set({
+        'Access-Control-Allow-Origin': '*',
+        'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+        'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept'
+      });
+      return res.status(500).json({ error: 'Failed to create temporary directory', details: mkdirError instanceof Error ? mkdirError.message : 'Unknown error' });
+    }
+
+    const inputPath = path.join(tmpDir, file.originalname);
+    const outputPath = path.join(tmpDir, file.originalname.replace(/\.(heic|heif)$/i, '.png'));
+
+    try {
+      await fs.writeFile(inputPath, file.buffer);
+    } catch (writeError) {
+      console.error('HEIC to PNG: Failed to write input file:', writeError);
+      res.set({
+        'Access-Control-Allow-Origin': '*',
+        'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+        'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept'
+      });
+      await fs.rm(tmpDir, { recursive: true, force: true }).catch(() => undefined);
+      return res.status(500).json({ error: 'Failed to write input file', details: writeError instanceof Error ? writeError.message : 'Unknown error' });
+    }
+
+    const scriptPath = path.join(__dirname, '..', 'scripts', 'heic_to_png.py');
+    console.log('HEIC to PNG: Executing Python script:', scriptPath);
+    console.log('HEIC to PNG: Input file:', inputPath);
+    console.log('HEIC to PNG: Output file:', outputPath);
+
+    try {
+      await fs.access(scriptPath);
+      console.log('HEIC to PNG: Script exists');
+    } catch (error) {
+      console.error('HEIC to PNG: Script does not exist:', scriptPath);
+      res.set({
+        'Access-Control-Allow-Origin': '*',
+        'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+        'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept'
+      });
+      return res.status(500).json({ error: 'Conversion script not found' });
+    }
+
+    // Optional quality param (0-100) for PNG compression level mapping
+    const quality = parseInt(req.body.quality) || 95;
+    const maxDimension = parseInt(req.body.maxDimension) || 4096;
+
+    const pythonArgs = [scriptPath, inputPath, outputPath, '--quality', String(quality), '--max-dimension', String(maxDimension)];
+
+    const python = spawn('/opt/venv/bin/python', pythonArgs);
+
+    let stdout = '';
+    let stderr = '';
+
+    python.on('error', async (error: Error) => {
+      console.error('HEIC to PNG: Failed to start Python process:', error);
+      if (!res.headersSent) {
+        res.set({
+          'Access-Control-Allow-Origin': '*',
+          'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+          'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept'
+        });
+        res.status(500).json({ error: 'Failed to start conversion process', details: error.message });
+      }
+      await fs.rm(tmpDir, { recursive: true, force: true }).catch(() => undefined);
+    });
+
+    python.stdout.on('data', (data: Buffer) => {
+      stdout += data.toString();
+      console.log('HEIC to PNG stdout:', data.toString());
+    });
+
+    python.stderr.on('data', (data: Buffer) => {
+      stderr += data.toString();
+      console.log('HEIC to PNG stderr:', data.toString());
+    });
+
+    const timeout = setTimeout(async () => {
+      console.error('HEIC to PNG: Conversion timeout after 5 minutes');
+      python.kill();
+      if (!res.headersSent) {
+        res.set({
+          'Access-Control-Allow-Origin': '*',
+          'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+          'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept'
+        });
+        res.status(500).json({ error: 'Conversion timeout. The file may be too large or complex.' });
+      }
+      await fs.rm(tmpDir, { recursive: true, force: true }).catch(() => undefined);
+    }, 5 * 60 * 1000);
+
+    python.on('close', async (code: number) => {
+      clearTimeout(timeout);
+      console.log('HEIC to PNG: Python script finished with code:', code);
+      console.log('HEIC to PNG: stdout:', stdout);
+      console.log('HEIC to PNG: stderr:', stderr);
+
+      try {
+        if (!res.headersSent) {
+          if (code === 0 && await fs.access(outputPath).then(() => true).catch(() => false)) {
+            const outputBuffer = await fs.readFile(outputPath);
+            console.log('HEIC to PNG: Output file size:', outputBuffer.length);
+            res.set({
+              'Content-Type': 'image/png',
+              'Content-Disposition': `attachment; filename="${path.basename(outputPath)}"`,
+              'Access-Control-Allow-Origin': '*',
+              'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+              'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept'
+            });
+            res.send(outputBuffer);
+          } else {
+            console.error('HEIC to PNG conversion failed. Code:', code, 'Stderr:', stderr);
+            res.set({
+              'Access-Control-Allow-Origin': '*',
+              'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+              'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept'
+            });
+            res.status(500).json({ error: 'Conversion failed', details: stderr });
+          }
+        }
+      } catch (error) {
+        console.error('Error handling conversion result (PNG):', error);
+        if (!res.headersSent) {
+          res.set({
+            'Access-Control-Allow-Origin': '*',
+            'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+            'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept'
+          });
+          res.status(500).json({ error: 'Conversion failed', details: error instanceof Error ? error.message : 'Unknown error' });
+        }
+      } finally {
+        await fs.rm(tmpDir, { recursive: true, force: true }).catch(() => undefined);
+      }
+    });
+  } catch (error) {
+    console.error('HEIC to PNG conversion error:', error);
+    const message = error instanceof Error ? error.message : 'Unknown error';
+    res.set({
+      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+      'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept'
+    });
+    res.status(500).json({ error: message });
+  }
+});
+
+// Route: HEIC to PNG (Batch) - OPTIONS for CORS preflight
+app.options('/convert/heic-to-png/batch', (req, res) => {
+  res.set({
+    'Access-Control-Allow-Origin': '*',
+    'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+    'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept',
+    'Access-Control-Max-Age': '86400'
+  });
+  res.sendStatus(200);
+});
+
+// Route: HEIC to PNG (Batch)
+app.post('/convert/heic-to-png/batch', uploadBatch, async (req, res) => {
+  res.set({
+    'Access-Control-Allow-Origin': '*',
+    'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+    'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept'
+  });
+
+  console.log('HEIC->PNG batch conversion request');
+
+  const tmpDir = path.join(os.tmpdir(), `heic-png-batch-${Date.now()}`);
+
+  try {
+    const files = req.files as Express.Multer.File[];
+    if (!files || files.length === 0) {
+      res.set({
+        'Access-Control-Allow-Origin': '*',
+        'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+        'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept'
+      });
+      return res.status(400).json({ error: 'No files uploaded' });
+    }
+
+    await fs.mkdir(tmpDir, { recursive: true });
+
+    const results: any[] = [];
+
+    const quality = parseInt(req.body.quality) || 95;
+    const maxDimension = parseInt(req.body.maxDimension) || 4096;
+
+    for (const file of files) {
+      try {
+        const inputPath = path.join(tmpDir, file.originalname);
+        const outputPath = path.join(tmpDir, file.originalname.replace(/\.(heic|heif)$/i, '.png'));
+
+        await fs.writeFile(inputPath, file.buffer);
+
+        const scriptPath = path.join(__dirname, '..', 'scripts', 'heic_to_png.py');
+        try {
+          await fs.access(scriptPath);
+        } catch {
+          results.push({
+            originalName: file.originalname,
+            outputFilename: '',
+            size: 0,
+            success: false,
+            error: 'Conversion script not found'
+          });
+          continue;
+        }
+
+        const pythonArgs = [scriptPath, inputPath, outputPath, '--quality', String(quality), '--max-dimension', String(maxDimension)];
+        const python = spawn('/opt/venv/bin/python', pythonArgs);
+
+        let stdout = '';
+        let stderr = '';
+
+        python.stdout.on('data', (d: Buffer) => { stdout += d.toString(); });
+        python.stderr.on('data', (d: Buffer) => { stderr += d.toString(); });
+
+        await new Promise<void>((resolve) => {
+          python.on('close', async (code: number) => {
+            try {
+              if (code === 0 && await fs.access(outputPath).then(() => true).catch(() => false)) {
+                const outputBuffer = await fs.readFile(outputPath);
+                results.push({
+                  originalName: file.originalname,
+                  outputFilename: path.basename(outputPath),
+                  size: outputBuffer.length,
+                  success: true,
+                  downloadPath: `data:image/png;base64,${outputBuffer.toString('base64')}`
+                });
+              } else {
+                results.push({
+                  originalName: file.originalname,
+                  outputFilename: '',
+                  size: 0,
+                  success: false,
+                  error: stderr || `Conversion failed with code ${code}`
+                });
+              }
+            } catch (err) {
+              results.push({
+                originalName: file.originalname,
+                outputFilename: '',
+                size: 0,
+                success: false,
+                error: err instanceof Error ? err.message : 'Unknown error'
+              });
+            } finally {
+              resolve();
+            }
+          });
+        });
+      } catch (error) {
+        results.push({
+          originalName: file.originalname,
+          outputFilename: '',
+          size: 0,
+          success: false,
+          error: error instanceof Error ? error.message : 'Unknown error'
+        });
+      }
+    }
+
+    res.set({
+      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+      'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept'
+    });
+    res.json({ success: true, results });
+
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Unknown error';
+    res.set({
+      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+      'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept'
+    });
+    res.status(500).json({ error: message });
+  } finally {
+    await fs.rm(tmpDir, { recursive: true, force: true }).catch(() => undefined);
+  }
+});
+
 // TIFF Preview endpoint - converts TIFF to PNG for web viewing
 app.post('/api/preview/tiff', upload.single('file'), async (req, res) => {
   console.log('=== TIFF PREVIEW REQUEST ===');
