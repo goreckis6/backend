@@ -17975,7 +17975,14 @@ app.post('/convert/heic-to-webp/single', upload.single('file'), async (req, res)
     await fs.writeFile(inputPath, file.buffer);
 
     const scriptPath = path.join(__dirname, '..', 'scripts', 'heic_to_webp.py');
-    try { await fs.access(scriptPath); } catch { return res.status(500).json({ error: 'Conversion script not found' }); }
+    try { await fs.access(scriptPath); } catch {
+      res.set({
+        'Access-Control-Allow-Origin': '*',
+        'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+        'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept'
+      });
+      return res.status(500).json({ error: 'Conversion script not found' });
+    }
 
     const quality = parseInt(req.body.quality) || 90;
     const lossless = req.body.lossless === 'true';
