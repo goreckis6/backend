@@ -65,17 +65,33 @@ def convert_heic_to_png(heic_file: str, output_file: str, quality: int = 95, max
         if img.mode not in ("RGB", "RGBA"):
             img = img.convert("RGBA" if (img.mode in ("LA",) or 'transparency' in img.info) else "RGB")
 
+        # Optional palette quantization to reduce size (lossy, good for non-photo or when transparency not critical)
+        # Apply for medium/low quality levels and only when image is RGB (no alpha) to avoid poor alpha results
+        try:
+            if img.mode == "RGB" and quality <= 85:
+                # Number of colors based on quality hint
+                colors = 256 if quality > 75 else 128
+                print(f"Applying palette quantization to {colors} colors for size reduction")
+                img = img.quantize(colors=colors, method=Image.MEDIANCUT, dither=Image.FLOYDSTEINBERG)
+        except Exception as qerr:
+            print(f"Warning: quantization skipped due to error: {qerr}")
+
         # Ensure output dir exists
         out_dir = os.path.dirname(output_file)
         if out_dir:
             os.makedirs(out_dir, exist_ok=True)
 
-        # Map quality (0-100) to PNG compression (0-9); inverse relation
-        # Higher quality -> lower compression
-        compression_level = max(0, min(9, 9 - int(round(quality / 100.0 * 9))))
+        # Map quality (0-100) to PNG compression (0-9); higher compression for lower quality
+        if quality >= 90:
+            compression_level = 3
+        elif quality >= 80:
+            compression_level = 6
+        else:
+            compression_level = 9
+        print(f"Using PNG compress_level={compression_level} optimize=True")
 
-        # Save PNG
-        img.save(output_file, format='PNG', optimize=False, compress_level=compression_level)
+        # Save PNG with optimization enabled
+        img.save(output_file, format='PNG', optimize=True, compress_level=compression_level)
 
         if os.path.exists(output_file) and os.path.getsize(output_file) > 0:
             print("PNG created successfully")
