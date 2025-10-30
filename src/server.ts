@@ -7121,8 +7121,45 @@ app.post('/api/preview/x3f', upload.single('file'), async (req, res) => {
       return res.status(400).json({ error: 'No file uploaded' });
     }
 
-    // Not implemented preview generator yet; respond clearly with CORS headers
-    return res.status(501).json({ error: 'X3F preview not implemented yet. Please download or convert the file.' });
+    const fileName = file.originalname;
+    const sizeMB = (file.size / 1024 / 1024).toFixed(2);
+    const base64 = file.buffer.toString('base64');
+    const dataUrl = `data:application/octet-stream;base64,${base64}`;
+
+    const html = `<!DOCTYPE html>
+    <html>
+    <head>
+      <meta charset="utf-8" />
+      <title>X3F Preview - ${fileName}</title>
+      <meta name="viewport" content="width=device-width, initial-scale=1" />
+      <style>
+        body { font-family: Arial, sans-serif; background:#0f172a; color:#e5e7eb; margin:0; padding:24px; }
+        .card { max-width: 820px; margin: 0 auto; background:#111827; border:1px solid #1f2937; border-radius:12px; padding:24px; }
+        h1 { margin:0 0 8px 0; font-size:20px; color:#f9fafb; }
+        p { margin:4px 0; color:#cbd5e1; }
+        .actions { margin-top:16px; display:flex; gap:12px; flex-wrap:wrap; }
+        .btn { background:#2563eb; color:white; padding:10px 14px; border-radius:8px; text-decoration:none; display:inline-block; }
+        .btn:hover { background:#1d4ed8; }
+        .note { margin-top:16px; padding:12px; background:#0b1220; border:1px solid #1f2937; border-radius:8px; color:#cbd5e1; }
+      </style>
+    </head>
+    <body>
+      <div class="card">
+        <h1>Preview Not Available for X3F</h1>
+        <p><strong>File:</strong> ${fileName}</p>
+        <p><strong>Size:</strong> ${sizeMB} MB</p>
+        <div class="actions">
+          <a class="btn" href="${dataUrl}" download="${fileName}">Download Original File</a>
+        </div>
+        <div class="note">
+          X3F (Sigma RAW) inline preview is not supported in the browser. Please download the original file or use our image converters to generate a web-friendly preview (e.g., PNG or JPG).
+        </div>
+      </div>
+    </body>
+    </html>`;
+
+    res.set({ 'Content-Type': 'text/html; charset=utf-8' });
+    return res.status(200).send(html);
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Unknown error';
     return res.status(500).json({ error: message });
