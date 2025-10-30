@@ -6528,6 +6528,131 @@ app.options('/api/preview/heic', (req, res) => {
   res.sendStatus(200);
 });
 
+// DOCX Preview endpoint - OPTIONS for CORS preflight
+app.options('/api/preview/docx', (req, res) => {
+  res.set({
+    'Access-Control-Allow-Origin': '*',
+    'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+    'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept',
+    'Access-Control-Max-Age': '86400'
+  });
+  res.sendStatus(200);
+});
+
+// DOCX Preview endpoint - ensure CORS even on errors
+app.post('/api/preview/docx', upload.single('file'), async (req, res) => {
+  res.set({
+    'Access-Control-Allow-Origin': '*',
+    'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+    'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept'
+  });
+
+  console.log('=== DOCX PREVIEW REQUEST ===');
+  const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'morphy-docx-preview-'));
+  try {
+    const file = req.file;
+    if (!file) {
+      return res.status(400).json({ error: 'No file uploaded' });
+    }
+
+    const inputPath = path.join(tmpDir, file.originalname);
+    const outputPath = path.join(tmpDir, file.originalname.replace(/\.(docx)$/i, '.html'));
+    await fs.writeFile(inputPath, file.buffer);
+
+    const scriptPath = path.join(__dirname, '..', 'scripts', 'docx_to_html.py');
+    try { await fs.access(scriptPath); } catch { return res.status(500).json({ error: 'Preview script not found' }); }
+
+    // Fast preview flags (allow images)
+    const args = [
+      scriptPath,
+      inputPath,
+      outputPath,
+      '--max-paragraphs', '200',  // cap content
+      '--max-chars', '200000',    // cap size
+      '--no-prettify'             // avoid expensive formatting
+    ];
+
+    const { execFile } = await import('child_process');
+    const { promisify } = await import('util');
+    const execFileAsync = promisify(execFile);
+    try {
+      await execFileAsync('/opt/venv/bin/python', args);
+    } catch (e: any) {
+      return res.status(500).json({ error: 'Preview generation failed', details: e?.stderr || e?.message || '' });
+    }
+
+    // Read and return HTML
+    try {
+      const html = await fs.readFile(outputPath);
+      res.set({ 'Content-Type': 'text/html; charset=utf-8' });
+      return res.send(html);
+    } catch {
+      return res.status(500).json({ error: 'Preview output not found' });
+    }
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Unknown error';
+    return res.status(500).json({ error: message });
+  } finally {
+    await fs.rm(tmpDir, { recursive: true, force: true }).catch(() => undefined);
+  }
+});
+
+// RTF Preview endpoint - OPTIONS for CORS preflight
+app.options('/api/preview/rtf', (req, res) => {
+  res.set({
+    'Access-Control-Allow-Origin': '*',
+    'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+    'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept',
+    'Access-Control-Max-Age': '86400'
+  });
+  res.sendStatus(200);
+});
+
+// RTF Preview endpoint - converts RTF to HTML for web viewing
+app.post('/api/preview/rtf', upload.single('file'), async (req, res) => {
+  res.set({
+    'Access-Control-Allow-Origin': '*',
+    'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+    'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept'
+  });
+
+  console.log('=== RTF PREVIEW REQUEST ===');
+  const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'morphy-rtf-preview-'));
+  try {
+    const file = req.file;
+    if (!file) {
+      return res.status(400).json({ error: 'No file uploaded' });
+    }
+
+    const inputPath = path.join(tmpDir, file.originalname);
+    const outputPath = path.join(tmpDir, file.originalname.replace(/\.(rtf)$/i, '.html'));
+    await fs.writeFile(inputPath, file.buffer);
+
+    // Use pandoc to convert RTF -> HTML for fast preview
+    try {
+      const { execFile } = await import('child_process');
+      const { promisify } = await import('util');
+      const execFileAsync = promisify(execFile);
+      await execFileAsync('pandoc', [inputPath, '-f', 'rtf', '-t', 'html', '-o', outputPath]);
+    } catch (e: any) {
+      return res.status(500).json({ error: 'RTF preview conversion failed', details: e?.stderr || e?.message || '' });
+    }
+
+    try {
+      const html = await fs.readFile(outputPath);
+      res.set({ 'Content-Type': 'text/html; charset=utf-8' });
+      return res.send(html);
+    } catch {
+      return res.status(500).json({ error: 'Preview output not found' });
+    }
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Unknown error';
+    return res.status(500).json({ error: message });
+  } finally {
+    await fs.rm(tmpDir, { recursive: true, force: true }).catch(() => undefined);
+  }
+});
+
 // HEIC Preview endpoint - converts HEIC to PNG for web viewing
 app.post('/api/preview/heic', upload.single('file'), async (req, res) => {
   // Set CORS headers
