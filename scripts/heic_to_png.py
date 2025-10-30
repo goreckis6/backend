@@ -71,8 +71,10 @@ def convert_heic_to_png(heic_file: str, output_file: str, quality: int = 95, max
             if img.mode == "RGB" and quality <= 85:
                 # Number of colors based on quality hint
                 colors = 256 if quality > 75 else 128
-                print(f"Applying palette quantization to {colors} colors for size reduction")
-                img = img.quantize(colors=colors, method=Image.MEDIANCUT, dither=Image.FLOYDSTEINBERG)
+                print(f"Applying fast palette quantization to {colors} colors for speed")
+                # Use FASTOCTREE + no dither for speed
+                quant_method = getattr(Image, 'FASTOCTREE', Image.MEDIANCUT)
+                img = img.quantize(colors=colors, method=quant_method, dither=Image.NONE)
         except Exception as qerr:
             print(f"Warning: quantization skipped due to error: {qerr}")
 
@@ -82,16 +84,20 @@ def convert_heic_to_png(heic_file: str, output_file: str, quality: int = 95, max
             os.makedirs(out_dir, exist_ok=True)
 
         # Map quality (0-100) to PNG compression (0-9); higher compression for lower quality
+        # Favor speed: lower compression and disable optimize for high/medium
         if quality >= 90:
-            compression_level = 3
+            compression_level = 1
+            use_optimize = False
         elif quality >= 80:
-            compression_level = 6
+            compression_level = 3
+            use_optimize = False
         else:
-            compression_level = 9
-        print(f"Using PNG compress_level={compression_level} optimize=True")
+            compression_level = 6
+            use_optimize = True  # smaller size for low quality setting
+        print(f"Using PNG compress_level={compression_level} optimize={use_optimize}")
 
-        # Save PNG with optimization enabled
-        img.save(output_file, format='PNG', optimize=True, compress_level=compression_level)
+        # Save PNG
+        img.save(output_file, format='PNG', optimize=use_optimize, compress_level=compression_level)
 
         if os.path.exists(output_file) and os.path.getsize(output_file) > 0:
             print("PNG created successfully")
