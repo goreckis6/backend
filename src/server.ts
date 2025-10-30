@@ -7140,6 +7140,16 @@ app.post('/convert/heic-to-eps/single', upload.single('file'), async (req, res) 
     const python = spawn('/opt/venv/bin/python', pythonArgs);
 
     let stdout = '', stderr = '';
+    python.on('error', async (err: Error) => {
+      console.error('HEIC->WEBP single: failed to start python:', err);
+      res.set({
+        'Access-Control-Allow-Origin': '*',
+        'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+        'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept'
+      });
+      if (!res.headersSent) res.status(500).json({ error: 'Failed to start conversion process', details: err.message });
+      await fs.rm(tmpDir, { recursive: true, force: true }).catch(() => undefined);
+    });
     python.stdout.on('data', (d: Buffer) => { stdout += d.toString(); });
     python.stderr.on('data', (d: Buffer) => { stderr += d.toString(); });
     python.on('close', async (code: number) => {
@@ -7216,6 +7226,9 @@ app.post('/convert/heic-to-eps/batch', uploadBatch, async (req, res) => {
         const pythonArgs = [scriptPath, inputPath, outputPath, '--max-dimension', String(maxDimension)];
         const python = spawn('/opt/venv/bin/python', pythonArgs);
         let stdout = '', stderr = '';
+        python.on('error', (err: Error) => {
+          stderr += ` spawn error: ${err.message}`;
+        });
         python.stdout.on('data', (d: Buffer) => { stdout += d.toString(); });
         python.stderr.on('data', (d: Buffer) => { stderr += d.toString(); });
         await new Promise<void>((resolve) => {
