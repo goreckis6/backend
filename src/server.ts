@@ -7218,6 +7218,68 @@ app.post('/api/preview/nef', upload.single('file'), async (req, res) => {
   }
 });
 
+// PEF Preview endpoint - OPTIONS for CORS preflight
+app.options('/api/preview/pef', (req, res) => {
+  res.set({
+    'Access-Control-Allow-Origin': '*',
+    'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+    'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept',
+    'Access-Control-Max-Age': '86400'
+  });
+  res.sendStatus(200);
+});
+
+// PEF Preview endpoint - generates JPEG preview using rawpy (via viewers/pef_to_image.py)
+app.post('/api/preview/pef', upload.single('file'), async (req, res) => {
+  res.set({
+    'Access-Control-Allow-Origin': '*',
+    'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+    'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept'
+  });
+
+  try {
+    const file = req.file;
+    if (!file) {
+      return res.status(400).json({ error: 'No file uploaded' });
+    }
+
+    const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'morphy-pef-preview-'));
+    const inputPath = path.join(tmpDir, file.originalname);
+    const outputPath = inputPath.replace(/\.(pef)$/i, '.jpg');
+    const metadataPath = path.join(tmpDir, 'metadata.json');
+    await fs.writeFile(inputPath, file.buffer);
+
+    const scriptPath = path.join(__dirname, '..', 'viewers', 'pef_to_image.py');
+
+    const fileName = file.originalname;
+    const sizeMB = (file.size / 1024 / 1024).toFixed(2);
+
+    const { execFile } = await import('child_process');
+    const { promisify } = await import('util');
+    const execFileAsync = promisify(execFile);
+    let html: string | null = null;
+    try {
+      await fs.access(scriptPath);
+      await execFileAsync('/opt/venv/bin/python', [scriptPath, inputPath, outputPath, metadataPath, '--max-dimension', '2048']);
+      const img = await fs.readFile(outputPath);
+      const base64Img = img.toString('base64');
+      html = `<!DOCTYPE html><html><head><meta charset=\"utf-8\" /><title>PEF Preview</title><meta name=\"viewport\" content=\"width=device-width, initial-scale=1\" /><style>body{margin:0;background:#0f172a;color:#e5e7eb;font-family:Arial,sans-serif} .bar{position:fixed;top:0;left:0;right:0;background:#0ea5e9;padding:10px 16px;color:#fff;font-weight:600;z-index:10} .wrap{padding-top:48px;display:flex;justify-content:center;align-items:center;min-height:100vh} img{max-width:95vw;max-height:85vh;box-shadow:0 10px 30px rgba(0,0,0,.4);border-radius:8px}</style></head><body><div class=\"bar\">${fileName} (${sizeMB} MB)</div><div class=\"wrap\"><img src=\"data:image/jpeg;base64,${base64Img}\" /></div></body></html>`;
+    } catch (e) {
+      const base64 = file.buffer.toString('base64');
+      const dataUrl = `data:application/octet-stream;base64,${base64}`;
+      html = `<!DOCTYPE html><html><head><meta charset=\"utf-8\" /><title>PEF Preview - ${fileName}</title><meta name=\"viewport\" content=\"width=device-width, initial-scale=1\" /><style>body{font-family:Arial,sans-serif;background:#0f172a;color:#e5e7eb;margin:0;padding:24px}.card{max-width:820px;margin:0 auto;background:#111827;border:1px solid #1f2937;border-radius:12px;padding:24px}</style></head><body><div class=\"card\"><h1>Preview Not Available</h1><p><strong>File:</strong> ${fileName}</p><p><strong>Size:</strong> ${sizeMB} MB</p><p><a href=\"${dataUrl}\" download=\"${fileName}\">Download original</a></p></div></body></html>`;
+    } finally {
+      await fs.rm(tmpDir, { recursive: true, force: true }).catch(() => undefined);
+    }
+
+    res.set({ 'Content-Type': 'text/html; charset=utf-8' });
+    return res.status(200).send(html);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Unknown error';
+    return res.status(500).json({ error: message });
+  }
+});
+
 // Route: HEIC to EPS (Single) - OPTIONS for CORS preflight
 app.options('/convert/heic-to-eps/single', (req, res) => {
   res.set({
@@ -8730,8 +8792,25 @@ app.post('/api/preview/md', uploadDocument.single('file'), async (req, res) => {
   }
 });
 
+// RAF Preview endpoint - OPTIONS for CORS preflight
+app.options('/api/preview/raf', (req, res) => {
+  res.set({
+    'Access-Control-Allow-Origin': '*',
+    'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+    'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept',
+    'Access-Control-Max-Age': '86400'
+  });
+  res.sendStatus(200);
+});
+
 // RAF Preview endpoint - convert RAF (Fujifilm RAW) to web-viewable image
 app.post('/api/preview/raf', uploadDocument.single('file'), async (req, res) => {
+  res.set({
+    'Access-Control-Allow-Origin': '*',
+    'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+    'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept'
+  });
+
   console.log('=== RAF PREVIEW REQUEST ===');
   const tmpDir = path.join(os.tmpdir(), `raf-preview-${Date.now()}`);
   
@@ -8740,6 +8819,11 @@ app.post('/api/preview/raf', uploadDocument.single('file'), async (req, res) => 
     
     const file = req.file;
     if (!file) {
+      res.set({
+        'Access-Control-Allow-Origin': '*',
+        'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+        'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept'
+      });
       return res.status(400).json({ error: 'No file uploaded' });
     }
 
@@ -8754,7 +8838,7 @@ app.post('/api/preview/raf', uploadDocument.single('file'), async (req, res) => 
     await fs.writeFile(rafPath, file.buffer);
 
     // Use Python script to convert RAF to JPEG
-    const pythonPath = process.env.PYTHON_PATH || 'python3';
+    const pythonPath = '/opt/venv/bin/python';
     const scriptPath = path.join(__dirname, '..', 'viewers', 'raf_to_image.py');
     const outputPath = path.join(tmpDir, 'output.jpg');
     const metadataPath = path.join(tmpDir, 'metadata.json');
@@ -8763,6 +8847,11 @@ app.post('/api/preview/raf', uploadDocument.single('file'), async (req, res) => 
     const scriptExists = await fs.access(scriptPath).then(() => true).catch(() => false);
     if (!scriptExists) {
       console.error(`RAF script not found: ${scriptPath}`);
+      res.set({
+        'Access-Control-Allow-Origin': '*',
+        'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+        'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept'
+      });
       return res.status(500).json({ error: 'RAF preview script not found' });
     }
 
@@ -8822,6 +8911,11 @@ app.post('/api/preview/raf', uploadDocument.single('file'), async (req, res) => 
     const base64Image = imageBuffer.toString('base64');
     const imageDataUrl = `data:image/jpeg;base64,${base64Image}`;
 
+    res.set({
+      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+      'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept'
+    });
     res.json({
       imageUrl: imageDataUrl,
       metadata
@@ -8830,14 +8924,36 @@ app.post('/api/preview/raf', uploadDocument.single('file'), async (req, res) => 
   } catch (error) {
     console.error('RAF preview error:', error);
     const message = error instanceof Error ? error.message : 'Unknown RAF preview error';
+    res.set({
+      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+      'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept'
+    });
     res.status(500).json({ error: `Failed to generate RAF preview: ${message}` });
   } finally {
     await fs.rm(tmpDir, { recursive: true, force: true }).catch(() => undefined);
   }
 });
 
+// ORF Preview endpoint - OPTIONS for CORS preflight
+app.options('/api/preview/orf', (req, res) => {
+  res.set({
+    'Access-Control-Allow-Origin': '*',
+    'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+    'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept',
+    'Access-Control-Max-Age': '86400'
+  });
+  res.sendStatus(200);
+});
+
 // ORF Preview endpoint - convert ORF (Olympus RAW) to web-viewable image
 app.post('/api/preview/orf', uploadDocument.single('file'), async (req, res) => {
+  res.set({
+    'Access-Control-Allow-Origin': '*',
+    'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+    'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept'
+  });
+
   console.log('=== ORF PREVIEW REQUEST ===');
   const tmpDir = path.join(os.tmpdir(), `orf-preview-${Date.now()}`);
   
@@ -8846,6 +8962,11 @@ app.post('/api/preview/orf', uploadDocument.single('file'), async (req, res) => 
     
     const file = req.file;
     if (!file) {
+      res.set({
+        'Access-Control-Allow-Origin': '*',
+        'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+        'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept'
+      });
       return res.status(400).json({ error: 'No file uploaded' });
     }
 
@@ -8860,7 +8981,7 @@ app.post('/api/preview/orf', uploadDocument.single('file'), async (req, res) => 
     await fs.writeFile(orfPath, file.buffer);
 
     // Use Python script to convert ORF to JPEG
-    const pythonPath = process.env.PYTHON_PATH || 'python3';
+    const pythonPath = '/opt/venv/bin/python';
     const scriptPath = path.join(__dirname, '..', 'viewers', 'orf_to_image.py');
     const outputPath = path.join(tmpDir, 'output.jpg');
     const metadataPath = path.join(tmpDir, 'metadata.json');
@@ -8869,6 +8990,11 @@ app.post('/api/preview/orf', uploadDocument.single('file'), async (req, res) => 
     const scriptExists = await fs.access(scriptPath).then(() => true).catch(() => false);
     if (!scriptExists) {
       console.error(`ORF script not found: ${scriptPath}`);
+      res.set({
+        'Access-Control-Allow-Origin': '*',
+        'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+        'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept'
+      });
       return res.status(500).json({ error: 'ORF preview script not found' });
     }
 
@@ -8928,6 +9054,11 @@ app.post('/api/preview/orf', uploadDocument.single('file'), async (req, res) => 
     const base64Image = imageBuffer.toString('base64');
     const imageDataUrl = `data:image/jpeg;base64,${base64Image}`;
 
+    res.set({
+      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+      'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept'
+    });
     res.json({
       imageUrl: imageDataUrl,
       metadata
@@ -8936,14 +9067,36 @@ app.post('/api/preview/orf', uploadDocument.single('file'), async (req, res) => 
   } catch (error) {
     console.error('ORF preview error:', error);
     const message = error instanceof Error ? error.message : 'Unknown ORF preview error';
+    res.set({
+      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+      'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept'
+    });
     res.status(500).json({ error: `Failed to generate ORF preview: ${message}` });
   } finally {
     await fs.rm(tmpDir, { recursive: true, force: true }).catch(() => undefined);
   }
 });
 
+// DNG Preview endpoint - OPTIONS for CORS preflight
+app.options('/api/preview/dng', (req, res) => {
+  res.set({
+    'Access-Control-Allow-Origin': '*',
+    'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+    'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept',
+    'Access-Control-Max-Age': '86400'
+  });
+  res.sendStatus(200);
+});
+
 // DNG Preview endpoint - convert DNG (Adobe Digital Negative) to web-viewable image
 app.post('/api/preview/dng', uploadDocument.single('file'), async (req, res) => {
+  res.set({
+    'Access-Control-Allow-Origin': '*',
+    'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+    'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept'
+  });
+
   console.log('=== DNG PREVIEW REQUEST ===');
   const tmpDir = path.join(os.tmpdir(), `dng-preview-${Date.now()}`);
   
@@ -8952,6 +9105,11 @@ app.post('/api/preview/dng', uploadDocument.single('file'), async (req, res) => 
     
     const file = req.file;
     if (!file) {
+      res.set({
+        'Access-Control-Allow-Origin': '*',
+        'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+        'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept'
+      });
       return res.status(400).json({ error: 'No file uploaded' });
     }
 
@@ -8966,7 +9124,7 @@ app.post('/api/preview/dng', uploadDocument.single('file'), async (req, res) => 
     await fs.writeFile(dngPath, file.buffer);
 
     // Use Python script to convert DNG to JPEG
-    const pythonPath = process.env.PYTHON_PATH || 'python3';
+    const pythonPath = '/opt/venv/bin/python';
     const scriptPath = path.join(__dirname, '..', 'viewers', 'dng_to_image.py');
     const outputPath = path.join(tmpDir, 'output.jpg');
     const metadataPath = path.join(tmpDir, 'metadata.json');
@@ -8975,6 +9133,11 @@ app.post('/api/preview/dng', uploadDocument.single('file'), async (req, res) => 
     const scriptExists = await fs.access(scriptPath).then(() => true).catch(() => false);
     if (!scriptExists) {
       console.error(`DNG script not found: ${scriptPath}`);
+      res.set({
+        'Access-Control-Allow-Origin': '*',
+        'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+        'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept'
+      });
       return res.status(500).json({ error: 'DNG preview script not found' });
     }
 
@@ -9034,6 +9197,11 @@ app.post('/api/preview/dng', uploadDocument.single('file'), async (req, res) => 
     const base64Image = imageBuffer.toString('base64');
     const imageDataUrl = `data:image/jpeg;base64,${base64Image}`;
 
+    res.set({
+      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+      'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept'
+    });
     res.json({
       imageUrl: imageDataUrl,
       metadata
@@ -9042,6 +9210,11 @@ app.post('/api/preview/dng', uploadDocument.single('file'), async (req, res) => 
   } catch (error) {
     console.error('DNG preview error:', error);
     const message = error instanceof Error ? error.message : 'Unknown DNG preview error';
+    res.set({
+      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+      'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept'
+    });
     res.status(500).json({ error: `Failed to generate DNG preview: ${message}` });
   } finally {
     await fs.rm(tmpDir, { recursive: true, force: true }).catch(() => undefined);
