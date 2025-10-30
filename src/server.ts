@@ -9366,8 +9366,25 @@ app.post('/api/preview/dcr', uploadDocument.single('file'), async (req, res) => 
   }
 });
 
+// CR2 Preview endpoint - OPTIONS for CORS preflight
+app.options('/api/preview/cr2', (req, res) => {
+  res.set({
+    'Access-Control-Allow-Origin': '*',
+    'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+    'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept',
+    'Access-Control-Max-Age': '86400'
+  });
+  res.sendStatus(200);
+});
+
 // CR2 Preview endpoint - convert CR2 (Canon RAW) to web-viewable image
 app.post('/api/preview/cr2', uploadDocument.single('file'), async (req, res) => {
+  res.set({
+    'Access-Control-Allow-Origin': '*',
+    'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+    'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept'
+  });
+
   console.log('=== CR2 PREVIEW REQUEST ===');
   const tmpDir = path.join(os.tmpdir(), `cr2-preview-${Date.now()}`);
   
@@ -9376,6 +9393,11 @@ app.post('/api/preview/cr2', uploadDocument.single('file'), async (req, res) => 
     
     const file = req.file;
     if (!file) {
+      res.set({
+        'Access-Control-Allow-Origin': '*',
+        'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+        'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept'
+      });
       return res.status(400).json({ error: 'No file uploaded' });
     }
 
@@ -9390,7 +9412,7 @@ app.post('/api/preview/cr2', uploadDocument.single('file'), async (req, res) => 
     await fs.writeFile(cr2Path, file.buffer);
 
     // Use Python script to convert CR2 to JPEG
-    const pythonPath = process.env.PYTHON_PATH || 'python3';
+    const pythonPath = '/opt/venv/bin/python';
     const scriptPath = path.join(__dirname, '..', 'viewers', 'cr2_to_image.py');
     const outputPath = path.join(tmpDir, 'output.jpg');
     const metadataPath = path.join(tmpDir, 'metadata.json');
@@ -9399,6 +9421,11 @@ app.post('/api/preview/cr2', uploadDocument.single('file'), async (req, res) => 
     const scriptExists = await fs.access(scriptPath).then(() => true).catch(() => false);
     if (!scriptExists) {
       console.error(`CR2 script not found: ${scriptPath}`);
+      res.set({
+        'Access-Control-Allow-Origin': '*',
+        'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+        'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept'
+      });
       return res.status(500).json({ error: 'CR2 preview script not found' });
     }
 
@@ -9458,6 +9485,11 @@ app.post('/api/preview/cr2', uploadDocument.single('file'), async (req, res) => 
     const base64Image = imageBuffer.toString('base64');
     const imageDataUrl = `data:image/jpeg;base64,${base64Image}`;
 
+    res.set({
+      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+      'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept'
+    });
     res.json({
       imageUrl: imageDataUrl,
       metadata
@@ -9466,6 +9498,11 @@ app.post('/api/preview/cr2', uploadDocument.single('file'), async (req, res) => 
   } catch (error) {
     console.error('CR2 preview error:', error);
     const message = error instanceof Error ? error.message : 'Unknown CR2 preview error';
+    res.set({
+      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+      'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept'
+    });
     res.status(500).json({ error: `Failed to generate CR2 preview: ${message}` });
   } finally {
     await fs.rm(tmpDir, { recursive: true, force: true }).catch(() => undefined);
