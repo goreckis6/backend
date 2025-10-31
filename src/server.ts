@@ -12997,29 +12997,71 @@ app.post('/api/preview/ods', uploadDocument.single('file'), async (req, res) => 
     console.log('Executing Python script:', { pythonPath, scriptPath, args });
 
     let stdout, stderr;
+    let exitCode = 0;
     try {
       const result = await execFileAsync(pythonPath, args);
       stdout = result.stdout;
       stderr = result.stderr;
+      exitCode = result.exitCode || 0;
     } catch (execError: any) {
       console.error('Python script execution failed:', execError);
       stdout = execError.stdout || '';
       stderr = execError.stderr || execError.message || 'Python execution failed';
+      exitCode = execError.code || 1;
     }
 
     if (stdout.trim().length > 0) console.log('Python stdout:', stdout.trim());
     if (stderr.trim().length > 0) console.warn('Python stderr:', stderr.trim());
     
-    // Check for errors
-    if (stderr.includes('ERROR:') || stderr.includes('Traceback')) {
-      res.status(500).json({ error: `Python script error: ${stderr}` });
+    // Check for errors in stderr or if script failed
+    if (exitCode !== 0 || stderr.includes('ERROR:') || stderr.includes('Traceback') || stderr.includes('CONVERSION FAILED')) {
+      // Try to extract meaningful error message from stderr or stdout
+      let errorMessage = 'Failed to process ODS file';
+      
+      // Look for ValueError or specific error messages
+      if (stderr.includes('ValueError:') || stdout.includes('ValueError:')) {
+        const valueErrorMatch = (stderr + stdout).match(/ValueError:\s*(.+?)(?:\n|$)/i);
+        if (valueErrorMatch) {
+          errorMessage = valueErrorMatch[1].trim();
+        }
+      } else if (stderr.includes('BadZipFile') || stderr.includes('not a zip file')) {
+        errorMessage = 'The uploaded file is not a valid ODS file. ODS files must be ZIP archives containing OpenDocument Spreadsheet data.';
+      } else if (stderr.includes('ERROR:') || stderr.includes('Traceback')) {
+        // Extract last meaningful error line
+        const errorLines = stderr.split('\n').filter(line => 
+          line.trim() && 
+          !line.includes('Traceback') && 
+          !line.includes('File "') && 
+          line.includes(':')
+        );
+        if (errorLines.length > 0) {
+          const lastError = errorLines[errorLines.length - 1].trim();
+          if (lastError.startsWith('ERROR:') || lastError.includes('Error')) {
+            errorMessage = lastError.replace(/^ERROR:\s*/i, '').trim() || errorMessage;
+          }
+        }
+      }
+      
+      // Ensure CORS headers are set even on error
+      res.set({
+        'Access-Control-Allow-Origin': '*',
+        'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+        'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept'
+      });
+      res.status(500).json({ error: errorMessage });
       return;
     }
 
     // Check if output file was created
     const htmlExists = await fs.access(htmlPath).then(() => true).catch(() => false);
     if (!htmlExists) {
-      res.status(500).json({ error: `Python script did not produce HTML preview: ${htmlPath}` });
+      // Ensure CORS headers are set even on error
+      res.set({
+        'Access-Control-Allow-Origin': '*',
+        'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+        'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept'
+      });
+      res.status(500).json({ error: `Python script did not produce HTML preview. The ODS file might be corrupted or in an unsupported format.` });
       return;
     }
 

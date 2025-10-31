@@ -8,6 +8,7 @@ import argparse
 import os
 import sys
 import traceback
+import zipfile
 import pandas as pd
 
 def convert_ods_to_html_pandas(ods_file, html_file, max_rows=2000):
@@ -28,13 +29,71 @@ def convert_ods_to_html_pandas(ods_file, html_file, max_rows=2000):
     print(f"Max Rows: {max_rows}")
     
     try:
+        # Validate ODS file first
+        print("Validating ODS file...")
+        file_size = os.path.getsize(ods_file)
+        print(f"ODS file size: {file_size:,} bytes ({file_size / 1024 / 1024:.2f} MB)")
+        
+        # Check if file is a valid ZIP file (ODS is a ZIP archive)
+        try:
+            with zipfile.ZipFile(ods_file, 'r') as zip_ref:
+                file_list = zip_ref.namelist()
+                print(f"ZIP file contents: {len(file_list)} files")
+                
+                # Check for ODS-specific files
+                has_mimetype = 'mimetype' in file_list
+                has_content = 'content.xml' in file_list
+                
+                if not has_mimetype:
+                    print("WARNING: ODS file missing mimetype entry")
+                if not has_content:
+                    print("WARNING: ODS file missing content.xml entry")
+                
+                # Check mimetype content if available
+                if has_mimetype:
+                    try:
+                        mimetype_content = zip_ref.read('mimetype').decode('utf-8').strip()
+                        print(f"MIMETYPE: {mimetype_content}")
+                        if 'spreadsheet' not in mimetype_content.lower() and 'application/vnd.oasis.opendocument.spreadsheet' not in mimetype_content:
+                            print(f"WARNING: Unexpected MIME type: {mimetype_content}")
+                    except Exception as e:
+                        print(f"Could not read mimetype: {e}")
+                        
+        except zipfile.BadZipFile:
+            error_msg = f"File is not a valid ZIP file. ODS files must be ZIP archives. The file might be corrupted or not an ODS file."
+            print(f"ERROR: {error_msg}")
+            # Try to read first few bytes to provide more info
+            try:
+                with open(ods_file, 'rb') as f:
+                    first_bytes = f.read(16)
+                    print(f"First 16 bytes (hex): {first_bytes.hex()}")
+                    print(f"First 16 bytes (ascii): {first_bytes}")
+            except Exception as e2:
+                print(f"Could not read file bytes: {e2}")
+            raise ValueError(error_msg)
+        except Exception as zip_error:
+            error_msg = f"Error validating ODS file: {str(zip_error)}"
+            print(f"ERROR: {error_msg}")
+            raise ValueError(error_msg)
+        
         # Read ODS file - pandas can read ODS with odfpy engine
         print("Reading ODS file with pandas...")
         
-        # Read all sheets
-        xl_file = pd.ExcelFile(ods_file, engine='odf')
-        sheet_names = xl_file.sheet_names
-        print(f"Found {len(sheet_names)} sheet(s): {sheet_names}")
+        try:
+            xl_file = pd.ExcelFile(ods_file, engine='odf')
+            sheet_names = xl_file.sheet_names
+            print(f"Found {len(sheet_names)} sheet(s): {sheet_names}")
+        except Exception as pd_error:
+            error_msg = f"Error reading ODS file with pandas: {str(pd_error)}"
+            print(f"ERROR: {error_msg}")
+            
+            # Check if it's a common error and provide helpful message
+            if "not a zip file" in str(pd_error).lower() or "BadZipFile" in str(type(pd_error).__name__):
+                raise ValueError("The uploaded file is not a valid ODS file. ODS files must be ZIP archives containing OpenDocument Spreadsheet data.")
+            elif "odfpy" in str(pd_error).lower() or "odf" in str(pd_error).lower():
+                raise ValueError(f"Error reading ODS file format: {str(pd_error)}. The file might be corrupted or in an unsupported format.")
+            else:
+                raise ValueError(f"Error processing ODS file: {str(pd_error)}")
         
         html_parts = []
         html_parts.append('''<style>
