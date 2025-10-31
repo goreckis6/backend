@@ -56,94 +56,12 @@ def convert_xlsx_to_html_pandas(xlsx_file, html_file, max_rows=2000):
         print(f"Found {len(sheet_names)} sheet(s): {sheet_names}")
         
         html_parts = []
-        html_parts.append('''<!DOCTYPE html>
-<html>
-<head>
-    <meta charset="UTF-8">
-    <title>Excel Preview</title>
-    <style>
-        body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
-            margin: 0;
-            padding: 0;
-            background: #f5f5f5;
-        }
-        .header-bar {
-            background: linear-gradient(to right, #10b981, #059669);
-            color: white;
-            padding: 15px 30px;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
-            position: sticky;
-            top: 0;
-            z-index: 100;
-        }
-        .header-title {
-            font-size: 20px;
-            font-weight: 600;
-            display: flex;
-            align-items: center;
-            gap: 10px;
-        }
-        .header-actions {
-            display: flex;
-            gap: 10px;
-        }
-        .btn {
-            padding: 8px 20px;
-            border: none;
-            border-radius: 6px;
-            font-size: 14px;
-            font-weight: 500;
-            cursor: pointer;
-            display: inline-flex;
-            align-items: center;
-            gap: 8px;
-            transition: all 0.2s;
-        }
-        .btn-print {
-            background: white;
-            color: #059669;
-        }
-        .btn-print:hover {
-            background: #f0fdf4;
-            transform: scale(1.05);
-        }
-        .btn-close {
-            background: rgba(255,255,255,0.2);
-            color: white;
-            border: 1px solid rgba(255,255,255,0.3);
-        }
-        .btn-close:hover {
-            background: rgba(255,255,255,0.3);
-            transform: scale(1.05);
-        }
-        .container {
+        html_parts.append('''<style>
+        .excel-container {
             max-width: 1400px;
             margin: 0 auto;
             background: white;
             padding: 30px;
-        }
-        h1 {
-            color: #333;
-            border-bottom: 3px solid #10b981;
-            padding-bottom: 10px;
-            margin-bottom: 20px;
-            margin-top: 0;
-        }
-        @media print {
-            .header-bar {
-                display: none;
-            }
-            body {
-                background: white;
-            }
-            .container {
-                padding: 0;
-                box-shadow: none;
-            }
         }
         .sheet-nav {
             background: #f9fafb;
@@ -202,6 +120,32 @@ def convert_xlsx_to_html_pandas(xlsx_file, html_file, max_rows=2000):
             margin-bottom: 20px;
             color: #92400e;
         }
+        .excel-stats {
+            display: flex;
+            gap: 20px;
+            margin-bottom: 20px;
+            flex-wrap: wrap;
+        }
+        .excel-stat-box {
+            background: #f0fdf4;
+            padding: 12px 18px;
+            border-radius: 8px;
+            border-left: 4px solid #10b981;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+        }
+        .excel-stat-label {
+            font-size: 12px;
+            color: #6b7280;
+            margin-bottom: 4px;
+            font-weight: 500;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+        .excel-stat-value {
+            font-size: 24px;
+            font-weight: 700;
+            color: #059669;
+        }
         table {
             border-collapse: collapse;
             width: 100%;
@@ -231,50 +175,19 @@ def convert_xlsx_to_html_pandas(xlsx_file, html_file, max_rows=2000):
         tr:hover {
             background: #f0fdf4;
         }
-        .stats {
-            display: flex;
-            gap: 20px;
-            margin-bottom: 20px;
-        }
-        .stat-box {
-            background: #f0fdf4;
-            padding: 10px 16px;
-            border-radius: 6px;
-            border-left: 3px solid #10b981;
-        }
-        .stat-label {
-            font-size: 12px;
-            color: #6b7280;
-            margin-bottom: 4px;
-        }
-        .stat-value {
-            font-size: 20px;
-            font-weight: 600;
-            color: #059669;
-        }
         .empty-sheet {
             text-align: center;
             padding: 60px;
             color: #9ca3af;
         }
+        @media print {
+            .excel-container {
+                padding: 0;
+                box-shadow: none;
+            }
+        }
     </style>
-</head>
-<body>
-    <div class="header-bar">
-        <div class="header-title">
-            <span>📊</span>
-            <span>Excel Spreadsheet Preview</span>
-        </div>
-        <div class="header-actions">
-            <button onclick="window.print()" class="btn btn-print">
-                🖨️ Print
-            </button>
-            <button onclick="window.close()" class="btn btn-close">
-                ✖️ Close
-            </button>
-        </div>
-    </div>
-    <div class="container">
+    <div class="excel-container">
 ''')
         
         # Add sheet navigation if multiple sheets
@@ -302,9 +215,9 @@ def convert_xlsx_to_html_pandas(xlsx_file, html_file, max_rows=2000):
                 
                 # Get stats
                 rows, cols = df.shape
-                html_parts.append('            <div class="stats">\n')
-                html_parts.append(f'                <div class="stat-box"><div class="stat-label">Rows</div><div class="stat-value">{rows:,}</div></div>\n')
-                html_parts.append(f'                <div class="stat-box"><div class="stat-label">Columns</div><div class="stat-value">{cols}</div></div>\n')
+                html_parts.append('            <div class="excel-stats">\n')
+                html_parts.append(f'                <div class="excel-stat-box"><div class="excel-stat-label">Rows</div><div class="excel-stat-value">{rows:,}</div></div>\n')
+                html_parts.append(f'                <div class="excel-stat-box"><div class="excel-stat-label">Columns</div><div class="excel-stat-value">{cols}</div></div>\n')
                 html_parts.append('            </div>\n')
                 
                 # Truncate if too many rows
@@ -355,9 +268,7 @@ def convert_xlsx_to_html_pandas(xlsx_file, html_file, max_rows=2000):
     </script>
 ''')
         
-        html_parts.append('''    </div>
-</body>
-</html>''')
+        html_parts.append('    </div>\n')
         
         # Write HTML file
         with open(html_file, 'w', encoding='utf-8') as f:

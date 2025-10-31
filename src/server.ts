@@ -13026,30 +13026,20 @@ app.post('/api/preview/ods', uploadDocument.single('file'), async (req, res) => 
     // Read HTML file
     let htmlContent = await fs.readFile(htmlPath, 'utf-8');
     
-    // Remove existing headers/toolbars from Python-generated HTML
-    // Try to extract body content if it's a full HTML document
+    // Python script now generates only content (styles + body content) without full HTML document
+    // If it's still a full HTML document (for backward compatibility), extract body content
     const bodyMatch = htmlContent.match(/<body[^>]*>([\s\S]*)<\/body>/i);
     if (bodyMatch) {
       htmlContent = bodyMatch[1];
     }
     
-    // Remove header bar sections with various class names
-    htmlContent = htmlContent.replace(/<div[^>]*(?:header-bar|header-bar|toolbar|header-container)[^>]*>[\s\S]*?<\/div>/gi, '');
+    // Remove any remaining header bars or toolbars that might exist (backward compatibility)
+    htmlContent = htmlContent.replace(/<div[^>]*class=["'][^"']*(?:header-bar|toolbar|header-container)["'][^>]*>[\s\S]*?<\/div>/gi, '');
     
-    // Remove specific header titles and their containing divs
-    htmlContent = htmlContent.replace(/<div[^>]*>[\s\S]*?(?:📊|📄)[\s\S]*?(?:Excel Spreadsheet|CSV Data|JSON File|ODS Spreadsheet)[\s\S]*?Preview[\s\S]*?<\/div>/gi, '');
+    // Clean up any duplicate styling or wrapper divs
+    htmlContent = htmlContent.trim();
     
-    // Remove divs containing Print and Close buttons (various formats)
-    htmlContent = htmlContent.replace(/<div[^>]*>[\s\S]*?(?:🖨️|Print)[\s\S]*?(?:✖️|Close|×)[\s\S]*?<\/div>/gi, '');
-    htmlContent = htmlContent.replace(/<div[^>]*>[\s\S]*?(?:Print|Close)[\s\S]*?<\/div>/gi, '');
-    
-    // Remove header tags with titles
-    htmlContent = htmlContent.replace(/<h[1-6][^>]*>[\s\S]*?(?:Excel Spreadsheet|CSV Data|JSON File|ODS Spreadsheet)[\s\S]*?Preview[\s\S]*?<\/h[1-6]>/gi, '');
-    
-    // Remove any remaining empty header/toolbar divs
-    htmlContent = htmlContent.replace(/<div[^>]*(?:class|id)=["'][^"']*(?:header|toolbar|title|bar)[^"']*["'][^>]*>\s*<\/div>/gi, '');
-    
-    // Wrap HTML in styled template with PDF-style toolbar
+    // Wrap HTML in styled template with ODS viewer toolbar
     const styledHtml = `
       <!DOCTYPE html>
       <html>
@@ -13752,30 +13742,20 @@ app.post('/api/preview/xlsx', uploadDocument.single('file'), async (req, res) =>
     // Read HTML file
     let htmlContent = await fs.readFile(htmlPath, 'utf-8');
     
-    // Remove existing headers/toolbars from Python-generated HTML
-    // Try to extract body content if it's a full HTML document
+    // Python script now generates only content (styles + body content) without full HTML document
+    // If it's still a full HTML document (for backward compatibility), extract body content
     const bodyMatch = htmlContent.match(/<body[^>]*>([\s\S]*)<\/body>/i);
     if (bodyMatch) {
       htmlContent = bodyMatch[1];
     }
     
-    // Remove header bar sections with various class names
-    htmlContent = htmlContent.replace(/<div[^>]*(?:header-bar|header-bar|toolbar|header-container)[^>]*>[\s\S]*?<\/div>/gi, '');
+    // Remove any remaining header bars or toolbars that might exist (backward compatibility)
+    htmlContent = htmlContent.replace(/<div[^>]*class=["'][^"']*(?:header-bar|toolbar|header-container)["'][^>]*>[\s\S]*?<\/div>/gi, '');
     
-    // Remove specific header titles and their containing divs
-    htmlContent = htmlContent.replace(/<div[^>]*>[\s\S]*?(?:📊|📄)[\s\S]*?(?:Excel Spreadsheet|CSV Data|JSON File|ODS Spreadsheet)[\s\S]*?Preview[\s\S]*?<\/div>/gi, '');
+    // Clean up any duplicate styling or wrapper divs
+    htmlContent = htmlContent.trim();
     
-    // Remove divs containing Print and Close buttons (various formats)
-    htmlContent = htmlContent.replace(/<div[^>]*>[\s\S]*?(?:🖨️|Print)[\s\S]*?(?:✖️|Close|×)[\s\S]*?<\/div>/gi, '');
-    htmlContent = htmlContent.replace(/<div[^>]*>[\s\S]*?(?:Print|Close)[\s\S]*?<\/div>/gi, '');
-    
-    // Remove header tags with titles
-    htmlContent = htmlContent.replace(/<h[1-6][^>]*>[\s\S]*?(?:Excel Spreadsheet|CSV Data|JSON File|ODS Spreadsheet)[\s\S]*?Preview[\s\S]*?<\/h[1-6]>/gi, '');
-    
-    // Remove any remaining empty header/toolbar divs
-    htmlContent = htmlContent.replace(/<div[^>]*(?:class|id)=["'][^"']*(?:header|toolbar|title|bar)[^"']*["'][^>]*>\s*<\/div>/gi, '');
-    
-    // Wrap HTML in styled template with PDF-style toolbar
+    // Wrap HTML in styled template with Excel viewer toolbar
     const styledHtml = `
       <!DOCTYPE html>
       <html>
