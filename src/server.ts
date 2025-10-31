@@ -11508,8 +11508,26 @@ app.post('/api/preview/csv', uploadDocument.single('file'), async (req, res) => 
   }
 });
 
+// Excel Preview endpoint - OPTIONS for CORS preflight
+app.options('/api/preview/xlsx', (req, res) => {
+  res.set({
+    'Access-Control-Allow-Origin': '*',
+    'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+    'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept',
+    'Access-Control-Max-Age': '86400'
+  });
+  res.sendStatus(200);
+});
+
 // Excel Preview endpoint - convert Excel to HTML for web viewing
 app.post('/api/preview/xlsx', uploadDocument.single('file'), async (req, res) => {
+  // Set CORS headers
+  res.set({
+    'Access-Control-Allow-Origin': '*',
+    'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+    'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept'
+  });
+
   console.log('=== EXCEL PREVIEW REQUEST ===');
   const tmpDir = path.join(os.tmpdir(), `xlsx-preview-${Date.now()}`);
   
@@ -11518,7 +11536,8 @@ app.post('/api/preview/xlsx', uploadDocument.single('file'), async (req, res) =>
     
     const file = req.file;
     if (!file) {
-      return res.status(400).json({ error: 'No file uploaded' });
+      res.status(400).json({ error: 'No file uploaded' });
+      return;
     }
 
     console.log('Excel file received:', {
@@ -11536,7 +11555,7 @@ app.post('/api/preview/xlsx', uploadDocument.single('file'), async (req, res) =>
     await fs.writeFile(xlsxPath, file.buffer);
 
     // Use Python script to convert Excel to HTML
-    const pythonPath = process.env.PYTHON_PATH || 'python3';
+    const pythonPath = process.env.PYTHON_PATH || '/opt/venv/bin/python';
     const scriptPath = path.join(__dirname, '..', 'viewers', 'xlsx_to_html.py');
     const htmlPath = path.join(tmpDir, 'output.html');
 
@@ -11544,7 +11563,8 @@ app.post('/api/preview/xlsx', uploadDocument.single('file'), async (req, res) =>
     const scriptExists = await fs.access(scriptPath).then(() => true).catch(() => false);
     if (!scriptExists) {
       console.error(`Python script not found: ${scriptPath}`);
-      return res.status(500).json({ error: 'Excel preview script not found' });
+      res.status(500).json({ error: 'Excel preview script not found' });
+      return;
     }
 
     const args = [
@@ -11572,17 +11592,245 @@ app.post('/api/preview/xlsx', uploadDocument.single('file'), async (req, res) =>
     
     // Check for errors
     if (stderr.includes('ERROR:') || stderr.includes('Traceback')) {
-      throw new Error(`Python script error: ${stderr}`);
+      res.status(500).json({ error: `Python script error: ${stderr}` });
+      return;
     }
 
     // Check if output file was created
     const htmlExists = await fs.access(htmlPath).then(() => true).catch(() => false);
     if (!htmlExists) {
-      throw new Error(`Python script did not produce HTML preview: ${htmlPath}`);
+      res.status(500).json({ error: `Python script did not produce HTML preview: ${htmlPath}` });
+      return;
     }
 
-    // Read and send HTML file
-    const htmlContent = await fs.readFile(htmlPath, 'utf-8');
+    // Read HTML file
+    let htmlContent = await fs.readFile(htmlPath, 'utf-8');
+    
+    // Wrap HTML in styled template with PDF-style toolbar
+    const styledHtml = `
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <meta charset="UTF-8">
+        <title>${file.originalname}</title>
+        <style>
+          * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+          }
+          body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: #f6f8fa;
+            color: #24292f;
+            line-height: 1.6;
+          }
+          .toolbar {
+            position: sticky;
+            top: 0;
+            background: #10b981;
+            color: white;
+            padding: 15px 20px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+            z-index: 1000;
+            flex-wrap: wrap;
+            gap: 10px;
+          }
+          .toolbar-left {
+            display: flex;
+            align-items: center;
+            gap: 15px;
+          }
+          .toolbar-title {
+            font-size: 16px;
+            font-weight: 600;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+          }
+          .toolbar-center {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+          }
+          .toolbar-right {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+          }
+          .page-info {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 14px;
+          }
+          .toolbar button {
+            background: #059669;
+            color: white;
+            border: none;
+            padding: 8px 16px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 14px;
+            transition: background 0.2s;
+          }
+          .toolbar button:hover:not(:disabled) {
+            background: #047857;
+          }
+          .toolbar button:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+          }
+          .zoom-controls {
+            display: flex;
+            align-items: center;
+            gap: 5px;
+            background: rgba(255,255,255,0.1);
+            padding: 4px 8px;
+            border-radius: 4px;
+          }
+          .zoom-btn {
+            background: rgba(255,255,255,0.2);
+            border: none;
+            color: white;
+            width: 32px;
+            height: 32px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 18px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 0;
+          }
+          .zoom-btn:hover {
+            background: rgba(255,255,255,0.3);
+          }
+          .zoom-level {
+            min-width: 60px;
+            text-align: center;
+            font-size: 14px;
+            font-weight: 600;
+          }
+          .content-container {
+            padding: 20px;
+            max-width: 100%;
+            margin: 0 auto;
+            overflow-x: auto;
+            transition: transform 0.3s ease;
+          }
+          .excel-content {
+            background: white;
+            border: 1px solid #d0d7de;
+            border-radius: 8px;
+            padding: 20px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+            transition: transform 0.3s ease;
+          }
+          @media print {
+            .toolbar {
+              display: none;
+            }
+            body {
+              background: white;
+            }
+            .content-container {
+              padding: 0;
+            }
+            .excel-content {
+              border: none;
+              box-shadow: none;
+            }
+          }
+        </style>
+      </head>
+      <body>
+        <div class="toolbar">
+          <div class="toolbar-left">
+            <div class="toolbar-title">
+              <span>📄</span>
+              <span>Excel Viewer</span>
+            </div>
+          </div>
+          <div class="toolbar-center">
+            <div class="page-info">
+              <span>Page</span>
+              <span id="current-page">1</span>
+              <span>/</span>
+              <span id="total-pages">1</span>
+            </div>
+            <button onclick="previousPage()" id="prev-btn" disabled>◀ Previous</button>
+            <button onclick="nextPage()" id="next-btn" disabled>Next ▶</button>
+          </div>
+          <div class="toolbar-right">
+            <div class="zoom-controls">
+              <button class="zoom-btn" onclick="zoomOut()" title="Zoom Out">-</button>
+              <span class="zoom-level" id="zoom-level">100%</span>
+              <button class="zoom-btn" onclick="zoomIn()" title="Zoom In">+</button>
+            </div>
+            <button onclick="fitWidth()">Fit Width</button>
+            <button onclick="window.print()">🖨️ Print</button>
+            <button onclick="window.close()">✖️ Close</button>
+          </div>
+        </div>
+        <div class="content-container" id="content-container">
+          <div class="excel-content" id="excel-content">
+            ${htmlContent}
+          </div>
+        </div>
+        <script>
+          let currentZoom = 100;
+          const zoomSteps = [50, 75, 100, 125, 150, 175, 200, 250, 300];
+          const contentContainer = document.getElementById('content-container');
+          const excelContent = document.getElementById('excel-content');
+          
+          function updateZoom() {
+            excelContent.style.transform = \`scale(\${currentZoom / 100})\`;
+            excelContent.style.transformOrigin = 'top left';
+            document.getElementById('zoom-level').textContent = \`\${currentZoom}%\`;
+          }
+          
+          function zoomIn() {
+            const nextStep = zoomSteps.find(step => step > currentZoom) || zoomSteps[zoomSteps.length - 1];
+            if (nextStep <= zoomSteps[zoomSteps.length - 1]) {
+              currentZoom = nextStep;
+              updateZoom();
+            }
+          }
+          
+          function zoomOut() {
+            const prevStep = [...zoomSteps].reverse().find(step => step < currentZoom) || zoomSteps[0];
+            if (prevStep >= zoomSteps[0]) {
+              currentZoom = prevStep;
+              updateZoom();
+            }
+          }
+          
+          function fitWidth() {
+            const containerWidth = window.innerWidth - 80;
+            const contentWidth = excelContent.scrollWidth || 1200;
+            currentZoom = Math.floor((containerWidth / contentWidth) * 100);
+            currentZoom = Math.max(50, Math.min(300, currentZoom)); // Clamp between 50% and 300%
+            updateZoom();
+          }
+          
+          function previousPage() {
+            // Excel is single view, so this is disabled
+          }
+          
+          function nextPage() {
+            // Excel is single view, so this is disabled
+          }
+          
+          // Initialize zoom
+          updateZoom();
+        </script>
+      </body>
+      </html>
+    `;
 
     console.log('Excel preview successful:', {
       inputSize: file.size,
@@ -11590,11 +11838,17 @@ app.post('/api/preview/xlsx', uploadDocument.single('file'), async (req, res) =>
     });
 
     res.set('Content-Type', 'text/html');
-    res.send(htmlContent);
+    res.send(styledHtml);
 
   } catch (error) {
     console.error('Excel preview error:', error);
     const message = error instanceof Error ? error.message : 'Unknown Excel preview error';
+    // Ensure CORS headers are set even on error
+    res.set({
+      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+      'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept'
+    });
     res.status(500).json({ error: `Failed to generate Excel preview: ${message}` });
   } finally {
     await fs.rm(tmpDir, { recursive: true, force: true }).catch(() => undefined);
