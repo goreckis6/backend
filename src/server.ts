@@ -6646,9 +6646,286 @@ app.post('/api/preview/rtf', upload.single('file'), async (req, res) => {
     }
 
     try {
-      const html = await fs.readFile(outputPath);
+      const htmlContent = await fs.readFile(outputPath, 'utf-8');
+      
+      // Wrap HTML in styled template with toolbar (same as PDF viewer)
+      const styledHtml = `
+        <!DOCTYPE html>
+        <html>
+        <head>
+          <meta charset="UTF-8">
+          <title>${file.originalname}</title>
+          <style>
+            * {
+              margin: 0;
+              padding: 0;
+              box-sizing: border-box;
+            }
+            body {
+              font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+              background: #525659;
+              color: #333;
+              line-height: 1.6;
+              padding: 20px 0;
+            }
+            .toolbar {
+              position: sticky;
+              top: 0;
+              background: #d35400;
+              color: white;
+              padding: 15px 20px;
+              display: flex;
+              justify-content: space-between;
+              align-items: center;
+              box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+              z-index: 1000;
+              flex-wrap: wrap;
+              gap: 10px;
+            }
+            .toolbar-left {
+              display: flex;
+              align-items: center;
+              gap: 15px;
+            }
+            .toolbar-title {
+              font-size: 16px;
+              font-weight: 600;
+              display: flex;
+              align-items: center;
+              gap: 8px;
+            }
+            .toolbar-center {
+              display: flex;
+              align-items: center;
+              gap: 10px;
+            }
+            .toolbar-right {
+              display: flex;
+              align-items: center;
+              gap: 10px;
+            }
+            .page-info {
+              display: flex;
+              align-items: center;
+              gap: 8px;
+              font-size: 14px;
+            }
+            .toolbar button {
+              background: #e67e22;
+              color: white;
+              border: none;
+              padding: 8px 16px;
+              border-radius: 4px;
+              cursor: pointer;
+              font-size: 14px;
+              transition: background 0.2s;
+            }
+            .toolbar button:hover:not(:disabled) {
+              background: #f39c12;
+            }
+            .toolbar button:disabled {
+              opacity: 0.5;
+              cursor: not-allowed;
+            }
+            .zoom-controls {
+              display: flex;
+              align-items: center;
+              gap: 5px;
+              background: rgba(255,255,255,0.1);
+              padding: 4px 8px;
+              border-radius: 4px;
+            }
+            .zoom-btn {
+              background: rgba(255,255,255,0.2);
+              border: none;
+              color: white;
+              width: 32px;
+              height: 32px;
+              border-radius: 4px;
+              cursor: pointer;
+              font-size: 18px;
+              display: flex;
+              align-items: center;
+              justify-content: center;
+              padding: 0;
+            }
+            .zoom-btn:hover {
+              background: rgba(255,255,255,0.3);
+            }
+            .zoom-level {
+              min-width: 60px;
+              text-align: center;
+              font-size: 14px;
+              font-weight: 600;
+            }
+            .page-container {
+              max-width: 210mm;
+              margin: 20px auto;
+              padding: 0 10px;
+              transition: transform 0.3s ease;
+            }
+            .page {
+              width: 210mm;
+              min-height: 297mm;
+              padding: 20mm;
+              margin-bottom: 20px;
+              background: white;
+              box-shadow: 0 0 10px rgba(0,0,0,0.3);
+              page-break-after: always;
+              transition: transform 0.3s ease;
+            }
+            .page:last-child {
+              margin-bottom: 0;
+            }
+            h1, h2, h3, h4, h5, h6 {
+              margin-top: 1.2em;
+              margin-bottom: 0.6em;
+              color: #2c3e50;
+              page-break-after: avoid;
+            }
+            h1 { font-size: 2em; }
+            h2 { font-size: 1.5em; }
+            h3 { font-size: 1.17em; }
+            p { 
+              margin-bottom: 1em;
+              text-align: justify;
+            }
+            table {
+              border-collapse: collapse;
+              width: 100%;
+              margin: 1em 0;
+              page-break-inside: avoid;
+            }
+            table, th, td {
+              border: 1px solid #ddd;
+            }
+            th, td {
+              padding: 8px 12px;
+              text-align: left;
+            }
+            th {
+              background-color: #f8f9fa;
+              font-weight: bold;
+            }
+            img {
+              max-width: 100%;
+              height: auto;
+              page-break-inside: avoid;
+            }
+            ul, ol {
+              margin-left: 2em;
+              margin-bottom: 1em;
+            }
+            li {
+              margin-bottom: 0.5em;
+            }
+            @media print {
+              body {
+                background: white;
+                padding: 0;
+              }
+              .toolbar {
+                display: none;
+              }
+              .page-container {
+                max-width: 100%;
+                margin: 0;
+                padding: 0;
+              }
+              .page {
+                margin: 0;
+                box-shadow: none;
+                page-break-after: always;
+              }
+            }
+          </style>
+        </head>
+        <body>
+          <div class="toolbar">
+            <div class="toolbar-left">
+              <div class="toolbar-title">
+                <span>📄</span>
+                <span>RTF Viewer</span>
+              </div>
+            </div>
+            <div class="toolbar-center">
+              <div class="page-info">
+                <span>Page</span>
+                <span id="current-page">1</span>
+                <span>/</span>
+                <span id="total-pages">1</span>
+              </div>
+              <button onclick="previousPage()" id="prev-btn" disabled>◀ Previous</button>
+              <button onclick="nextPage()" id="next-btn" disabled>Next ▶</button>
+            </div>
+            <div class="toolbar-right">
+              <div class="zoom-controls">
+                <button class="zoom-btn" onclick="zoomOut()" title="Zoom Out">-</button>
+                <span class="zoom-level" id="zoom-level">100%</span>
+                <button class="zoom-btn" onclick="zoomIn()" title="Zoom In">+</button>
+              </div>
+              <button onclick="fitWidth()">Fit Width</button>
+              <button onclick="window.print()">🖨️ Print</button>
+              <button onclick="window.close()">✖️ Close</button>
+            </div>
+          </div>
+          <div class="page-container" id="page-container">
+            <div class="page" id="document-content">
+              ${htmlContent}
+            </div>
+          </div>
+          <script>
+            let currentZoom = 100;
+            const zoomSteps = [50, 75, 100, 125, 150, 175, 200, 250, 300];
+            const pageContainer = document.getElementById('page-container');
+            const documentContent = document.getElementById('document-content');
+            
+            function updateZoom() {
+              documentContent.style.transform = \`scale(\${currentZoom / 100})\`;
+              documentContent.style.transformOrigin = 'top center';
+              document.getElementById('zoom-level').textContent = \`\${currentZoom}%\`;
+            }
+            
+            function zoomIn() {
+              const nextStep = zoomSteps.find(step => step > currentZoom) || zoomSteps[zoomSteps.length - 1];
+              if (nextStep <= zoomSteps[zoomSteps.length - 1]) {
+                currentZoom = nextStep;
+                updateZoom();
+              }
+            }
+            
+            function zoomOut() {
+              const prevStep = [...zoomSteps].reverse().find(step => step < currentZoom) || zoomSteps[0];
+              if (prevStep >= zoomSteps[0]) {
+                currentZoom = prevStep;
+                updateZoom();
+              }
+            }
+            
+            function fitWidth() {
+              const containerWidth = window.innerWidth - 40;
+              const pageWidth = 210 * 3.779527559; // Convert mm to pixels
+              currentZoom = Math.floor((containerWidth / pageWidth) * 100);
+              updateZoom();
+            }
+            
+            function previousPage() {
+              // RTF is single page, so this is disabled
+            }
+            
+            function nextPage() {
+              // RTF is single page, so this is disabled
+            }
+            
+            // Initialize zoom
+            updateZoom();
+          </script>
+        </body>
+        </html>
+      `;
+      
       res.set({ 'Content-Type': 'text/html; charset=utf-8' });
-      return res.send(html);
+      return res.send(styledHtml);
     } catch {
       return res.status(500).json({ error: 'Preview output not found' });
     }
@@ -7957,6 +8234,36 @@ app.post('/api/preview/rtf', uploadDocument.single('file'), async (req, res) => 
             align-items: center;
             box-shadow: 0 2px 8px rgba(0,0,0,0.2);
             z-index: 1000;
+            flex-wrap: wrap;
+            gap: 10px;
+          }
+          .toolbar-left {
+            display: flex;
+            align-items: center;
+            gap: 15px;
+          }
+          .toolbar-title {
+            font-size: 16px;
+            font-weight: 600;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+          }
+          .toolbar-center {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+          }
+          .toolbar-right {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+          }
+          .page-info {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 14px;
           }
           .toolbar button {
             background: #e67e22;
@@ -7965,16 +8272,52 @@ app.post('/api/preview/rtf', uploadDocument.single('file'), async (req, res) => 
             padding: 8px 16px;
             border-radius: 4px;
             cursor: pointer;
-            margin-left: 10px;
             font-size: 14px;
+            transition: background 0.2s;
           }
-          .toolbar button:hover {
+          .toolbar button:hover:not(:disabled) {
             background: #f39c12;
+          }
+          .toolbar button:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+          }
+          .zoom-controls {
+            display: flex;
+            align-items: center;
+            gap: 5px;
+            background: rgba(255,255,255,0.1);
+            padding: 4px 8px;
+            border-radius: 4px;
+          }
+          .zoom-btn {
+            background: rgba(255,255,255,0.2);
+            border: none;
+            color: white;
+            width: 32px;
+            height: 32px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 18px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 0;
+          }
+          .zoom-btn:hover {
+            background: rgba(255,255,255,0.3);
+          }
+          .zoom-level {
+            min-width: 60px;
+            text-align: center;
+            font-size: 14px;
+            font-weight: 600;
           }
           .page-container {
             max-width: 210mm;
             margin: 20px auto;
             padding: 0 10px;
+            transition: transform 0.3s ease;
           }
           .page {
             width: 210mm;
@@ -7984,6 +8327,7 @@ app.post('/api/preview/rtf', uploadDocument.single('file'), async (req, res) => 
             background: white;
             box-shadow: 0 0 10px rgba(0,0,0,0.3);
             page-break-after: always;
+            transition: transform 0.3s ease;
           }
           .page:last-child {
             margin-bottom: 0;
@@ -8053,17 +8397,84 @@ app.post('/api/preview/rtf', uploadDocument.single('file'), async (req, res) => 
       </head>
       <body>
         <div class="toolbar">
-          <span><strong>📄 ${file.originalname}</strong></span>
-          <div>
+          <div class="toolbar-left">
+            <div class="toolbar-title">
+              <span>📄</span>
+              <span>RTF Viewer</span>
+            </div>
+          </div>
+          <div class="toolbar-center">
+            <div class="page-info">
+              <span>Page</span>
+              <span id="current-page">1</span>
+              <span>/</span>
+              <span id="total-pages">1</span>
+            </div>
+            <button onclick="previousPage()" id="prev-btn" disabled>◀ Previous</button>
+            <button onclick="nextPage()" id="next-btn" disabled>Next ▶</button>
+          </div>
+          <div class="toolbar-right">
+            <div class="zoom-controls">
+              <button class="zoom-btn" onclick="zoomOut()" title="Zoom Out">-</button>
+              <span class="zoom-level" id="zoom-level">100%</span>
+              <button class="zoom-btn" onclick="zoomIn()" title="Zoom In">+</button>
+            </div>
+            <button onclick="fitWidth()">Fit Width</button>
             <button onclick="window.print()">🖨️ Print</button>
             <button onclick="window.close()">✖️ Close</button>
           </div>
         </div>
-        <div class="page-container">
-          <div class="page">
+        <div class="page-container" id="page-container">
+          <div class="page" id="document-content">
             ${htmlContent}
           </div>
         </div>
+        <script>
+          let currentZoom = 100;
+          const zoomSteps = [50, 75, 100, 125, 150, 175, 200, 250, 300];
+          const pageContainer = document.getElementById('page-container');
+          const documentContent = document.getElementById('document-content');
+          
+          function updateZoom() {
+            documentContent.style.transform = \`scale(\${currentZoom / 100})\`;
+            documentContent.style.transformOrigin = 'top center';
+            document.getElementById('zoom-level').textContent = \`\${currentZoom}%\`;
+          }
+          
+          function zoomIn() {
+            const nextStep = zoomSteps.find(step => step > currentZoom) || zoomSteps[zoomSteps.length - 1];
+            if (nextStep <= zoomSteps[zoomSteps.length - 1]) {
+              currentZoom = nextStep;
+              updateZoom();
+            }
+          }
+          
+          function zoomOut() {
+            const prevStep = [...zoomSteps].reverse().find(step => step < currentZoom) || zoomSteps[0];
+            if (prevStep >= zoomSteps[0]) {
+              currentZoom = prevStep;
+              updateZoom();
+            }
+          }
+          
+          function fitWidth() {
+            const containerWidth = window.innerWidth - 40;
+            const pageWidth = 210 * 3.779527559; // Convert mm to pixels
+            currentZoom = Math.floor((containerWidth / pageWidth) * 100);
+            updateZoom();
+          }
+          
+          function previousPage() {
+            // RTF is single page, so this is disabled
+          }
+          
+          function nextPage() {
+            // RTF is single page, so this is disabled
+          }
+          
+          // Initialize zoom
+          updateZoom();
+        </script>
       </body>
       </html>
     `;
