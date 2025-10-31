@@ -8496,8 +8496,26 @@ app.post('/api/preview/rtf', uploadDocument.single('file'), async (req, res) => 
   }
 });
 
+// ODT Preview endpoint - OPTIONS for CORS preflight
+app.options('/api/preview/odt', (req, res) => {
+  res.set({
+    'Access-Control-Allow-Origin': '*',
+    'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+    'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept',
+    'Access-Control-Max-Age': '86400'
+  });
+  res.sendStatus(200);
+});
+
 // ODT Preview endpoint - convert ODT to HTML for web viewing
 app.post('/api/preview/odt', uploadDocument.single('file'), async (req, res) => {
+  // Set CORS headers
+  res.set({
+    'Access-Control-Allow-Origin': '*',
+    'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+    'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept'
+  });
+
   console.log('=== ODT PREVIEW REQUEST ===');
   const tmpDir = path.join(os.tmpdir(), `odt-preview-${Date.now()}`);
   
@@ -8506,7 +8524,8 @@ app.post('/api/preview/odt', uploadDocument.single('file'), async (req, res) => 
     
     const file = req.file;
     if (!file) {
-      return res.status(400).json({ error: 'No file uploaded' });
+      res.status(400).json({ error: 'No file uploaded' });
+      return;
     }
 
     console.log('ODT file received:', {
@@ -8520,7 +8539,7 @@ app.post('/api/preview/odt', uploadDocument.single('file'), async (req, res) => 
     await fs.writeFile(odtPath, file.buffer);
 
     // Use Python script with LibreOffice to convert ODT to HTML
-    const pythonPath = process.env.PYTHON_PATH || 'python3';
+    const pythonPath = process.env.PYTHON_PATH || '/opt/venv/bin/python';
     const scriptPath = path.join(__dirname, '..', 'viewers', 'odt_to_html.py');
     const htmlPath = path.join(tmpDir, 'output.html');
 
@@ -8528,7 +8547,8 @@ app.post('/api/preview/odt', uploadDocument.single('file'), async (req, res) => 
     const scriptExists = await fs.access(scriptPath).then(() => true).catch(() => false);
     if (!scriptExists) {
       console.error(`Python script not found: ${scriptPath}`);
-      return res.status(500).json({ error: 'ODT preview script not found' });
+      res.status(500).json({ error: 'ODT preview script not found' });
+      return;
     }
 
     const args = [
@@ -8555,13 +8575,15 @@ app.post('/api/preview/odt', uploadDocument.single('file'), async (req, res) => 
     
     // Check for errors
     if (stderr.includes('ERROR:') || stderr.includes('Traceback')) {
-      throw new Error(`Python script error: ${stderr}`);
+      res.status(500).json({ error: `Python script error: ${stderr}` });
+      return;
     }
 
     // Check if output file was created
     const htmlExists = await fs.access(htmlPath).then(() => true).catch(() => false);
     if (!htmlExists) {
-      throw new Error(`Python script did not produce HTML preview: ${htmlPath}`);
+      res.status(500).json({ error: `Python script did not produce HTML preview: ${htmlPath}` });
+      return;
     }
 
     // Read HTML file
@@ -8854,6 +8876,12 @@ app.post('/api/preview/odt', uploadDocument.single('file'), async (req, res) => 
   } catch (error) {
     console.error('ODT preview error:', error);
     const message = error instanceof Error ? error.message : 'Unknown ODT preview error';
+    // Ensure CORS headers are set even on error
+    res.set({
+      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+      'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept'
+    });
     res.status(500).json({ error: `Failed to generate ODT preview: ${message}` });
   } finally {
     await fs.rm(tmpDir, { recursive: true, force: true }).catch(() => undefined);
