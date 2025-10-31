@@ -9382,8 +9382,26 @@ app.post('/api/preview/txt', uploadDocument.single('file'), async (req, res) => 
   }
 });
 
+// Markdown Preview endpoint - OPTIONS for CORS preflight
+app.options('/api/preview/md', (req, res) => {
+  res.set({
+    'Access-Control-Allow-Origin': '*',
+    'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+    'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept',
+    'Access-Control-Max-Age': '86400'
+  });
+  res.sendStatus(200);
+});
+
 // Markdown Preview endpoint - convert Markdown to HTML for web viewing
 app.post('/api/preview/md', uploadDocument.single('file'), async (req, res) => {
+  // Set CORS headers
+  res.set({
+    'Access-Control-Allow-Origin': '*',
+    'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+    'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept'
+  });
+
   console.log('=== MARKDOWN PREVIEW REQUEST ===');
   const tmpDir = path.join(os.tmpdir(), `md-preview-${Date.now()}`);
   
@@ -9392,7 +9410,8 @@ app.post('/api/preview/md', uploadDocument.single('file'), async (req, res) => {
     
     const file = req.file;
     if (!file) {
-      return res.status(400).json({ error: 'No file uploaded' });
+      res.status(400).json({ error: 'No file uploaded' });
+      return;
     }
 
     console.log('Markdown file received:', {
@@ -9406,7 +9425,7 @@ app.post('/api/preview/md', uploadDocument.single('file'), async (req, res) => {
     await fs.writeFile(mdPath, file.buffer);
 
     // Use Python script to convert Markdown to HTML
-    const pythonPath = process.env.PYTHON_PATH || 'python3';
+    const pythonPath = process.env.PYTHON_PATH || '/opt/venv/bin/python';
     const scriptPath = path.join(__dirname, '..', 'viewers', 'md_to_html.py');
     const htmlPath = path.join(tmpDir, 'output.html');
 
@@ -9414,7 +9433,8 @@ app.post('/api/preview/md', uploadDocument.single('file'), async (req, res) => {
     const scriptExists = await fs.access(scriptPath).then(() => true).catch(() => false);
     if (!scriptExists) {
       console.error(`Python script not found: ${scriptPath}`);
-      return res.status(500).json({ error: 'Markdown preview script not found' });
+      res.status(500).json({ error: 'Markdown preview script not found' });
+      return;
     }
 
     const args = [
@@ -9441,13 +9461,15 @@ app.post('/api/preview/md', uploadDocument.single('file'), async (req, res) => {
     
     // Check for errors
     if (stderr.includes('ERROR:') || stderr.includes('Traceback')) {
-      throw new Error(`Python script error: ${stderr}`);
+      res.status(500).json({ error: `Python script error: ${stderr}` });
+      return;
     }
 
     // Check if output file was created
     const htmlExists = await fs.access(htmlPath).then(() => true).catch(() => false);
     if (!htmlExists) {
-      throw new Error(`Python script did not produce HTML preview: ${htmlPath}`);
+      res.status(500).json({ error: `Python script did not produce HTML preview: ${htmlPath}` });
+      return;
     }
 
     // Read HTML file
@@ -9484,23 +9506,36 @@ app.post('/api/preview/md', uploadDocument.single('file'), async (req, res) => {
             align-items: center;
             box-shadow: 0 2px 8px rgba(0,0,0,0.2);
             z-index: 1000;
+            flex-wrap: wrap;
+            gap: 10px;
           }
-          .toolbar-info {
+          .toolbar-left {
             display: flex;
             align-items: center;
             gap: 15px;
           }
-          .file-info {
+          .toolbar-title {
+            font-size: 16px;
+            font-weight: 600;
             display: flex;
-            flex-direction: column;
+            align-items: center;
+            gap: 8px;
           }
-          .file-name {
-            font-weight: bold;
+          .toolbar-center {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+          }
+          .toolbar-right {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+          }
+          .page-info {
+            display: flex;
+            align-items: center;
+            gap: 8px;
             font-size: 14px;
-          }
-          .file-meta {
-            font-size: 12px;
-            color: #8b949e;
           }
           .toolbar button {
             background: #238636;
@@ -9509,16 +9544,52 @@ app.post('/api/preview/md', uploadDocument.single('file'), async (req, res) => {
             padding: 8px 16px;
             border-radius: 6px;
             cursor: pointer;
-            margin-left: 10px;
             font-size: 14px;
+            transition: background 0.2s;
           }
-          .toolbar button:hover {
+          .toolbar button:hover:not(:disabled) {
             background: #2ea043;
+          }
+          .toolbar button:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+          }
+          .zoom-controls {
+            display: flex;
+            align-items: center;
+            gap: 5px;
+            background: rgba(255,255,255,0.1);
+            padding: 4px 8px;
+            border-radius: 4px;
+          }
+          .zoom-btn {
+            background: rgba(255,255,255,0.2);
+            border: none;
+            color: white;
+            width: 32px;
+            height: 32px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 18px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 0;
+          }
+          .zoom-btn:hover {
+            background: rgba(255,255,255,0.3);
+          }
+          .zoom-level {
+            min-width: 60px;
+            text-align: center;
+            font-size: 14px;
+            font-weight: 600;
           }
           .content-container {
             max-width: 980px;
             margin: 40px auto;
             padding: 0 20px;
+            transition: transform 0.3s ease;
           }
           .markdown-body {
             background: white;
@@ -9526,6 +9597,7 @@ app.post('/api/preview/md', uploadDocument.single('file'), async (req, res) => {
             border-radius: 8px;
             padding: 48px;
             box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+            transition: transform 0.3s ease;
           }
           @media print {
             .toolbar {
@@ -9548,23 +9620,85 @@ app.post('/api/preview/md', uploadDocument.single('file'), async (req, res) => {
       </head>
       <body>
         <div class="toolbar">
-          <div class="toolbar-info">
-            <span>📝</span>
-            <div class="file-info">
-              <span class="file-name">${file.originalname}</span>
-              <span class="file-meta">${(file.size / 1024).toFixed(2)} KB • Markdown</span>
+          <div class="toolbar-left">
+            <div class="toolbar-title">
+              <span>📄</span>
+              <span>Markdown Viewer</span>
             </div>
           </div>
-          <div>
+          <div class="toolbar-center">
+            <div class="page-info">
+              <span>Page</span>
+              <span id="current-page">1</span>
+              <span>/</span>
+              <span id="total-pages">1</span>
+            </div>
+            <button onclick="previousPage()" id="prev-btn" disabled>◀ Previous</button>
+            <button onclick="nextPage()" id="next-btn" disabled>Next ▶</button>
+          </div>
+          <div class="toolbar-right">
+            <div class="zoom-controls">
+              <button class="zoom-btn" onclick="zoomOut()" title="Zoom Out">-</button>
+              <span class="zoom-level" id="zoom-level">100%</span>
+              <button class="zoom-btn" onclick="zoomIn()" title="Zoom In">+</button>
+            </div>
+            <button onclick="fitWidth()">Fit Width</button>
             <button onclick="window.print()">🖨️ Print</button>
             <button onclick="window.close()">✖️ Close</button>
           </div>
         </div>
-        <div class="content-container">
-          <div class="markdown-body">
+        <div class="content-container" id="content-container">
+          <div class="markdown-body" id="markdown-body">
             ${htmlContent}
           </div>
         </div>
+        <script>
+          let currentZoom = 100;
+          const zoomSteps = [50, 75, 100, 125, 150, 175, 200, 250, 300];
+          const contentContainer = document.getElementById('content-container');
+          const markdownBody = document.getElementById('markdown-body');
+          
+          function updateZoom() {
+            markdownBody.style.transform = \`scale(\${currentZoom / 100})\`;
+            markdownBody.style.transformOrigin = 'top center';
+            document.getElementById('zoom-level').textContent = \`\${currentZoom}%\`;
+          }
+          
+          function zoomIn() {
+            const nextStep = zoomSteps.find(step => step > currentZoom) || zoomSteps[zoomSteps.length - 1];
+            if (nextStep <= zoomSteps[zoomSteps.length - 1]) {
+              currentZoom = nextStep;
+              updateZoom();
+            }
+          }
+          
+          function zoomOut() {
+            const prevStep = [...zoomSteps].reverse().find(step => step < currentZoom) || zoomSteps[0];
+            if (prevStep >= zoomSteps[0]) {
+              currentZoom = prevStep;
+              updateZoom();
+            }
+          }
+          
+          function fitWidth() {
+            const containerWidth = window.innerWidth - 80;
+            const contentWidth = markdownBody.scrollWidth || 980;
+            currentZoom = Math.floor((containerWidth / contentWidth) * 100);
+            currentZoom = Math.max(50, Math.min(300, currentZoom)); // Clamp between 50% and 300%
+            updateZoom();
+          }
+          
+          function previousPage() {
+            // Markdown is single page, so this is disabled
+          }
+          
+          function nextPage() {
+            // Markdown is single page, so this is disabled
+          }
+          
+          // Initialize zoom
+          updateZoom();
+        </script>
       </body>
       </html>
     `;
@@ -9580,6 +9714,12 @@ app.post('/api/preview/md', uploadDocument.single('file'), async (req, res) => {
   } catch (error) {
     console.error('Markdown preview error:', error);
     const message = error instanceof Error ? error.message : 'Unknown Markdown preview error';
+    // Ensure CORS headers are set even on error
+    res.set({
+      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+      'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept'
+    });
     res.status(500).json({ error: `Failed to generate Markdown preview: ${message}` });
   } finally {
     await fs.rm(tmpDir, { recursive: true, force: true }).catch(() => undefined);
