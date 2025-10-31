@@ -7229,54 +7229,135 @@ app.options('/api/preview/pef', (req, res) => {
   res.sendStatus(200);
 });
 
-// PEF Preview endpoint - generates JPEG preview using rawpy (via viewers/pef_to_image.py)
-app.post('/api/preview/pef', upload.single('file'), async (req, res) => {
+// PEF Preview endpoint - convert PEF (Pentax RAW) to web-viewable image
+app.post('/api/preview/pef', uploadDocument.single('file'), async (req, res) => {
   res.set({
     'Access-Control-Allow-Origin': '*',
     'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
     'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept'
   });
 
+  console.log('=== PEF PREVIEW REQUEST ===');
+  const tmpDir = path.join(os.tmpdir(), `pef-preview-${Date.now()}`);
+  
   try {
+    await fs.mkdir(tmpDir, { recursive: true });
+    
     const file = req.file;
     if (!file) {
+      res.set({
+        'Access-Control-Allow-Origin': '*',
+        'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+        'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept'
+      });
       return res.status(400).json({ error: 'No file uploaded' });
     }
 
-    const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'morphy-pef-preview-'));
-    const inputPath = path.join(tmpDir, file.originalname);
-    const outputPath = inputPath.replace(/\.(pef)$/i, '.jpg');
-    const metadataPath = path.join(tmpDir, 'metadata.json');
-    await fs.writeFile(inputPath, file.buffer);
+    console.log('PEF file received:', {
+      originalname: file.originalname,
+      mimetype: file.mimetype,
+      size: file.size
+    });
 
+    // Save PEF file to temp location
+    const pefPath = path.join(tmpDir, 'input.pef');
+    await fs.writeFile(pefPath, file.buffer);
+
+    // Use Python script to convert PEF to JPEG
+    const pythonPath = '/opt/venv/bin/python';
     const scriptPath = path.join(__dirname, '..', 'viewers', 'pef_to_image.py');
+    const outputPath = path.join(tmpDir, 'output.jpg');
+    const metadataPath = path.join(tmpDir, 'metadata.json');
 
-    const fileName = file.originalname;
-    const sizeMB = (file.size / 1024 / 1024).toFixed(2);
-
-    const { execFile } = await import('child_process');
-    const { promisify } = await import('util');
-    const execFileAsync = promisify(execFile);
-    let html: string | null = null;
-    try {
-      await fs.access(scriptPath);
-      await execFileAsync('/opt/venv/bin/python', [scriptPath, inputPath, outputPath, metadataPath, '--max-dimension', '2048']);
-      const img = await fs.readFile(outputPath);
-      const base64Img = img.toString('base64');
-      html = `<!DOCTYPE html><html><head><meta charset=\"utf-8\" /><title>PEF Preview</title><meta name=\"viewport\" content=\"width=device-width, initial-scale=1\" /><style>body{margin:0;background:#0f172a;color:#e5e7eb;font-family:Arial,sans-serif} .bar{position:fixed;top:0;left:0;right:0;background:#0ea5e9;padding:10px 16px;color:#fff;font-weight:600;z-index:10} .wrap{padding-top:48px;display:flex;justify-content:center;align-items:center;min-height:100vh} img{max-width:95vw;max-height:85vh;box-shadow:0 10px 30px rgba(0,0,0,.4);border-radius:8px}</style></head><body><div class=\"bar\">${fileName} (${sizeMB} MB)</div><div class=\"wrap\"><img src=\"data:image/jpeg;base64,${base64Img}\" /></div></body></html>`;
-    } catch (e) {
-      const base64 = file.buffer.toString('base64');
-      const dataUrl = `data:application/octet-stream;base64,${base64}`;
-      html = `<!DOCTYPE html><html><head><meta charset=\"utf-8\" /><title>PEF Preview - ${fileName}</title><meta name=\"viewport\" content=\"width=device-width, initial-scale=1\" /><style>body{font-family:Arial,sans-serif;background:#0f172a;color:#e5e7eb;margin:0;padding:24px}.card{max-width:820px;margin:0 auto;background:#111827;border:1px solid #1f2937;border-radius:12px;padding:24px}</style></head><body><div class=\"card\"><h1>Preview Not Available</h1><p><strong>File:</strong> ${fileName}</p><p><strong>Size:</strong> ${sizeMB} MB</p><p><a href=\"${dataUrl}\" download=\"${fileName}\">Download original</a></p></div></body></html>`;
-    } finally {
-      await fs.rm(tmpDir, { recursive: true, force: true }).catch(() => undefined);
+    // Check if script exists
+    const scriptExists = await fs.access(scriptPath).then(() => true).catch(() => false);
+    if (!scriptExists) {
+      console.error(`PEF script not found: ${scriptPath}`);
+      res.set({
+        'Access-Control-Allow-Origin': '*',
+        'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+        'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept'
+      });
+      return res.status(500).json({ error: 'PEF preview script not found' });
     }
 
-    res.set({ 'Content-Type': 'text/html; charset=utf-8' });
-    return res.status(200).send(html);
+    const args = [
+      scriptPath,
+      pefPath,
+      outputPath,
+      metadataPath,
+      '--max-dimension', '2048'
+    ];
+
+    console.log('Executing PEF script:', { pythonPath, scriptPath, args });
+
+    let stdout, stderr;
+    try {
+      const result = await execFileAsync(pythonPath, args, { timeout: 120000 }); // 2 min timeout for RAW processing
+      stdout = result.stdout;
+      stderr = result.stderr;
+    } catch (execError: any) {
+      console.error('PEF script execution failed:', execError);
+      stdout = execError.stdout || '';
+      stderr = execError.stderr || execError.message || 'PEF execution failed';
+    }
+
+    if (stdout.trim().length > 0) console.log('PEF stdout:', stdout.trim());
+    if (stderr.trim().length > 0) console.warn('PEF stderr:', stderr.trim());
+    
+    // Check for errors
+    if (stderr.includes('ERROR:') || stderr.includes('Traceback')) {
+      throw new Error(`PEF script error: ${stderr}`);
+    }
+
+    // Check if output file was created
+    const outputExists = await fs.access(outputPath).then(() => true).catch(() => false);
+    if (!outputExists) {
+      throw new Error(`PEF script did not produce preview: ${outputPath}`);
+    }
+
+    // Read image file and metadata
+    const imageBuffer = await fs.readFile(outputPath);
+    let metadata = {};
+    
+    try {
+      const metadataContent = await fs.readFile(metadataPath, 'utf-8');
+      metadata = JSON.parse(metadataContent);
+    } catch (error) {
+      console.warn('Could not read metadata:', error);
+    }
+
+    console.log('PEF preview successful:', {
+      inputSize: file.size,
+      outputSize: imageBuffer.length,
+      metadata
+    });
+
+    // Convert image to base64 data URL
+    const base64Image = imageBuffer.toString('base64');
+    const imageDataUrl = `data:image/jpeg;base64,${base64Image}`;
+
+    res.set({
+      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+      'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept'
+    });
+    res.json({
+      imageUrl: imageDataUrl,
+      metadata
+    });
+
   } catch (error) {
-    const message = error instanceof Error ? error.message : 'Unknown error';
-    return res.status(500).json({ error: message });
+    console.error('PEF preview error:', error);
+    const message = error instanceof Error ? error.message : 'Unknown PEF preview error';
+    res.set({
+      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+      'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept'
+    });
+    res.status(500).json({ error: `Failed to generate PEF preview: ${message}` });
+  } finally {
+    await fs.rm(tmpDir, { recursive: true, force: true }).catch(() => undefined);
   }
 });
 
