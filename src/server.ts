@@ -12422,34 +12422,6 @@ app.post('/api/preview/json', uploadDocument.single('file'), async (req, res) =>
     // Remove any remaining empty header/toolbar divs
     htmlContent = htmlContent.replace(/<div[^>]*(?:class|id)=["'][^"']*(?:header|toolbar|title|bar)[^"']*["'][^>]*>\s*<\/div>/gi, '');
     
-    // Remove gray frames/borders - horizontal lines (hr tags and divs with borders)
-    htmlContent = htmlContent.replace(/<hr[^>]*>/gi, '');
-    htmlContent = htmlContent.replace(/<div[^>]*style[^>]*border[^>]*top[^>]*>[\s\S]*?<\/div>/gi, '');
-    htmlContent = htmlContent.replace(/<div[^>]*style[^>]*border[^>]*bottom[^>]*>[\s\S]*?<\/div>/gi, '');
-    htmlContent = htmlContent.replace(/<div[^>]*style[^>]*border-top[^>]*>[\s\S]*?<\/div>/gi, '');
-    htmlContent = htmlContent.replace(/<div[^>]*style[^>]*border-bottom[^>]*>[\s\S]*?<\/div>/gi, '');
-    htmlContent = htmlContent.replace(/<div[^>]*style[^>]*border[^>]*:\s*[^"']*gray[^"']*[^>]*>[\s\S]*?<\/div>/gi, '');
-    htmlContent = htmlContent.replace(/<div[^>]*style[^>]*background[^>]*gray[^>]*>[\s\S]*?<\/div>/gi, '');
-    htmlContent = htmlContent.replace(/<div[^>]*class[^>]*["']\s*[^"']*gray[^"']*["'][^>]*>[\s\S]*?<\/div>/gi, '');
-    
-    // Remove gray wrapper divs with borders/frames
-    htmlContent = htmlContent.replace(/<div[^>]*style[^>]*background[^>]*:\s*[^"']*#f[0-9a-f]{2,5}[^"']*[^>]*border[^>]*>[\s\S]*?<\/div>/gi, '');
-    htmlContent = htmlContent.replace(/<div[^>]*style[^>]*border[^>]*:\s*[^"']*1px[^"']*solid[^"']*[^"']*gray[^"']*[^>]*>[\s\S]*?<\/div>/gi, '');
-    
-    // Remove sheet labels (Sheet1, Sheet2, etc.)
-    htmlContent = htmlContent.replace(/<div[^>]*>[\s\S]*?Sheet\d+[\s\S]*?<\/div>/gi, '');
-    htmlContent = htmlContent.replace(/<span[^>]*>[\s\S]*?Sheet\d+[\s\S]*?<\/span>/gi, '');
-    htmlContent = htmlContent.replace(/<p[^>]*>[\s\S]*?Sheet\d+[\s\S]*?<\/p>/gi, '');
-    
-    // Remove thin horizontal divider lines (common gray frame patterns)
-    htmlContent = htmlContent.replace(/<div[^>]*style[^>]*height[^>]*:\s*[^"']*1px[^"']*[^>]*>[\s\S]*?<\/div>/gi, '');
-    htmlContent = htmlContent.replace(/<div[^>]*style[^>]*height[^>]*:\s*[^"']*2px[^"']*[^>]*>[\s\S]*?<\/div>/gi, '');
-    htmlContent = htmlContent.replace(/<div[^>]*style[^>]*border-top[^>]*:\s*[^"']*1px[^"']*solid[^"']*[^>]*>[\s\S]*?<\/div>/gi, '');
-    htmlContent = htmlContent.replace(/<div[^>]*style[^>]*border-bottom[^>]*:\s*[^"']*1px[^"']*solid[^"']*[^>]*>[\s\S]*?<\/div>/gi, '');
-    
-    // Remove any remaining gray frame wrappers
-    htmlContent = htmlContent.replace(/<div[^>]*style[^>]*background[^>]*:\s*[^"']*#f[0-9a-f]{2,5}[^"']*[^>]*>[\s\S]*?<\/div>/gi, '');
-    
     // Wrap HTML in styled template with PDF-style toolbar
     const styledHtml = `
       <!DOCTYPE html>
