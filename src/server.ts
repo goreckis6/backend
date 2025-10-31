@@ -12997,24 +12997,23 @@ app.post('/api/preview/ods', uploadDocument.single('file'), async (req, res) => 
     console.log('Executing Python script:', { pythonPath, scriptPath, args });
 
     let stdout, stderr;
-    let exitCode = 0;
+    let scriptFailed = false;
     try {
       const result = await execFileAsync(pythonPath, args);
       stdout = result.stdout;
       stderr = result.stderr;
-      exitCode = result.exitCode || 0;
     } catch (execError: any) {
       console.error('Python script execution failed:', execError);
       stdout = execError.stdout || '';
       stderr = execError.stderr || execError.message || 'Python execution failed';
-      exitCode = execError.code || 1;
+      scriptFailed = true;
     }
 
     if (stdout.trim().length > 0) console.log('Python stdout:', stdout.trim());
     if (stderr.trim().length > 0) console.warn('Python stderr:', stderr.trim());
     
     // Check for errors in stderr or if script failed
-    if (exitCode !== 0 || stderr.includes('ERROR:') || stderr.includes('Traceback') || stderr.includes('CONVERSION FAILED')) {
+    if (scriptFailed || stderr.includes('ERROR:') || stderr.includes('Traceback') || stderr.includes('CONVERSION FAILED') || stdout.includes('CONVERSION FAILED')) {
       // Try to extract meaningful error message from stderr or stdout
       let errorMessage = 'Failed to process ODS file';
       
