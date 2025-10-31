@@ -146,113 +146,52 @@ def convert_html_to_formatted(html_file, output_file, max_size_mb=10):
         highlighted_html = escape_and_highlight_html(content)
         
         output_parts = []
-        output_parts.append('''<!DOCTYPE html>
-<html>
-<head>
-    <meta charset="UTF-8">
-    <title>HTML Preview</title>
-    <style>
-        body {
-            font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
-            margin: 0;
-            padding: 0;
-            background: #1e293b;
-            color: #e2e8f0;
-        }
-        .header-bar {
-            background: linear-gradient(to right, #f97316, #ea580c);
-            color: white;
-            padding: 15px 30px;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            box-shadow: 0 2px 10px rgba(0,0,0,0.3);
-            position: sticky;
-            top: 0;
-            z-index: 100;
-        }
-        .header-title {
-            font-size: 20px;
-            font-weight: 600;
-            display: flex;
-            align-items: center;
-            gap: 10px;
-        }
-        .header-actions {
-            display: flex;
-            gap: 10px;
-        }
-        .btn {
-            padding: 8px 20px;
-            border: none;
-            border-radius: 6px;
-            font-size: 14px;
-            font-weight: 500;
-            cursor: pointer;
-            display: inline-flex;
-            align-items: center;
-            gap: 8px;
-            transition: all 0.2s;
-        }
-        .btn-print {
-            background: white;
-            color: #ea580c;
-        }
-        .btn-print:hover {
-            background: #ffedd5;
-            transform: scale(1.05);
-        }
-        .btn-close {
-            background: rgba(255,255,255,0.2);
-            color: white;
-            border: 1px solid rgba(255,255,255,0.3);
-        }
-        .btn-close:hover {
-            background: rgba(255,255,255,0.3);
-            transform: scale(1.05);
-        }
-        .container {
-            max-width: 1400px;
-            margin: 0 auto;
-            padding: 30px;
-        }
-        .stats {
+        output_parts.append('''<style>
+        .html-stats {
             display: flex;
             gap: 20px;
             margin-bottom: 20px;
             flex-wrap: wrap;
         }
-        .stat-box {
-            background: #334155;
-            padding: 10px 16px;
-            border-radius: 6px;
-            border-left: 3px solid #f97316;
+        .html-stat-box {
+            background: #fff7ed;
+            padding: 12px 18px;
+            border-radius: 8px;
+            border-left: 4px solid #f97316;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
         }
-        .stat-label {
+        .html-stat-label {
             font-size: 12px;
-            color: #94a3b8;
+            color: #64748b;
             margin-bottom: 4px;
+            font-weight: 500;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
         }
-        .stat-value {
-            font-size: 20px;
-            font-weight: 600;
-            color: #fb923c;
+        .html-stat-value {
+            font-size: 24px;
+            font-weight: 700;
+            color: #ea580c;
         }
-        .warning-banner {
-            background: #78350f;
+        .html-warning-banner {
+            background: #fef3c7;
             border-left: 4px solid #f59e0b;
-            padding: 12px 16px;
-            border-radius: 6px;
+            padding: 14px 18px;
+            border-radius: 8px;
             margin-bottom: 20px;
-            color: #fef3c7;
+            color: #92400e;
+            font-size: 14px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
         }
-        .error-banner {
-            background: #7f1d1d;
+        .html-error-banner {
+            background: #fee2e2;
             border-left: 4px solid #ef4444;
-            padding: 12px 16px;
-            border-radius: 6px;
+            padding: 14px 18px;
+            border-radius: 8px;
             margin-bottom: 20px;
-            color: #fecaca;
+            color: #991b1b;
+            font-size: 14px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
         }
         .html-container {
             background: #0f172a;
@@ -261,13 +200,16 @@ def convert_html_to_formatted(html_file, output_file, max_size_mb=10):
             padding: 24px;
             overflow-x: auto;
             box-shadow: inset 0 2px 10px rgba(0,0,0,0.3);
+            margin: 20px 0;
         }
-        pre {
+        .html-container pre {
             margin: 0;
             white-space: pre-wrap;
             word-wrap: break-word;
             font-size: 14px;
             line-height: 1.6;
+            font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+            color: #e2e8f0;
         }
         .html-doctype {
             color: #a78bfa;
@@ -292,20 +234,13 @@ def convert_html_to_formatted(html_file, output_file, max_size_mb=10):
             font-style: italic;
         }
         @media print {
-            .header-bar {
-                display: none;
-            }
-            body {
-                background: white;
-                color: black;
-            }
-            .container {
-                padding: 0;
-            }
             .html-container {
                 background: white;
                 border: 1px solid #ccc;
                 box-shadow: none;
+            }
+            .html-container pre {
+                color: black;
             }
             .html-tag { color: #0000ff; }
             .html-attr-name { color: #ff0000; }
@@ -313,48 +248,30 @@ def convert_html_to_formatted(html_file, output_file, max_size_mb=10):
             .html-bracket { color: #000000; }
             .html-comment { color: #666666; }
         }
-    </style>
-</head>
-<body>
-    <div class="header-bar">
-        <div class="header-title">
-            <span>&lt;html&gt;</span>
-            <span>HTML File Preview</span>
-        </div>
-        <div class="header-actions">
-            <button onclick="window.print()" class="btn btn-print">
-                🖨️ Print
-            </button>
-            <button onclick="window.close()" class="btn btn-close">
-                ✖️ Close
-            </button>
-        </div>
-    </div>
-    <div class="container">
-''')
+    </style>''')
         
-        # Add stats
-        output_parts.append('        <div class="stats">\n')
-        output_parts.append(f'            <div class="stat-box"><div class="stat-label">File Size</div><div class="stat-value">{file_size / 1024:.1f} KB</div></div>\n')
-        output_parts.append(f'            <div class="stat-box"><div class="stat-label">Status</div><div class="stat-value">{"Valid ✓" if is_valid else "Warning ⚠"}</div></div>\n')
-        output_parts.append(f'            <div class="stat-box"><div class="stat-label">Elements</div><div class="stat-value">{parser.element_count}</div></div>\n')
-        output_parts.append(f'            <div class="stat-box"><div class="stat-label">DOCTYPE</div><div class="stat-value">{"Yes ✓" if parser.has_doctype else "No"}</div></div>\n')
+        # Add stats with better styling
+        output_parts.append('        <div class="html-stats">\n')
+        output_parts.append(f'            <div class="html-stat-box"><div class="html-stat-label">File Size</div><div class="html-stat-value">{file_size / 1024:.1f} KB</div></div>\n')
+        output_parts.append(f'            <div class="html-stat-box"><div class="html-stat-label">Status</div><div class="html-stat-value" style="font-size: 18px;">{"✓ Valid" if is_valid else "⚠ Warning"}</div></div>\n')
+        output_parts.append(f'            <div class="html-stat-box"><div class="html-stat-label">Elements</div><div class="html-stat-value">{parser.element_count}</div></div>\n')
+        output_parts.append(f'            <div class="html-stat-box"><div class="html-stat-label">DOCTYPE</div><div class="html-stat-value" style="font-size: 18px;">{"✓ Yes" if parser.has_doctype else "No"}</div></div>\n')
         
         # Show top tags
         if parser.tag_counts:
             top_tags = sorted(parser.tag_counts.items(), key=lambda x: x[1], reverse=True)[:3]
             top_tags_str = ', '.join([f'{tag} ({count})' for tag, count in top_tags])
-            output_parts.append(f'            <div class="stat-box"><div class="stat-label">Top Tags</div><div class="stat-value" style="font-size: 14px;">{html_module.escape(top_tags_str)}</div></div>\n')
+            output_parts.append(f'            <div class="html-stat-box"><div class="html-stat-label">Top Tags</div><div class="html-stat-value" style="font-size: 14px;">{html_module.escape(top_tags_str)}</div></div>\n')
         
         output_parts.append('        </div>\n')
         
         # Show error if invalid
         if not is_valid and error_msg:
-            output_parts.append(f'        <div class="error-banner">⚠️ HTML Parsing Warning: {html_module.escape(error_msg)}</div>\n')
+            output_parts.append(f'        <div class="html-error-banner">⚠️ HTML Parsing Warning: {html_module.escape(error_msg)}</div>\n')
         
         # Show warning if truncated
         if truncated:
-            output_parts.append(f'        <div class="warning-banner">⚠️ This HTML file is large ({file_size / 1024 / 1024:.2f} MB). Showing first 100KB only. Download for full content.</div>\n')
+            output_parts.append(f'        <div class="html-warning-banner">⚠️ This HTML file is large ({file_size / 1024 / 1024:.2f} MB). Showing first 100KB only. Download for full content.</div>\n')
         
         # Display HTML content
         output_parts.append('        <div class="html-container">\n')
@@ -362,10 +279,6 @@ def convert_html_to_formatted(html_file, output_file, max_size_mb=10):
         output_parts.append(highlighted_html)
         output_parts.append('</pre>\n')
         output_parts.append('        </div>\n')
-        
-        output_parts.append('''    </div>
-</body>
-</html>''')
         
         # Write output file
         with open(output_file, 'w', encoding='utf-8') as f:
