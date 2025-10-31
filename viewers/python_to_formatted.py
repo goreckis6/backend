@@ -224,105 +224,42 @@ def convert_python_to_formatted(py_file, output_file, max_size_mb=10):
         highlighted_py = escape_and_highlight_python(content)
         
         output_parts = []
-        output_parts.append('''<!DOCTYPE html>
-<html>
-<head>
-    <meta charset="UTF-8">
-    <title>Python Preview</title>
-    <style>
-        body {
-            font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
-            margin: 0;
-            padding: 0;
-            background: #1e293b;
-            color: #e2e8f0;
-        }
-        .header-bar {
-            background: linear-gradient(to right, #3b82f6, #6366f1);
-            color: white;
-            padding: 15px 30px;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            box-shadow: 0 2px 10px rgba(0,0,0,0.3);
-            position: sticky;
-            top: 0;
-            z-index: 100;
-        }
-        .header-title {
-            font-size: 20px;
-            font-weight: 600;
-            display: flex;
-            align-items: center;
-            gap: 10px;
-        }
-        .header-actions {
-            display: flex;
-            gap: 10px;
-        }
-        .btn {
-            padding: 8px 20px;
-            border: none;
-            border-radius: 6px;
-            font-size: 14px;
-            font-weight: 500;
-            cursor: pointer;
-            display: inline-flex;
-            align-items: center;
-            gap: 8px;
-            transition: all 0.2s;
-        }
-        .btn-print {
-            background: white;
-            color: #3b82f6;
-        }
-        .btn-print:hover {
-            background: #dbeafe;
-            transform: scale(1.05);
-        }
-        .btn-close {
-            background: rgba(255,255,255,0.2);
-            color: white;
-            border: 1px solid rgba(255,255,255,0.3);
-        }
-        .btn-close:hover {
-            background: rgba(255,255,255,0.3);
-            transform: scale(1.05);
-        }
-        .container {
-            max-width: 1400px;
-            margin: 0 auto;
-            padding: 30px;
-        }
-        .stats {
+        output_parts.append('''<style>
+        .py-stats {
             display: flex;
             gap: 20px;
             margin-bottom: 20px;
             flex-wrap: wrap;
         }
-        .stat-box {
-            background: #334155;
-            padding: 10px 16px;
-            border-radius: 6px;
-            border-left: 3px solid #3b82f6;
+        .py-stat-box {
+            background: #f0f9ff;
+            padding: 12px 18px;
+            border-radius: 8px;
+            border-left: 4px solid #3b82f6;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
         }
-        .stat-label {
+        .py-stat-label {
             font-size: 12px;
-            color: #94a3b8;
+            color: #64748b;
             margin-bottom: 4px;
+            font-weight: 500;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
         }
-        .stat-value {
-            font-size: 20px;
-            font-weight: 600;
-            color: #60a5fa;
+        .py-stat-value {
+            font-size: 24px;
+            font-weight: 700;
+            color: #2563eb;
         }
-        .warning-banner {
-            background: #78350f;
+        .py-warning-banner {
+            background: #fef3c7;
             border-left: 4px solid #f59e0b;
-            padding: 12px 16px;
-            border-radius: 6px;
+            padding: 14px 18px;
+            border-radius: 8px;
             margin-bottom: 20px;
-            color: #fef3c7;
+            color: #92400e;
+            font-size: 14px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
         }
         .py-container {
             background: #0f172a;
@@ -331,13 +268,16 @@ def convert_python_to_formatted(py_file, output_file, max_size_mb=10):
             padding: 24px;
             overflow-x: auto;
             box-shadow: inset 0 2px 10px rgba(0,0,0,0.3);
+            margin: 20px 0;
         }
-        pre {
+        .py-container pre {
             margin: 0;
             white-space: pre-wrap;
             word-wrap: break-word;
             font-size: 14px;
             line-height: 1.6;
+            font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+            color: #e2e8f0;
         }
         .py-keyword {
             color: #c084fc;
@@ -373,20 +313,13 @@ def convert_python_to_formatted(py_file, output_file, max_size_mb=10):
             font-weight: 600;
         }
         @media print {
-            .header-bar {
-                display: none;
-            }
-            body {
-                background: white;
-                color: black;
-            }
-            .container {
-                padding: 0;
-            }
             .py-container {
                 background: white;
                 border: 1px solid #ccc;
                 box-shadow: none;
+            }
+            .py-container pre {
+                color: black;
             }
             .py-keyword { color: #0000ff; font-weight: bold; }
             .py-function { color: #000080; }
@@ -396,49 +329,31 @@ def convert_python_to_formatted(py_file, output_file, max_size_mb=10):
             .py-comment { color: #666666; }
             .py-decorator { color: #ff6600; }
         }
-    </style>
-</head>
-<body>
-    <div class="header-bar">
-        <div class="header-title">
-            <span>🐍</span>
-            <span>Python Code Preview</span>
-        </div>
-        <div class="header-actions">
-            <button onclick="window.print()" class="btn btn-print">
-                🖨️ Print
-            </button>
-            <button onclick="window.close()" class="btn btn-close">
-                ✖️ Close
-            </button>
-        </div>
-    </div>
-    <div class="container">
-''')
+    </style>''')
         
-        # Add stats
-        output_parts.append('        <div class="stats">\n')
-        output_parts.append(f'            <div class="stat-box"><div class="stat-label">File Size</div><div class="stat-value">{file_size / 1024:.1f} KB</div></div>\n')
-        output_parts.append(f'            <div class="stat-box"><div class="stat-label">Lines</div><div class="stat-value">{stats["lines"]}</div></div>\n')
-        output_parts.append(f'            <div class="stat-box"><div class="stat-label">Functions</div><div class="stat-value">{stats["functions"]}</div></div>\n')
+        # Add stats with better styling
+        output_parts.append('        <div class="py-stats">\n')
+        output_parts.append(f'            <div class="py-stat-box"><div class="py-stat-label">File Size</div><div class="py-stat-value">{file_size / 1024:.1f} KB</div></div>\n')
+        output_parts.append(f'            <div class="py-stat-box"><div class="py-stat-label">Lines</div><div class="py-stat-value">{stats["lines"]}</div></div>\n')
+        output_parts.append(f'            <div class="py-stat-box"><div class="py-stat-label">Functions</div><div class="py-stat-value">{stats["functions"]}</div></div>\n')
         
         if stats['classes'] > 0:
-            output_parts.append(f'            <div class="stat-box"><div class="stat-label">Classes</div><div class="stat-value">{stats["classes"]}</div></div>\n')
+            output_parts.append(f'            <div class="py-stat-box"><div class="py-stat-label">Classes</div><div class="py-stat-value">{stats["classes"]}</div></div>\n')
         
         if stats['imports'] > 0:
-            output_parts.append(f'            <div class="stat-box"><div class="stat-label">Imports</div><div class="stat-value">{stats["imports"]}</div></div>\n')
+            output_parts.append(f'            <div class="py-stat-box"><div class="py-stat-label">Imports</div><div class="py-stat-value">{stats["imports"]}</div></div>\n')
         
         if stats['decorators'] > 0:
-            output_parts.append(f'            <div class="stat-box"><div class="stat-label">Decorators</div><div class="stat-value">{stats["decorators"]}</div></div>\n')
+            output_parts.append(f'            <div class="py-stat-box"><div class="py-stat-label">Decorators</div><div class="py-stat-value">{stats["decorators"]}</div></div>\n')
         
         if stats['docstrings'] > 0:
-            output_parts.append(f'            <div class="stat-box"><div class="stat-label">Docstrings</div><div class="stat-value">{stats["docstrings"]}</div></div>\n')
+            output_parts.append(f'            <div class="py-stat-box"><div class="py-stat-label">Docstrings</div><div class="py-stat-value">{stats["docstrings"]}</div></div>\n')
         
         output_parts.append('        </div>\n')
         
         # Show warning if truncated
         if truncated:
-            output_parts.append(f'        <div class="warning-banner">⚠️ This Python file is large ({file_size / 1024 / 1024:.2f} MB). Showing first 100KB only. Download for full content.</div>\n')
+            output_parts.append(f'        <div class="py-warning-banner">⚠️ This Python file is large ({file_size / 1024 / 1024:.2f} MB). Showing first 100KB only. Download for full content.</div>\n')
         
         # Display Python content
         output_parts.append('        <div class="py-container">\n')
@@ -446,10 +361,6 @@ def convert_python_to_formatted(py_file, output_file, max_size_mb=10):
         output_parts.append(highlighted_py)
         output_parts.append('</pre>\n')
         output_parts.append('        </div>\n')
-        
-        output_parts.append('''    </div>
-</body>
-</html>''')
         
         # Write output file
         with open(output_file, 'w', encoding='utf-8') as f:

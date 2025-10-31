@@ -10890,14 +10890,20 @@ app.post('/api/preview/python', uploadDocument.single('file'), async (req, res) 
     // Read HTML file
     let htmlContent = await fs.readFile(outputPath, 'utf-8');
     
-    // Remove existing headers/toolbars from Python-generated HTML if any
-    // Try to extract body content if it's a full HTML document
+    // Python script now generates only content (styles + body content) without full HTML document
+    // If it's still a full HTML document (for backward compatibility), extract body content
     const bodyMatch = htmlContent.match(/<body[^>]*>([\s\S]*)<\/body>/i);
     if (bodyMatch) {
       htmlContent = bodyMatch[1];
     }
     
-    // Wrap HTML in styled template with PDF-style toolbar
+    // Remove any remaining header bars or toolbars that might exist (backward compatibility)
+    htmlContent = htmlContent.replace(/<div[^>]*class=["'][^"']*(?:header-bar|toolbar|header-container)["'][^>]*>[\s\S]*?<\/div>/gi, '');
+    
+    // Clean up any duplicate styling or wrapper divs
+    htmlContent = htmlContent.trim();
+    
+    // Wrap HTML in styled template with Python viewer toolbar
     const styledHtml = `
       <!DOCTYPE html>
       <html>
