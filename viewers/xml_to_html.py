@@ -155,52 +155,112 @@ def convert_xml_to_html(xml_file, html_file, max_size_mb=10):
         highlighted_xml = escape_and_highlight_xml(content)
         
         html_parts = []
-        html_parts.append('''<style>
-        .xml-stats {
+        html_parts.append('''<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>XML Preview</title>
+    <style>
+        body {
+            font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+            margin: 0;
+            padding: 0;
+            background: #1e293b;
+            color: #e2e8f0;
+        }
+        .header-bar {
+            background: linear-gradient(to right, #f97316, #ea580c);
+            color: white;
+            padding: 15px 30px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.3);
+            position: sticky;
+            top: 0;
+            z-index: 100;
+        }
+        .header-title {
+            font-size: 20px;
+            font-weight: 600;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        .header-actions {
+            display: flex;
+            gap: 10px;
+        }
+        .btn {
+            padding: 8px 20px;
+            border: none;
+            border-radius: 6px;
+            font-size: 14px;
+            font-weight: 500;
+            cursor: pointer;
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            transition: all 0.2s;
+        }
+        .btn-print {
+            background: white;
+            color: #ea580c;
+        }
+        .btn-print:hover {
+            background: #ffedd5;
+            transform: scale(1.05);
+        }
+        .btn-close {
+            background: rgba(255,255,255,0.2);
+            color: white;
+            border: 1px solid rgba(255,255,255,0.3);
+        }
+        .btn-close:hover {
+            background: rgba(255,255,255,0.3);
+            transform: scale(1.05);
+        }
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            padding: 30px;
+        }
+        .stats {
             display: flex;
             gap: 20px;
             margin-bottom: 20px;
-            flex-wrap: wrap;
         }
-        .xml-stat-box {
-            background: #fff7ed;
-            padding: 12px 18px;
-            border-radius: 8px;
-            border-left: 4px solid #f97316;
-            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+        .stat-box {
+            background: #334155;
+            padding: 10px 16px;
+            border-radius: 6px;
+            border-left: 3px solid #f97316;
         }
-        .xml-stat-label {
+        .stat-label {
             font-size: 12px;
-            color: #64748b;
+            color: #94a3b8;
             margin-bottom: 4px;
-            font-weight: 500;
-            text-transform: uppercase;
-            letter-spacing: 0.5px;
         }
-        .xml-stat-value {
-            font-size: 24px;
-            font-weight: 700;
-            color: #ea580c;
+        .stat-value {
+            font-size: 20px;
+            font-weight: 600;
+            color: #fb923c;
         }
-        .xml-warning-banner {
-            background: #fef3c7;
+        .warning-banner {
+            background: #78350f;
             border-left: 4px solid #f59e0b;
-            padding: 14px 18px;
-            border-radius: 8px;
+            padding: 12px 16px;
+            border-radius: 6px;
             margin-bottom: 20px;
-            color: #92400e;
-            font-size: 14px;
-            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+            color: #fef3c7;
         }
-        .xml-error-banner {
-            background: #fee2e2;
+        .error-banner {
+            background: #7f1d1d;
             border-left: 4px solid #ef4444;
-            padding: 14px 18px;
-            border-radius: 8px;
+            padding: 12px 16px;
+            border-radius: 6px;
             margin-bottom: 20px;
-            color: #991b1b;
-            font-size: 14px;
-            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+            color: #fecaca;
         }
         .xml-container {
             background: #0f172a;
@@ -209,16 +269,13 @@ def convert_xml_to_html(xml_file, html_file, max_size_mb=10):
             padding: 24px;
             overflow-x: auto;
             box-shadow: inset 0 2px 10px rgba(0,0,0,0.3);
-            margin: 20px 0;
         }
-        .xml-container pre {
+        pre {
             margin: 0;
             white-space: pre-wrap;
             word-wrap: break-word;
             font-size: 14px;
             line-height: 1.6;
-            font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
-            color: #e2e8f0;
         }
         .xml-declaration {
             color: #a78bfa;
@@ -246,13 +303,20 @@ def convert_xml_to_html(xml_file, html_file, max_size_mb=10):
             color: #fbbf24;
         }
         @media print {
+            .header-bar {
+                display: none;
+            }
+            body {
+                background: white;
+                color: black;
+            }
+            .container {
+                padding: 0;
+            }
             .xml-container {
                 background: white;
                 border: 1px solid #ccc;
                 box-shadow: none;
-            }
-            .xml-container pre {
-                color: black;
             }
             .xml-tag { color: #0000ff; }
             .xml-attr-name { color: #ff0000; }
@@ -260,24 +324,42 @@ def convert_xml_to_html(xml_file, html_file, max_size_mb=10):
             .xml-bracket { color: #000000; }
             .xml-comment { color: #666666; }
         }
-    </style>''')
+    </style>
+</head>
+<body>
+    <div class="header-bar">
+        <div class="header-title">
+            <span>&lt;/&gt;</span>
+            <span>XML File Preview</span>
+        </div>
+        <div class="header-actions">
+            <button onclick="window.print()" class="btn btn-print">
+                🖨️ Print
+            </button>
+            <button onclick="window.close()" class="btn btn-close">
+                ✖️ Close
+            </button>
+        </div>
+    </div>
+    <div class="container">
+''')
         
-        # Add stats with better styling
-        html_parts.append('        <div class="xml-stats">\n')
-        html_parts.append(f'            <div class="xml-stat-box"><div class="xml-stat-label">File Size</div><div class="xml-stat-value">{file_size / 1024:.1f} KB</div></div>\n')
-        html_parts.append(f'            <div class="xml-stat-box"><div class="xml-stat-label">Status</div><div class="xml-stat-value" style="font-size: 18px;">{"✓ Valid" if is_valid else "✗ Invalid"}</div></div>\n')
+        # Add stats
+        html_parts.append('        <div class="stats">\n')
+        html_parts.append(f'            <div class="stat-box"><div class="stat-label">File Size</div><div class="stat-value">{file_size / 1024:.1f} KB</div></div>\n')
+        html_parts.append(f'            <div class="stat-box"><div class="stat-label">Status</div><div class="stat-value">{"Valid ✓" if is_valid else "Invalid ✗"}</div></div>\n')
         if is_valid:
-            html_parts.append(f'            <div class="xml-stat-box"><div class="xml-stat-label">Root Tag</div><div class="xml-stat-value" style="font-size: 14px;">{html.escape(root_tag)}</div></div>\n')
-            html_parts.append(f'            <div class="xml-stat-box"><div class="xml-stat-label">Elements</div><div class="xml-stat-value">{element_count}</div></div>\n')
+            html_parts.append(f'            <div class="stat-box"><div class="stat-label">Root Tag</div><div class="stat-value">{html.escape(root_tag)}</div></div>\n')
+            html_parts.append(f'            <div class="stat-box"><div class="stat-label">Elements</div><div class="stat-value">{element_count}</div></div>\n')
         html_parts.append('        </div>\n')
         
         # Show error if invalid
         if not is_valid:
-            html_parts.append(f'        <div class="xml-error-banner">❌ XML Parsing Error: {html.escape(error_msg or "Invalid XML format")}</div>\n')
+            html_parts.append(f'        <div class="error-banner">❌ XML Parsing Error: {html.escape(error_msg or "Invalid XML format")}</div>\n')
         
         # Show warning if truncated
         if truncated:
-            html_parts.append(f'        <div class="xml-warning-banner">⚠️ This XML file is large ({file_size / 1024 / 1024:.2f} MB). Showing first 100KB only. Download for full content.</div>\n')
+            html_parts.append(f'        <div class="warning-banner">⚠️ This XML file is large ({file_size / 1024 / 1024:.2f} MB). Showing first 100KB only. Download for full content.</div>\n')
         
         # Display XML content
         html_parts.append('        <div class="xml-container">\n')
@@ -285,6 +367,10 @@ def convert_xml_to_html(xml_file, html_file, max_size_mb=10):
         html_parts.append(highlighted_xml)
         html_parts.append('</pre>\n')
         html_parts.append('        </div>\n')
+        
+        html_parts.append('''    </div>
+</body>
+</html>''')
         
         # Write HTML file
         with open(html_file, 'w', encoding='utf-8') as f:
