@@ -22279,6 +22279,261 @@ const gracefulShutdown = (signal: string) => {
   });
 };
 
+// Route: JPG Compression (Single)
+app.post('/api/compress/jpg', upload.single('file'), async (req, res) => {
+  res.set({
+    'Access-Control-Allow-Origin': '*',
+    'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+    'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept'
+  });
+
+  console.log('JPG compression request');
+
+  const tmpDir = path.join(os.tmpdir(), `jpg-compress-${Date.now()}`);
+
+  try {
+    const file = req.file;
+    if (!file) {
+      return res.status(400).json({ error: 'No file uploaded' });
+    }
+
+    // Get quality from request body or query
+    const quality = parseInt(req.body.quality || req.query.quality || '85', 10);
+    const optimize = req.body.optimize !== 'false' && req.query.optimize !== 'false';
+
+    await fs.mkdir(tmpDir, { recursive: true });
+
+    const inputPath = path.join(tmpDir, file.originalname);
+    const outputPath = path.join(tmpDir, file.originalname.replace(/\.(jpg|jpeg)$/i, '_compressed.jpg'));
+
+    await fs.writeFile(inputPath, file.buffer);
+
+    const scriptPath = path.join(__dirname, '..', 'compress', 'jpg_compress.py');
+    console.log('JPG Compression: Executing Python script:', scriptPath);
+    console.log('JPG Compression: Input file:', inputPath);
+    console.log('JPG Compression: Output file:', outputPath);
+    console.log('JPG Compression: Quality:', quality);
+    console.log('JPG Compression: Optimize:', optimize);
+    
+    // Check if script exists
+    try {
+      await fs.access(scriptPath);
+      console.log('JPG Compression: Script exists');
+    } catch (error) {
+      console.error('JPG Compression: Script does not exist:', scriptPath);
+      return res.status(500).json({ error: 'Compression script not found' });
+    }
+
+    const pythonPath = '/opt/venv/bin/python';
+    const args = [
+      scriptPath,
+      inputPath,
+      outputPath,
+      '--quality', quality.toString(),
+    ];
+    
+    if (optimize) {
+      args.push('--optimize');
+    } else {
+      args.push('--no-optimize');
+    }
+
+    const python = spawn(pythonPath, args);
+
+    let stdout = '';
+    let stderr = '';
+
+    python.stdout.on('data', (data: Buffer) => {
+      stdout += data.toString();
+      console.log('JPG Compression stdout:', data.toString());
+    });
+
+    python.stderr.on('data', (data: Buffer) => {
+      stderr += data.toString();
+      console.log('JPG Compression stderr:', data.toString());
+    });
+
+    python.on('close', async (code: number) => {
+      console.log('JPG Compression: Python script finished with code:', code);
+      console.log('JPG Compression: stdout:', stdout);
+      console.log('JPG Compression: stderr:', stderr);
+      
+      try {
+        if (code === 0 && await fs.access(outputPath).then(() => true).catch(() => false)) {
+          const outputBuffer = await fs.readFile(outputPath);
+          const originalSize = file.size;
+          const compressedSize = outputBuffer.length;
+          const savings = originalSize - compressedSize;
+          const savingsPercent = ((savings / originalSize) * 100).toFixed(2);
+          
+          console.log('JPG Compression: Original size:', originalSize, 'bytes');
+          console.log('JPG Compression: Compressed size:', compressedSize, 'bytes');
+          console.log('JPG Compression: Savings:', savingsPercent, '%');
+          
+          res.set({
+            'Content-Type': 'image/jpeg',
+            'Content-Disposition': `attachment; filename="${path.basename(outputPath)}"`,
+            'X-Original-Size': originalSize.toString(),
+            'X-Compressed-Size': compressedSize.toString(),
+            'X-Savings-Percent': savingsPercent
+          });
+          res.send(outputBuffer);
+          
+        } else {
+          console.error('JPG Compression failed. Code:', code, 'Stderr:', stderr);
+          res.status(500).json({ 
+            error: 'Compression failed', 
+            details: stderr || stdout || 'Unknown error',
+            code: code 
+          });
+        }
+      } catch (error) {
+        console.error('Error handling compression result:', error);
+        res.status(500).json({ error: 'Compression failed', details: error instanceof Error ? error.message : 'Unknown error' });
+      } finally {
+        await fs.rm(tmpDir, { recursive: true, force: true }).catch(() => undefined);
+      }
+    });
+
+    python.on('error', async (error) => {
+      console.error('JPG Compression: Python process error:', error);
+      res.status(500).json({ error: 'Failed to start compression process', details: error.message });
+      await fs.rm(tmpDir, { recursive: true, force: true }).catch(() => undefined);
+    });
+  } catch (error) {
+    console.error('JPG Compression error:', error);
+    const message = error instanceof Error ? error.message : 'Unknown error';
+    res.status(500).json({ error: message });
+    await fs.rm(tmpDir, { recursive: true, force: true }).catch(() => undefined);
+  }
+});
+
+// Route: JPG Compression (Batch)
+app.post('/api/compress/jpg/batch', uploadBatch, async (req, res) => {
+  res.set({
+    'Access-Control-Allow-Origin': '*',
+    'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+    'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept'
+  });
+
+  console.log('JPG compression batch request');
+
+  const tmpDir = path.join(os.tmpdir(), `jpg-compress-batch-${Date.now()}`);
+
+  try {
+    const files = req.files as Express.Multer.File[];
+    if (!files || files.length === 0) {
+      return res.status(400).json({ error: 'No files uploaded' });
+    }
+
+    // Get quality from request body or query
+    const quality = parseInt(req.body.quality || req.query.quality || '85', 10);
+    const optimize = req.body.optimize !== 'false' && req.query.optimize !== 'false';
+
+    await fs.mkdir(tmpDir, { recursive: true });
+
+    const results = [];
+
+    for (const file of files) {
+      try {
+        const inputPath = path.join(tmpDir, file.originalname);
+        const outputPath = path.join(tmpDir, file.originalname.replace(/\.(jpg|jpeg)$/i, '_compressed.jpg'));
+        
+        await fs.writeFile(inputPath, file.buffer);
+
+        const scriptPath = path.join(__dirname, '..', 'compress', 'jpg_compress.py');
+        const pythonPath = '/opt/venv/bin/python';
+        const args = [
+          scriptPath,
+          inputPath,
+          outputPath,
+          '--quality', quality.toString(),
+        ];
+        
+        if (optimize) {
+          args.push('--optimize');
+        } else {
+          args.push('--no-optimize');
+        }
+
+        const result = await execFileAsync(pythonPath, args);
+        
+        if (await fs.access(outputPath).then(() => true).catch(() => false)) {
+          const outputBuffer = await fs.readFile(outputPath);
+          const originalSize = file.size;
+          const compressedSize = outputBuffer.length;
+          const savings = originalSize - compressedSize;
+          const savingsPercent = ((savings / originalSize) * 100).toFixed(2);
+          
+          const storedFilename = `${randomUUID()}.jpg`;
+          const storedPath = path.join(BATCH_OUTPUT_DIR, storedFilename);
+          await fs.writeFile(storedPath, outputBuffer);
+          
+          scheduleBatchFileCleanup(storedFilename);
+          batchFileMetadata.set(storedFilename, {
+            downloadName: path.basename(outputPath),
+            mime: 'image/jpeg'
+          });
+
+          results.push({
+            originalFilename: file.originalname,
+            outputFilename: path.basename(outputPath),
+            storedFilename: storedFilename,
+            originalSize: originalSize,
+            compressedSize: compressedSize,
+            savingsPercent: parseFloat(savingsPercent)
+          });
+        } else {
+          results.push({
+            originalFilename: file.originalname,
+            error: 'Compression failed'
+          });
+        }
+      } catch (error) {
+        console.error(`Error compressing ${file.originalname}:`, error);
+        results.push({
+          originalFilename: file.originalname,
+          error: error instanceof Error ? error.message : 'Compression failed'
+        });
+      }
+    }
+
+    res.json({
+      success: true,
+      results: results
+    });
+    
+    // Cleanup temp directory after a delay
+    setTimeout(async () => {
+      await fs.rm(tmpDir, { recursive: true, force: true }).catch(() => undefined);
+    }, 5000);
+  } catch (error) {
+    console.error('JPG Compression batch error:', error);
+    const message = error instanceof Error ? error.message : 'Unknown error';
+    res.status(500).json({ error: message });
+    await fs.rm(tmpDir, { recursive: true, force: true }).catch(() => undefined);
+  }
+});
+
+// CORS preflight for compression endpoints
+app.options('/api/compress/jpg', (req, res) => {
+  res.set({
+    'Access-Control-Allow-Origin': '*',
+    'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+    'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept'
+  });
+  res.sendStatus(200);
+});
+
+app.options('/api/compress/jpg/batch', (req, res) => {
+  res.set({
+    'Access-Control-Allow-Origin': '*',
+    'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+    'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept'
+  });
+  res.sendStatus(200);
+});
+
 process.on('SIGINT', () => gracefulShutdown('SIGINT'));
 process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
 
