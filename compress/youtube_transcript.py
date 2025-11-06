@@ -12,6 +12,8 @@ import argparse
 try:
     from youtube_transcript_api import YouTubeTranscriptApi
     from youtube_transcript_api._errors import TranscriptsDisabled, NoTranscriptFound, VideoUnavailable
+    # Also try importing the module to check for module-level functions
+    import youtube_transcript_api as yt_api_module
 except ImportError as e:
     print(json.dumps({"success": False, "error": f"Failed to import youtube_transcript_api: {str(e)}"}))
     sys.exit(1)
@@ -35,7 +37,9 @@ def format_time_vtt(seconds):
 def get_transcript(video_id, language_codes=None):
     """Get transcript for a video, trying multiple languages"""
     # In version 1.2.3, the API uses 'list' and 'fetch' methods
-    # Pattern 1: Try fetch() directly as a class method
+    # Try different patterns to find the correct API usage
+    
+    # Pattern 1: Try fetch() as a class method
     try:
         if language_codes:
             for lang_code in language_codes:
@@ -47,7 +51,6 @@ def get_transcript(video_id, language_codes=None):
                 except Exception:
                     continue
         
-        # Try English
         try:
             transcript = YouTubeTranscriptApi.fetch(video_id, languages=['en'])
             return transcript
@@ -56,7 +59,6 @@ def get_transcript(video_id, language_codes=None):
         except Exception:
             pass
         
-        # Try without language
         try:
             transcript = YouTubeTranscriptApi.fetch(video_id)
             return transcript
@@ -67,79 +69,215 @@ def get_transcript(video_id, language_codes=None):
     except Exception:
         pass
     
-    # Pattern 2: Use list() to get available transcripts, then fetch() on each
+    # Pattern 2: Try creating an instance and calling methods on it
     try:
-        # Get list of available transcripts
-        transcript_list = YouTubeTranscriptApi.list(video_id)
+        api_instance = YouTubeTranscriptApi()
         
-        # Try preferred languages first
+        # Try fetch on instance
         if language_codes:
             for lang_code in language_codes:
                 try:
-                    # Iterate through available transcripts
-                    if hasattr(transcript_list, '__iter__'):
-                        for transcript_item in transcript_list:
-                            try:
-                                # Check if this transcript matches our language
-                                item_lang = None
-                                if hasattr(transcript_item, 'language_code'):
-                                    item_lang = transcript_item.language_code
-                                elif hasattr(transcript_item, 'language'):
-                                    item_lang = transcript_item.language
-                                
-                                if item_lang == lang_code:
-                                    return transcript_item.fetch()
-                            except Exception:
-                                continue
+                    transcript = api_instance.fetch(video_id, languages=[lang_code])
+                    return transcript
                 except (NoTranscriptFound, TranscriptsDisabled):
                     continue
                 except Exception:
                     continue
         
-        # Try English as fallback
         try:
-            if hasattr(transcript_list, '__iter__'):
-                for transcript_item in transcript_list:
-                    try:
-                        item_lang = None
-                        if hasattr(transcript_item, 'language_code'):
-                            item_lang = transcript_item.language_code
-                        elif hasattr(transcript_item, 'language'):
-                            item_lang = transcript_item.language
-                        
-                        if item_lang == 'en':
-                            return transcript_item.fetch()
-                    except Exception:
-                        continue
+            transcript = api_instance.fetch(video_id, languages=['en'])
+            return transcript
+        except (NoTranscriptFound, TranscriptsDisabled):
+            pass
         except Exception:
             pass
         
-        # Try to get any available transcript
         try:
-            if hasattr(transcript_list, '__iter__'):
-                for transcript_item in transcript_list:
-                    try:
-                        return transcript_item.fetch()
-                    except Exception:
-                        continue
+            transcript = api_instance.fetch(video_id)
+            return transcript
+        except (NoTranscriptFound, TranscriptsDisabled):
+            pass
         except Exception:
             pass
         
-        # If list() returns a list directly
-        if isinstance(transcript_list, list) and len(transcript_list) > 0:
-            return transcript_list[0].fetch()
+        # Try list on instance (this should work if list is an instance method)
+        try:
+            # Check if list is callable and what its signature is
+            if hasattr(api_instance, 'list') and callable(getattr(api_instance, 'list')):
+                import inspect
+                try:
+                    sig = inspect.signature(api_instance.list)
+                    # If it requires video_id, call it with video_id
+                    transcript_list = api_instance.list(video_id)
+                except TypeError:
+                    # Maybe list doesn't take video_id, try without
+                    try:
+                        transcript_list = api_instance.list()
+                    except:
+                        # Maybe list is a property, not a method
+                        transcript_list = api_instance.list
+                except Exception:
+                    transcript_list = api_instance.list(video_id)
+            else:
+                transcript_list = api_instance.list(video_id)
+            
+            # Try preferred languages
+            if language_codes:
+                for lang_code in language_codes:
+                    try:
+                        if hasattr(transcript_list, '__iter__'):
+                            for item in transcript_list:
+                                try:
+                                    if hasattr(item, 'language_code') and item.language_code == lang_code:
+                                        return item.fetch()
+                                    if hasattr(item, 'language') and item.language == lang_code:
+                                        return item.fetch()
+                                except:
+                                    continue
+                    except:
+                        continue
+            
+            # Try English
+            try:
+                if hasattr(transcript_list, '__iter__'):
+                    for item in transcript_list:
+                        try:
+                            if hasattr(item, 'language_code') and item.language_code == 'en':
+                                return item.fetch()
+                            if hasattr(item, 'language') and item.language == 'en':
+                                return item.fetch()
+                        except:
+                            continue
+            except:
+                pass
+            
+            # Get any available
+            try:
+                if hasattr(transcript_list, '__iter__'):
+                    for item in transcript_list:
+                        try:
+                            return item.fetch()
+                        except:
+                            continue
+            except:
+                pass
+            
+            if isinstance(transcript_list, list) and len(transcript_list) > 0:
+                return transcript_list[0].fetch()
+        except Exception:
+            pass
+    except Exception:
+        pass
+    
+    # Pattern 3: Try module-level functions
+    try:
+        # Check if fetch and list are module-level functions
+        if hasattr(yt_api_module, 'fetch'):
+            if language_codes:
+                for lang_code in language_codes:
+                    try:
+                        transcript = yt_api_module.fetch(video_id, languages=[lang_code])
+                        return transcript
+                    except (NoTranscriptFound, TranscriptsDisabled):
+                        continue
+                    except Exception:
+                        continue
+            
+            try:
+                transcript = yt_api_module.fetch(video_id, languages=['en'])
+                return transcript
+            except (NoTranscriptFound, TranscriptsDisabled):
+                pass
+            except Exception:
+                pass
+            
+            try:
+                transcript = yt_api_module.fetch(video_id)
+                return transcript
+            except (NoTranscriptFound, TranscriptsDisabled):
+                pass
+            except Exception:
+                pass
         
-        # If we get here, no transcript was found
-        raise Exception("No transcript available for this video")
-        
-    except TranscriptsDisabled:
-        raise Exception("Transcripts are disabled for this video")
-    except NoTranscriptFound:
-        raise Exception("No transcript found for this video")
-    except VideoUnavailable:
-        raise Exception("Video is unavailable or doesn't exist")
-    except Exception as e:
-        raise Exception(f"Error fetching transcript: {str(e)}")
+        if hasattr(yt_api_module, 'list'):
+            transcript_list = yt_api_module.list(video_id)
+            
+            if language_codes:
+                for lang_code in language_codes:
+                    try:
+                        if hasattr(transcript_list, '__iter__'):
+                            for item in transcript_list:
+                                try:
+                                    if hasattr(item, 'language_code') and item.language_code == lang_code:
+                                        return item.fetch()
+                                    if hasattr(item, 'language') and item.language == lang_code:
+                                        return item.fetch()
+                                except:
+                                    continue
+                    except:
+                        continue
+            
+            try:
+                if hasattr(transcript_list, '__iter__'):
+                    for item in transcript_list:
+                        try:
+                            if hasattr(item, 'language_code') and item.language_code == 'en':
+                                return item.fetch()
+                            if hasattr(item, 'language') and item.language == 'en':
+                                return item.fetch()
+                        except:
+                            continue
+            except:
+                pass
+            
+            try:
+                if hasattr(transcript_list, '__iter__'):
+                    for item in transcript_list:
+                        try:
+                            return item.fetch()
+                        except:
+                            continue
+            except:
+                pass
+            
+            if isinstance(transcript_list, list) and len(transcript_list) > 0:
+                return transcript_list[0].fetch()
+    except Exception:
+        pass
+    
+    # Pattern 4: Maybe the API works differently - try the old get_transcript pattern
+    # Some versions might still support it
+    try:
+        # Check if there's a get_transcript function somewhere
+        if hasattr(yt_api_module, 'get_transcript'):
+            if language_codes:
+                for lang_code in language_codes:
+                    try:
+                        transcript = yt_api_module.get_transcript(video_id, languages=[lang_code])
+                        return transcript
+                    except (NoTranscriptFound, TranscriptsDisabled):
+                        continue
+                    except Exception:
+                        continue
+            
+            try:
+                return yt_api_module.get_transcript(video_id, languages=['en'])
+            except (NoTranscriptFound, TranscriptsDisabled):
+                pass
+            except Exception:
+                pass
+            
+            try:
+                return yt_api_module.get_transcript(video_id)
+            except (NoTranscriptFound, TranscriptsDisabled):
+                pass
+            except Exception:
+                pass
+    except Exception:
+        pass
+    
+    # If nothing works, raise error with helpful message
+    raise Exception("Unable to fetch transcript. The API methods 'fetch' and 'list' are available but couldn't be called successfully. Please check the youtube-transcript-api documentation for version 1.2.3.")
 
 def format_as_text(transcript_data, include_timestamps=False):
     """Format transcript as plain text"""
