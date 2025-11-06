@@ -23043,6 +23043,151 @@ app.options('/api/compress/pdf/batch', (req, res) => {
   res.sendStatus(200);
 });
 
+// Route: YouTube Transcript Extraction
+app.post('/api/youtube/transcript', async (req, res) => {
+  res.set({
+    'Access-Control-Allow-Origin': '*',
+    'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+    'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept'
+  });
+
+  console.log('YouTube transcript extraction request');
+
+  try {
+    const { videoId, format } = req.body;
+
+    if (!videoId) {
+      return res.status(400).json({ error: 'Video ID is required' });
+    }
+
+    // Validate video ID format
+    if (typeof videoId !== 'string' || videoId.length !== 11) {
+      return res.status(400).json({ error: 'Invalid video ID format' });
+    }
+
+    // Validate format
+    const validFormats = ['txt', 'txt-timestamps', 'json', 'srt', 'vtt'];
+    const transcriptFormat = format || 'txt';
+    if (!validFormats.includes(transcriptFormat)) {
+      return res.status(400).json({ error: 'Invalid format. Supported formats: txt, txt-timestamps, json, srt, vtt' });
+    }
+
+    const scriptPath = path.join(__dirname, '..', 'compress', 'youtube_transcript.py');
+    console.log('YouTube Transcript: Executing Python script:', scriptPath);
+    console.log('YouTube Transcript: Video ID:', videoId);
+    console.log('YouTube Transcript: Format:', transcriptFormat);
+    
+    // Check if script exists
+    try {
+      await fs.access(scriptPath);
+      console.log('YouTube Transcript: Script exists');
+    } catch (error) {
+      console.error('YouTube Transcript: Script does not exist:', scriptPath);
+      return res.status(500).json({ error: 'Transcript extraction script not found' });
+    }
+
+    const pythonPath = '/opt/venv/bin/python';
+    const args = [
+      scriptPath,
+      videoId,
+      '--format', transcriptFormat,
+      '--language', 'en'
+    ];
+
+    const python = spawn(pythonPath, args);
+
+    let stdout = '';
+    let stderr = '';
+
+    python.stdout.on('data', (data: Buffer) => {
+      stdout += data.toString();
+      console.log('YouTube Transcript stdout:', data.toString());
+    });
+
+    python.stderr.on('data', (data: Buffer) => {
+      stderr += data.toString();
+      console.log('YouTube Transcript stderr:', data.toString());
+    });
+
+    python.on('close', async (code: number) => {
+      console.log('YouTube Transcript: Python script finished with code:', code);
+      console.log('YouTube Transcript: stdout:', stdout);
+      console.log('YouTube Transcript: stderr:', stderr);
+      
+      try {
+        if (code === 0 && stdout) {
+          try {
+            const result = JSON.parse(stdout);
+            
+            if (result.success) {
+              res.json({
+                success: true,
+                format: result.format,
+                content: result.content,
+                content_type: result.content_type,
+                video_id: result.video_id,
+                entries_count: result.entries_count
+              });
+            } else {
+              res.status(400).json({
+                success: false,
+                error: result.error || 'Failed to extract transcript'
+              });
+            }
+          } catch (parseError) {
+            console.error('YouTube Transcript: Failed to parse JSON output:', parseError);
+            res.status(500).json({
+              success: false,
+              error: 'Failed to parse transcript result',
+              details: stdout || stderr || 'Unknown error'
+            });
+          }
+        } else {
+          console.error('YouTube Transcript failed. Code:', code, 'Stderr:', stderr);
+          res.status(500).json({
+            success: false,
+            error: 'Transcript extraction failed',
+            details: stderr || stdout || 'Unknown error',
+            code: code
+          });
+        }
+      } catch (error) {
+        console.error('Error handling transcript result:', error);
+        res.status(500).json({
+          success: false,
+          error: 'Transcript extraction failed',
+          details: error instanceof Error ? error.message : 'Unknown error'
+        });
+      }
+    });
+
+    python.on('error', async (error) => {
+      console.error('YouTube Transcript: Python process error:', error);
+      res.status(500).json({
+        success: false,
+        error: 'Failed to start transcript extraction process',
+        details: error.message
+      });
+    });
+  } catch (error) {
+    console.error('YouTube Transcript error:', error);
+    const message = error instanceof Error ? error.message : 'Unknown error';
+    res.status(500).json({
+      success: false,
+      error: message
+    });
+  }
+});
+
+app.options('/api/youtube/transcript', (req, res) => {
+  res.set({
+    'Access-Control-Allow-Origin': '*',
+    'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+    'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept'
+  });
+  res.sendStatus(200);
+});
+
 process.on('SIGINT', () => gracefulShutdown('SIGINT'));
 process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
 
