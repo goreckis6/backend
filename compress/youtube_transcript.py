@@ -11,25 +11,56 @@ import argparse
 # Import with error handling
 try:
     from youtube_transcript_api import YouTubeTranscriptApi
+    # Import basic errors that should exist in all versions
     from youtube_transcript_api._errors import (
         TranscriptsDisabled, 
         NoTranscriptFound, 
-        VideoUnavailable,
-        TooManyRequests,
-        YouTubeRequestFailed,
-        CouldNotRetrieveTranscript
+        VideoUnavailable
     )
 except ImportError as e:
     print(json.dumps({"success": False, "error": f"Failed to import youtube_transcript_api: {str(e)}"}))
     sys.exit(1)
 
-# Try to import RequestBlocked if available (may not exist in all versions)
+# Try to import optional errors that may not exist in all versions
+# These are not critical, we'll handle them gracefully if they don't exist
+TooManyRequests = None
+YouTubeRequestFailed = None
+CouldNotRetrieveTranscript = None
+RequestBlocked = None
+IpBlocked = None
+HAS_BLOCKING_ERRORS = False
+
+try:
+    from youtube_transcript_api._errors import TooManyRequests
+except ImportError:
+    pass
+
+try:
+    from youtube_transcript_api._errors import YouTubeRequestFailed
+except ImportError:
+    pass
+
+try:
+    from youtube_transcript_api._errors import CouldNotRetrieveTranscript
+except ImportError:
+    pass
+
 try:
     from youtube_transcript_api._errors import RequestBlocked, IpBlocked
     HAS_BLOCKING_ERRORS = True
 except ImportError:
-    HAS_BLOCKING_ERRORS = False
+    pass
+
+# Create dummy classes if they don't exist (for isinstance checks)
+if TooManyRequests is None:
+    TooManyRequests = type('TooManyRequests', (Exception,), {})
+if YouTubeRequestFailed is None:
+    YouTubeRequestFailed = type('YouTubeRequestFailed', (Exception,), {})
+if CouldNotRetrieveTranscript is None:
+    CouldNotRetrieveTranscript = type('CouldNotRetrieveTranscript', (Exception,), {})
+if RequestBlocked is None:
     RequestBlocked = type('RequestBlocked', (Exception,), {})
+if IpBlocked is None:
     IpBlocked = type('IpBlocked', (Exception,), {})
 
 def format_time(seconds):
@@ -361,15 +392,20 @@ def get_transcript(video_id, language_codes=None, return_available=False):
         raise Exception("Video is unavailable or doesn't exist")
     except Exception as e:
         # Check if this is an IP blocking error (if available in this version)
-        if HAS_BLOCKING_ERRORS and isinstance(e, (RequestBlocked, IpBlocked)):
-            log_debug(f"IP blocking detected: {type(e).__name__}: {str(e)}")
+        # Use string comparison instead of isinstance for dummy classes
+        error_type_name = type(e).__name__
+        if HAS_BLOCKING_ERRORS and (isinstance(e, (RequestBlocked, IpBlocked)) or 
+                                     error_type_name in ('RequestBlocked', 'IpBlocked')):
+            log_debug(f"IP blocking detected: {error_type_name}: {str(e)}")
             error_msg = "YouTube is blocking requests from this server. This is a known issue with cloud providers. Please try again later or contact support."
             if return_available:
                 raise Exception(error_msg)
             raise Exception(error_msg)
         
-        # Check for other known YouTube API errors
-        if isinstance(e, (TooManyRequests, YouTubeRequestFailed, CouldNotRetrieveTranscript)):
+        # Check for other known YouTube API errors (only if they were imported)
+        if (TooManyRequests is not None and isinstance(e, TooManyRequests)) or \
+           (YouTubeRequestFailed is not None and isinstance(e, YouTubeRequestFailed)) or \
+           (CouldNotRetrieveTranscript is not None and isinstance(e, CouldNotRetrieveTranscript)):
             log_debug(f"YouTube API error: {type(e).__name__}: {str(e)}")
             error_msg = f"YouTube API error: {str(e)}"
             if return_available:
