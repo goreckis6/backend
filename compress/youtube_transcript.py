@@ -32,19 +32,54 @@ def format_time_vtt(seconds):
     millis = int((seconds % 1) * 1000)
     return f"{hours:02d}:{minutes:02d}:{secs:02d}.{millis:03d}"
 
-def get_transcript(video_id, language_codes=None):
-    """Get transcript for a video, trying multiple languages"""
-    # According to documentation, we need to create an instance first
+def get_available_languages(video_id):
+    """Get list of available transcript languages for a video"""
     ytt_api = YouTubeTranscriptApi()
+    available_languages = []
     
     try:
+        transcript_list = ytt_api.list(video_id)
+        for transcript in transcript_list:
+            available_languages.append({
+                'code': transcript.language_code,
+                'name': transcript.language,
+                'is_generated': transcript.is_generated
+            })
+    except Exception:
+        pass
+    
+    return available_languages
+
+def get_transcript(video_id, language_codes=None, return_available=False):
+    """Get transcript for a video, trying multiple languages
+    
+    Args:
+        video_id: YouTube video ID
+        language_codes: List of language codes to try (e.g., ['es', 'en'])
+        return_available: If True, also return available languages on error
+    
+    Returns:
+        tuple: (transcript_data, available_languages) if return_available=True
+        transcript_data if return_available=False
+    """
+    # According to documentation, we need to create an instance first
+    ytt_api = YouTubeTranscriptApi()
+    available_languages = []
+    
+    try:
+        # First, get available languages
+        available_languages = get_available_languages(video_id)
+        
         # Try with preferred languages first
         if language_codes:
             try:
                 # fetch() returns a FetchedTranscript object
                 fetched_transcript = ytt_api.fetch(video_id, languages=language_codes)
                 # Convert to raw data (list of dicts) for easier processing
-                return fetched_transcript.to_raw_data()
+                data = fetched_transcript.to_raw_data()
+                if return_available:
+                    return (data, available_languages)
+                return data
             except (NoTranscriptFound, TranscriptsDisabled):
                 pass
             except Exception:
@@ -53,7 +88,10 @@ def get_transcript(video_id, language_codes=None):
         # Try English as fallback
         try:
             fetched_transcript = ytt_api.fetch(video_id, languages=['en'])
-            return fetched_transcript.to_raw_data()
+            data = fetched_transcript.to_raw_data()
+            if return_available:
+                return (data, available_languages)
+            return data
         except (NoTranscriptFound, TranscriptsDisabled):
             pass
         except Exception:
@@ -62,7 +100,10 @@ def get_transcript(video_id, language_codes=None):
         # Try without language specification (defaults to English)
         try:
             fetched_transcript = ytt_api.fetch(video_id)
-            return fetched_transcript.to_raw_data()
+            data = fetched_transcript.to_raw_data()
+            if return_available:
+                return (data, available_languages)
+            return data
         except (NoTranscriptFound, TranscriptsDisabled):
             pass
         except Exception:
@@ -77,7 +118,10 @@ def get_transcript(video_id, language_codes=None):
                 try:
                     transcript = transcript_list.find_transcript(language_codes)
                     fetched_transcript = transcript.fetch()
-                    return fetched_transcript.to_raw_data()
+                    data = fetched_transcript.to_raw_data()
+                    if return_available:
+                        return (data, available_languages)
+                    return data
                 except (NoTranscriptFound, TranscriptsDisabled):
                     pass
                 except Exception:
@@ -87,7 +131,10 @@ def get_transcript(video_id, language_codes=None):
             try:
                 transcript = transcript_list.find_transcript(['en'])
                 fetched_transcript = transcript.fetch()
-                return fetched_transcript.to_raw_data()
+                data = fetched_transcript.to_raw_data()
+                if return_available:
+                    return (data, available_languages)
+                return data
             except (NoTranscriptFound, TranscriptsDisabled):
                 pass
             except Exception:
@@ -97,18 +144,27 @@ def get_transcript(video_id, language_codes=None):
             try:
                 for transcript in transcript_list:
                     fetched_transcript = transcript.fetch()
-                    return fetched_transcript.to_raw_data()
+                    data = fetched_transcript.to_raw_data()
+                    if return_available:
+                        return (data, available_languages)
+                    return data
             except Exception:
                 pass
         except Exception:
             pass
         
         # If we get here, no transcript was found
+        if return_available:
+            raise Exception("No transcript available for this video")
         raise Exception("No transcript available for this video")
         
     except TranscriptsDisabled:
+        if return_available:
+            raise Exception("Transcripts are disabled for this video")
         raise Exception("Transcripts are disabled for this video")
     except NoTranscriptFound:
+        if return_available:
+            raise Exception("No transcript found for this video")
         raise Exception("No transcript found for this video")
     except VideoUnavailable:
         raise Exception("Video is unavailable or doesn't exist")
@@ -169,12 +225,27 @@ def main():
     args = parser.parse_args()
     
     try:
-        # Get transcript
+        # Get transcript with available languages info
         language_list = [args.language] if args.language else ['en']
         if args.language != 'en':
             language_list.append('en')
         
-        transcript_data = get_transcript(args.video_id, language_list)
+        try:
+            transcript_data, available_languages = get_transcript(args.video_id, language_list, return_available=True)
+        except Exception as e:
+            # Try to get available languages anyway
+            try:
+                available_languages = get_available_languages(args.video_id)
+            except:
+                available_languages = []
+            error_result = {
+                'success': False,
+                'error': str(e),
+                'video_id': args.video_id,
+                'available_languages': available_languages
+            }
+            print(json.dumps(error_result))
+            sys.exit(1)
         
         # get_transcript now returns a list of dicts (from to_raw_data())
         # So transcript_data should already be in the correct format
@@ -208,6 +279,9 @@ def main():
         # Get entries count - transcript_data should be a list
         entries_count = len(transcript_data) if isinstance(transcript_data, list) else 0
         
+        # Get available languages for this video
+        available_languages = get_available_languages(args.video_id)
+        
         # Return as JSON for API
         result = {
             'success': True,
@@ -215,24 +289,35 @@ def main():
             'content': output,
             'content_type': content_type,
             'video_id': args.video_id,
-            'entries_count': entries_count
+            'entries_count': entries_count,
+            'available_languages': available_languages
         }
         
         print(json.dumps(result))
         
     except TranscriptsDisabled:
+        try:
+            available_languages = get_available_languages(args.video_id)
+        except:
+            available_languages = []
         error_result = {
             'success': False,
             'error': 'Transcripts are disabled for this video',
-            'video_id': args.video_id
+            'video_id': args.video_id,
+            'available_languages': available_languages
         }
         print(json.dumps(error_result))
         sys.exit(1)
     except NoTranscriptFound:
+        try:
+            available_languages = get_available_languages(args.video_id)
+        except:
+            available_languages = []
         error_result = {
             'success': False,
             'error': 'No transcript found for this video in the specified language(s)',
-            'video_id': args.video_id
+            'video_id': args.video_id,
+            'available_languages': available_languages
         }
         print(json.dumps(error_result))
         sys.exit(1)
@@ -240,15 +325,21 @@ def main():
         error_result = {
             'success': False,
             'error': 'Video is unavailable or doesn\'t exist',
-            'video_id': args.video_id
+            'video_id': args.video_id,
+            'available_languages': []
         }
         print(json.dumps(error_result))
         sys.exit(1)
     except Exception as e:
+        try:
+            available_languages = get_available_languages(args.video_id)
+        except:
+            available_languages = []
         error_result = {
             'success': False,
             'error': str(e),
-            'video_id': args.video_id
+            'video_id': args.video_id,
+            'available_languages': available_languages
         }
         print(json.dumps(error_result))
         sys.exit(1)
