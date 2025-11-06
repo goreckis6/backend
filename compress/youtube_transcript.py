@@ -19,13 +19,19 @@ except ImportError as e:
     print(json.dumps({"success": False, "error": f"Failed to import yt-dlp: {str(e)}. Please install with: pip install yt-dlp"}))
     sys.exit(1)
 
-def get_ytdlp_options():
+def get_ytdlp_options(use_fallback=False):
     """Get yt-dlp options with anti-bot measures based on official documentation
     
-    According to yt-dlp docs:
-    - Default clients: tv,android_sdkless,web (or android_sdkless,web_safari,web if no JS runtime)
-    - android_sdkless is more reliable and less likely to be blocked
-    - player_skip should be used carefully as it can cause missing formats/metadata
+    According to yt-dlp docs, multiple bypass methods are available:
+    1. Player clients: android_sdkless is most reliable (less bot detection)
+    2. Proxy: Use rotating residential proxies for best results
+    3. curl_cffi: Browser impersonation (TLS fingerprinting)
+    4. Visitor Data: Override Visitor Data for Innertube API
+    5. Different player clients: tv, tv_downgraded, etc.
+    6. Sleep/retry: Reduce request frequency
+    
+    Args:
+        use_fallback: If True, use more aggressive bypass methods
     """
     opts = {
         'quiet': True,
@@ -54,9 +60,38 @@ def get_ytdlp_options():
             'Keep-Alive': '300',
             'Connection': 'keep-alive',
         },
+        # Add delays to reduce request frequency (helps avoid rate limiting)
+        'sleep_interval': 1,  # Sleep 1 second between requests
+        'max_sleep_interval': 3,  # Random sleep up to 3 seconds
+        'sleep_requests': 0.5,  # Sleep 0.5 seconds between extraction requests
     }
     
-    # Try to use cookies if available (from environment variable or file)
+    # If fallback mode, try more aggressive bypass methods
+    if use_fallback:
+        # Try different client order - tv_downgraded is less likely to be blocked
+        opts['extractor_args']['youtube']['player_client'] = ['tv_downgraded', 'android_sdkless', 'tv', 'web_safari']
+        # Skip some requests to reduce fingerprint
+        opts['extractor_args']['youtube']['player_skip'] = ['webpage', 'configs']
+    
+    # Method 1: Try proxy if available (from environment variable)
+    proxy_url = os.environ.get('YOUTUBE_PROXY')
+    if proxy_url:
+        opts['proxy'] = proxy_url
+        import sys
+        log_debug = lambda msg: print(f"DEBUG: {msg}", file=sys.stderr)
+        log_debug(f"Using proxy: {proxy_url}")
+    
+    # Method 2: Try visitor_data override (can help bypass some restrictions)
+    # This should be used with player_skip=webpage,configs
+    visitor_data = os.environ.get('YOUTUBE_VISITOR_DATA')
+    if visitor_data and use_fallback:
+        opts['extractor_args']['youtube']['visitor_data'] = visitor_data
+        import sys
+        log_debug = lambda msg: print(f"DEBUG: {msg}", file=sys.stderr)
+        log_debug("Using visitor_data override")
+    
+    # Method 3: Try to use cookies if available (from environment variable or file)
+    # Cookies are the most reliable method to bypass bot detection
     cookies_path = os.environ.get('YOUTUBE_COOKIES_FILE')
     if cookies_path and os.path.exists(cookies_path):
         opts['cookiefile'] = cookies_path
@@ -72,6 +107,12 @@ def get_ytdlp_options():
             if os.path.exists(cookie_path):
                 opts['cookiefile'] = cookie_path
                 break
+    
+    # Method 4: Try different innertube_host (alternative API endpoint)
+    # Some endpoints may be less restricted
+    innertube_host = os.environ.get('YOUTUBE_INNERTUBE_HOST')
+    if innertube_host:
+        opts['extractor_args']['youtube']['innertube_host'] = innertube_host
     
     return opts
 
@@ -313,41 +354,75 @@ def get_transcript(video_id, language_codes=None, return_available=False):
                 log_debug(f"DownloadError fetching transcript in {lang_code}: {error_msg}")
                 # Check if it's a bot detection error
                 if 'bot' in error_msg.lower() or 'Sign in to confirm' in error_msg:
-                    log_debug("Bot detection detected - trying fallback with player_skip...")
-                    # Try once more with player_skip to reduce requests
-                    try:
-                        log_debug(f"Retrying {lang_code} with player_skip (reduced requests)...")
-                        ydl_opts_fallback = get_ytdlp_options()
-                        ydl_opts_fallback['extractor_args']['youtube']['player_skip'] = ['webpage', 'configs']
-                        ydl_opts_fallback['writesubtitles'] = True
-                        ydl_opts_fallback['writeautomaticsub'] = True
-                        ydl_opts_fallback['subtitleslangs'] = [lang_code]
-                        ydl_opts_fallback['subtitlesformat'] = 'vtt'
-                        
-                        with tempfile.TemporaryDirectory() as tmpdir_fallback:
-                            ydl_opts_fallback['outtmpl'] = os.path.join(tmpdir_fallback, '%(title)s.%(ext)s')
-                            with yt_dlp.YoutubeDL(ydl_opts_fallback) as ydl:
-                                info = ydl.extract_info(video_url, download=True)
-                                # Find subtitle file
-                                subtitle_file = None
-                                for file in os.listdir(tmpdir_fallback):
-                                    if file.endswith('.vtt'):
-                                        subtitle_file = os.path.join(tmpdir_fallback, file)
-                                        break
-                                if subtitle_file and os.path.exists(subtitle_file):
-                                    log_debug(f"Found subtitle file with fallback: {subtitle_file}")
-                                    with open(subtitle_file, 'r', encoding='utf-8') as f:
-                                        vtt_content = f.read()
-                                    transcript_data = parse_vtt_content(vtt_content)
-                                    if transcript_data:
-                                        if return_available:
-                                            return (transcript_data, available_languages)
-                                        return transcript_data
-                    except Exception as fallback_error:
-                        log_debug(f"Fallback attempt also failed: {fallback_error}")
-                        log_debug("Bot detection persists - cookies are required")
-                        log_debug("To fix: Export cookies from browser (Chrome/Firefox/etc) and set YOUTUBE_COOKIES_FILE environment variable")
-                        log_debug("See: https://github.com/yt-dlp/yt-dlp/wiki/FAQ#how-do-i-pass-cookies-to-yt-dlp")
+                    log_debug("Bot detection detected - trying multiple bypass methods...")
+                    
+                    # Try multiple fallback strategies in order
+                    fallback_strategies = [
+                        {
+                            'name': 'player_skip (reduced requests)',
+                            'opts': lambda: {**get_ytdlp_options(use_fallback=True), **{
+                                'writesubtitles': True,
+                                'writeautomaticsub': True,
+                                'subtitleslangs': [lang_code],
+                                'subtitlesformat': 'vtt',
+                            }}
+                        },
+                        {
+                            'name': 'tv client (alternative client)',
+                            'opts': lambda: {**get_ytdlp_options(), **{
+                                'extractor_args': {
+                                    'youtube': {
+                                        'player_client': ['tv', 'tv_downgraded', 'android_sdkless'],
+                                        'player_skip': ['webpage', 'configs'],
+                                    }
+                                },
+                                'writesubtitles': True,
+                                'writeautomaticsub': True,
+                                'subtitleslangs': [lang_code],
+                                'subtitlesformat': 'vtt',
+                            }}
+                        },
+                    ]
+                    
+                    for strategy in fallback_strategies:
+                        try:
+                            log_debug(f"Trying fallback: {strategy['name']}...")
+                            ydl_opts_fallback = strategy['opts']()
+                            
+                            with tempfile.TemporaryDirectory() as tmpdir_fallback:
+                                ydl_opts_fallback['outtmpl'] = os.path.join(tmpdir_fallback, '%(title)s.%(ext)s')
+                                
+                                # Add extra sleep for fallback attempts
+                                import time
+                                time.sleep(2)  # Wait 2 seconds before retry
+                                
+                                with yt_dlp.YoutubeDL(ydl_opts_fallback) as ydl:
+                                    info = ydl.extract_info(video_url, download=True)
+                                    # Find subtitle file
+                                    subtitle_file = None
+                                    for file in os.listdir(tmpdir_fallback):
+                                        if file.endswith('.vtt'):
+                                            subtitle_file = os.path.join(tmpdir_fallback, file)
+                                            break
+                                    if subtitle_file and os.path.exists(subtitle_file):
+                                        log_debug(f"Success with {strategy['name']}: {subtitle_file}")
+                                        with open(subtitle_file, 'r', encoding='utf-8') as f:
+                                            vtt_content = f.read()
+                                        transcript_data = parse_vtt_content(vtt_content)
+                                        if transcript_data:
+                                            if return_available:
+                                                return (transcript_data, available_languages)
+                                            return transcript_data
+                        except Exception as fallback_error:
+                            log_debug(f"Fallback {strategy['name']} failed: {fallback_error}")
+                            continue
+                    
+                    log_debug("All bypass methods failed - cookies or proxy are required")
+                    log_debug("Solutions:")
+                    log_debug("1. Export cookies: Export from browser and set YOUTUBE_COOKIES_FILE")
+                    log_debug("2. Use proxy: Set YOUTUBE_PROXY=http://proxy:port")
+                    log_debug("3. Use visitor_data: Set YOUTUBE_VISITOR_DATA (with player_skip)")
+                    log_debug("See: https://github.com/yt-dlp/yt-dlp/wiki/FAQ#how-do-i-pass-cookies-to-yt-dlp")
                 continue
             except Exception as e:
                 log_debug(f"Error fetching transcript in {lang_code}: {type(e).__name__}: {str(e)}")
