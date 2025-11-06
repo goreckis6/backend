@@ -29,42 +29,28 @@ def format_time_vtt(seconds):
 def get_transcript(video_id, language_codes=None):
     """Get transcript for a video, trying multiple languages"""
     try:
-        # Try to get transcript in preferred languages first
+        # For version 1.2.3, use get_transcript directly
+        # Try preferred languages first
         if language_codes:
-            try:
-                transcript_list = YouTubeTranscriptApi.list_transcripts(video_id)
-                for lang_code in language_codes:
-                    try:
-                        transcript = transcript_list.find_transcript([lang_code])
-                        return transcript.fetch()
-                    except:
-                        continue
-            except:
-                pass
+            for lang_code in language_codes:
+                try:
+                    return YouTubeTranscriptApi.get_transcript(video_id, languages=[lang_code])
+                except (NoTranscriptFound, TranscriptsDisabled):
+                    continue
+                except:
+                    pass
         
-        # Fall back to auto-generated or available transcript
-        transcript_list = YouTubeTranscriptApi.list_transcripts(video_id)
-        
-        # Try to get manually created transcript first
+        # Try English as fallback
         try:
-            transcript = transcript_list.find_manually_created_transcript(['en'])
-            return transcript.fetch()
-        except:
+            return YouTubeTranscriptApi.get_transcript(video_id, languages=['en'])
+        except (NoTranscriptFound, TranscriptsDisabled):
             pass
         
-        # Try auto-generated English
+        # Try to get any available transcript (no language specified)
         try:
-            transcript = transcript_list.find_generated_transcript(['en'])
-            return transcript.fetch()
-        except:
+            return YouTubeTranscriptApi.get_transcript(video_id)
+        except (NoTranscriptFound, TranscriptsDisabled):
             pass
-        
-        # Get any available transcript
-        for transcript_item in transcript_list:
-            try:
-                return transcript_item.fetch()
-            except:
-                continue
         
         # If we get here, no transcript was found
         raise Exception("No transcript available for this video")
