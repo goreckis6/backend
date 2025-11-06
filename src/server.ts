@@ -23054,7 +23054,7 @@ app.post('/api/youtube/transcript', async (req, res) => {
   console.log('YouTube transcript extraction request');
 
   try {
-    const { videoId, format } = req.body;
+    const { videoId, format, language } = req.body;
 
     if (!videoId) {
       return res.status(400).json({ error: 'Video ID is required' });
@@ -23072,10 +23072,14 @@ app.post('/api/youtube/transcript', async (req, res) => {
       return res.status(400).json({ error: 'Invalid format. Supported formats: txt, txt-timestamps, json, srt, vtt' });
     }
 
+    // Validate language (default to 'en' if not provided)
+    const transcriptLanguage = language || 'en';
+
     const scriptPath = path.join(__dirname, '..', 'compress', 'youtube_transcript.py');
     console.log('YouTube Transcript: Executing Python script:', scriptPath);
     console.log('YouTube Transcript: Video ID:', videoId);
     console.log('YouTube Transcript: Format:', transcriptFormat);
+    console.log('YouTube Transcript: Language:', transcriptLanguage);
     
     // Check if script exists
     try {
@@ -23091,7 +23095,7 @@ app.post('/api/youtube/transcript', async (req, res) => {
       scriptPath,
       videoId,
       '--format', transcriptFormat,
-      '--language', 'en'
+      '--language', transcriptLanguage
     ];
 
     const python = spawn(pythonPath, args);
