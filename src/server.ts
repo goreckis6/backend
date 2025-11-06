@@ -23119,7 +23119,9 @@ app.post('/api/youtube/transcript', async (req, res) => {
       console.log('YouTube Transcript: stderr:', stderr);
       
       try {
-        if (code === 0 && stdout) {
+        // Try to parse JSON from stdout regardless of exit code
+        // The Python script returns JSON even on errors
+        if (stdout) {
           try {
             const result = JSON.parse(stdout);
             
@@ -23133,25 +23135,34 @@ app.post('/api/youtube/transcript', async (req, res) => {
                 entries_count: result.entries_count
               });
             } else {
+              // Script returned an error in JSON format
               res.status(400).json({
                 success: false,
-                error: result.error || 'Failed to extract transcript'
+                error: result.error || 'Failed to extract transcript',
+                video_id: result.video_id || videoId
               });
             }
+            return;
           } catch (parseError) {
+            // If JSON parsing fails, fall through to generic error handling
             console.error('YouTube Transcript: Failed to parse JSON output:', parseError);
-            res.status(500).json({
-              success: false,
-              error: 'Failed to parse transcript result',
-              details: stdout || stderr || 'Unknown error'
-            });
           }
-        } else {
-          console.error('YouTube Transcript failed. Code:', code, 'Stderr:', stderr);
+        }
+        
+        // If we get here, either stdout was empty or JSON parsing failed
+        if (code === 0) {
+          // Success code but no valid JSON - unexpected
           res.status(500).json({
             success: false,
-            error: 'Transcript extraction failed',
-            details: stderr || stdout || 'Unknown error',
+            error: 'Failed to parse transcript result',
+            details: stdout || stderr || 'Unknown error'
+          });
+        } else {
+          // Error code - try to extract error message from stderr or stdout
+          const errorMessage = stderr || stdout || 'Transcript extraction failed';
+          res.status(500).json({
+            success: false,
+            error: errorMessage,
             code: code
           });
         }
