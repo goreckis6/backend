@@ -61,17 +61,30 @@ def compress_pdf(input_file: str, output_file: str, quality: int = 85, optimize:
 
         # Add all pages with compression
         for page_num, page in enumerate(reader.pages):
+            # Add page to writer first (required for compression in pypdf 5.0.0+)
+            writer.add_page(page)
+            
             # Compress page content streams based on quality
             # Lower quality = more compression
+            # Note: Must compress after adding to writer
             if quality < 50:
                 # High compression - compress all streams
-                page.compress_content_streams()
+                try:
+                    # Get the page from writer and compress it
+                    writer_page = writer.pages[page_num]
+                    writer_page.compress_content_streams()
+                except (ValueError, AttributeError) as e:
+                    # If compression fails, continue without compression for this page
+                    print(f"Warning: Could not compress page {page_num + 1}: {e}")
             elif quality < 80:
                 # Medium compression - compress large streams
-                if hasattr(page, 'compress_content_streams'):
-                    page.compress_content_streams()
+                try:
+                    writer_page = writer.pages[page_num]
+                    if hasattr(writer_page, 'compress_content_streams'):
+                        writer_page.compress_content_streams()
+                except (ValueError, AttributeError) as e:
+                    print(f"Warning: Could not compress page {page_num + 1}: {e}")
             
-            writer.add_page(page)
             print(f"Processed page {page_num + 1}/{len(reader.pages)}")
 
         # Handle metadata - pypdf 5.0.0+ requires all keys to start with '/'
