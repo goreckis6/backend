@@ -19,6 +19,62 @@ except ImportError as e:
     print(json.dumps({"success": False, "error": f"Failed to import yt-dlp: {str(e)}. Please install with: pip install yt-dlp"}))
     sys.exit(1)
 
+def get_ytdlp_options():
+    """Get yt-dlp options with anti-bot measures based on official documentation
+    
+    According to yt-dlp docs:
+    - Default clients: tv,android_sdkless,web (or android_sdkless,web_safari,web if no JS runtime)
+    - android_sdkless is more reliable and less likely to be blocked
+    - player_skip should be used carefully as it can cause missing formats/metadata
+    """
+    opts = {
+        'quiet': True,
+        'no_warnings': True,
+        'skip_download': True,
+        # Anti-bot measures
+        'user_agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        'referer': 'https://www.youtube.com/',
+        'extractor_args': {
+            'youtube': {
+                # Use android_sdkless first (more reliable, less bot detection)
+                # Then fallback to web_safari and web
+                # This matches the default behavior when no JS runtime is available
+                'player_client': ['android_sdkless', 'web_safari', 'web'],
+                # Don't skip webpage/configs aggressively - they may be needed for metadata
+                # Only skip if we're still getting blocked (will try without skip first)
+                # 'player_skip': [],  # Don't skip by default
+            }
+        },
+        # Additional headers to appear more like a browser
+        'http_headers': {
+            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+            'Accept-Language': 'en-us,en;q=0.5',
+            'Accept-Encoding': 'gzip, deflate',
+            'Accept-Charset': 'ISO-8859-1,utf-8;q=0.7,*;q=0.7',
+            'Keep-Alive': '300',
+            'Connection': 'keep-alive',
+        },
+    }
+    
+    # Try to use cookies if available (from environment variable or file)
+    cookies_path = os.environ.get('YOUTUBE_COOKIES_FILE')
+    if cookies_path and os.path.exists(cookies_path):
+        opts['cookiefile'] = cookies_path
+    else:
+        # Try common cookie file locations
+        common_cookie_paths = [
+            os.path.expanduser('~/.config/yt-dlp/cookies.txt'),
+            os.path.expanduser('~/cookies.txt'),
+            '/opt/backend/cookies.txt',
+            os.path.join(os.path.dirname(__file__), 'cookies.txt'),
+        ]
+        for cookie_path in common_cookie_paths:
+            if os.path.exists(cookie_path):
+                opts['cookiefile'] = cookie_path
+                break
+    
+    return opts
+
 def format_time(seconds):
     """Convert seconds to SRT/VTT time format (HH:MM:SS,mmm)"""
     hours = int(seconds // 3600)
@@ -115,14 +171,14 @@ def get_available_languages(video_id):
     try:
         video_url = f"https://www.youtube.com/watch?v={video_id}"
         
-        ydl_opts = {
-            'quiet': True,
-            'no_warnings': True,
-            'listsubtitles': True,
-            'skip_download': True,
-        }
+        ydl_opts = get_ytdlp_options()
+        ydl_opts['listsubtitles'] = True
+        ydl_opts['writesubtitles'] = False
+        ydl_opts['writeautomaticsub'] = False
         
         log_debug(f"Getting available languages for video: {video_id}")
+        if 'cookiefile' in ydl_opts:
+            log_debug(f"Using cookies file: {ydl_opts['cookiefile']}")
         
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             info = ydl.extract_info(video_url, download=False)
@@ -153,6 +209,12 @@ def get_available_languages(video_id):
         
         log_debug(f"Total available languages: {len(available_languages)}")
         
+    except yt_dlp.utils.DownloadError as e:
+        error_msg = str(e)
+        log_debug(f"DownloadError getting available languages: {error_msg}")
+        # Check if it's a bot detection error
+        if 'bot' in error_msg.lower() or 'Sign in to confirm' in error_msg:
+            log_debug("Bot detection detected when listing languages - may need cookies")
     except Exception as e:
         log_debug(f"Error getting available languages: {type(e).__name__}: {str(e)}")
         # Return empty list on error
@@ -203,16 +265,15 @@ def get_transcript(video_id, language_codes=None, return_available=False):
                 
                 # Create temp directory for subtitle files
                 with tempfile.TemporaryDirectory() as tmpdir:
-                    ydl_opts = {
-                        'quiet': True,
-                        'no_warnings': True,
-                        'writesubtitles': True,
-                        'writeautomaticsub': True,  # Also try auto-generated
-                        'subtitleslangs': [lang_code],
-                        'subtitlesformat': 'vtt',  # VTT is easier to parse
-                        'skip_download': True,
-                        'outtmpl': os.path.join(tmpdir, '%(title)s.%(ext)s'),
-                    }
+                    ydl_opts = get_ytdlp_options()
+                    ydl_opts['writesubtitles'] = True
+                    ydl_opts['writeautomaticsub'] = True  # Also try auto-generated
+                    ydl_opts['subtitleslangs'] = [lang_code]
+                    ydl_opts['subtitlesformat'] = 'vtt'  # VTT is easier to parse
+                    ydl_opts['outtmpl'] = os.path.join(tmpdir, '%(title)s.%(ext)s')
+                    
+                    if 'cookiefile' in ydl_opts:
+                        log_debug(f"Using cookies file: {ydl_opts['cookiefile']}")
                     
                     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
                         info = ydl.extract_info(video_url, download=True)
@@ -247,6 +308,47 @@ def get_transcript(video_id, language_codes=None, return_available=False):
                         else:
                             log_debug(f"No subtitle file found for language: {lang_code}")
             
+            except yt_dlp.utils.DownloadError as e:
+                error_msg = str(e)
+                log_debug(f"DownloadError fetching transcript in {lang_code}: {error_msg}")
+                # Check if it's a bot detection error
+                if 'bot' in error_msg.lower() or 'Sign in to confirm' in error_msg:
+                    log_debug("Bot detection detected - trying fallback with player_skip...")
+                    # Try once more with player_skip to reduce requests
+                    try:
+                        log_debug(f"Retrying {lang_code} with player_skip (reduced requests)...")
+                        ydl_opts_fallback = get_ytdlp_options()
+                        ydl_opts_fallback['extractor_args']['youtube']['player_skip'] = ['webpage', 'configs']
+                        ydl_opts_fallback['writesubtitles'] = True
+                        ydl_opts_fallback['writeautomaticsub'] = True
+                        ydl_opts_fallback['subtitleslangs'] = [lang_code]
+                        ydl_opts_fallback['subtitlesformat'] = 'vtt'
+                        
+                        with tempfile.TemporaryDirectory() as tmpdir_fallback:
+                            ydl_opts_fallback['outtmpl'] = os.path.join(tmpdir_fallback, '%(title)s.%(ext)s')
+                            with yt_dlp.YoutubeDL(ydl_opts_fallback) as ydl:
+                                info = ydl.extract_info(video_url, download=True)
+                                # Find subtitle file
+                                subtitle_file = None
+                                for file in os.listdir(tmpdir_fallback):
+                                    if file.endswith('.vtt'):
+                                        subtitle_file = os.path.join(tmpdir_fallback, file)
+                                        break
+                                if subtitle_file and os.path.exists(subtitle_file):
+                                    log_debug(f"Found subtitle file with fallback: {subtitle_file}")
+                                    with open(subtitle_file, 'r', encoding='utf-8') as f:
+                                        vtt_content = f.read()
+                                    transcript_data = parse_vtt_content(vtt_content)
+                                    if transcript_data:
+                                        if return_available:
+                                            return (transcript_data, available_languages)
+                                        return transcript_data
+                    except Exception as fallback_error:
+                        log_debug(f"Fallback attempt also failed: {fallback_error}")
+                        log_debug("Bot detection persists - cookies are required")
+                        log_debug("To fix: Export cookies from browser (Chrome/Firefox/etc) and set YOUTUBE_COOKIES_FILE environment variable")
+                        log_debug("See: https://github.com/yt-dlp/yt-dlp/wiki/FAQ#how-do-i-pass-cookies-to-yt-dlp")
+                continue
             except Exception as e:
                 log_debug(f"Error fetching transcript in {lang_code}: {type(e).__name__}: {str(e)}")
                 continue
@@ -256,6 +358,9 @@ def get_transcript(video_id, language_codes=None, return_available=False):
         if available_languages:
             lang_display = [f"{lang['name']} ({lang['code']})" for lang in available_languages[:5]]
             error_msg += f". However, {len(available_languages)} language(s) are available: {', '.join(lang_display)}"
+        else:
+            # Check if bot detection might be the issue
+            error_msg += ". YouTube may be blocking requests. If you see 'Sign in to confirm you're not a bot' errors, please export cookies from your browser and set YOUTUBE_COOKIES_FILE environment variable. See: https://github.com/yt-dlp/yt-dlp/wiki/FAQ#how-do-i-pass-cookies-to-yt-dlp"
         
         if return_available:
             raise Exception(error_msg)
