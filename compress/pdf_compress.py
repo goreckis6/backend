@@ -74,20 +74,29 @@ def compress_pdf(input_file: str, output_file: str, quality: int = 85, optimize:
             writer.add_page(page)
             print(f"Processed page {page_num + 1}/{len(reader.pages)}")
 
-        # Remove metadata if optimizing
-        if optimize:
-            # Keep minimal metadata
-            if reader.metadata:
-                writer.add_metadata({
-                    'Title': reader.metadata.get('/Title', ''),
-                    'Author': reader.metadata.get('/Author', ''),
-                    'Producer': 'PDF Compressor',
-                    'Creator': reader.metadata.get('/Creator', '')
-                })
-        else:
-            # Copy all metadata
-            if reader.metadata:
-                writer.add_metadata(reader.metadata)
+        # Handle metadata - pypdf 5.0.0+ requires all keys to start with '/'
+        if reader.metadata:
+            if optimize:
+                # Keep minimal metadata with proper '/'-prefixed keys
+                metadata = {}
+                if '/Title' in reader.metadata:
+                    metadata['/Title'] = reader.metadata.get('/Title', '')
+                if '/Author' in reader.metadata:
+                    metadata['/Author'] = reader.metadata.get('/Author', '')
+                if '/Creator' in reader.metadata:
+                    metadata['/Creator'] = reader.metadata.get('/Creator', '')
+                metadata['/Producer'] = 'PDF Compressor'
+                if metadata:
+                    writer.add_metadata(metadata)
+            else:
+                # Copy all metadata, ensuring keys start with '/'
+                metadata = {}
+                for key, value in reader.metadata.items():
+                    # Ensure key starts with '/'
+                    normalized_key = key if key.startswith('/') else f'/{key}'
+                    metadata[normalized_key] = value
+                if metadata:
+                    writer.add_metadata(metadata)
 
         # Ensure output dir exists
         out_dir = os.path.dirname(output_file)
