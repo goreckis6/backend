@@ -70,7 +70,7 @@ def create_epub_from_csv(csv_file, output_file, title="CSV Data", author="Unknow
         book.set_language('en')
         book.add_author(author)
         book.add_metadata('DC', 'description', f'Data converted from CSV file: {os.path.basename(csv_file)}')
-        book.add_metadata('DC', 'publisher', 'MorphyIMG CSV to EPUB Converter')
+        book.add_metadata('DC', 'publisher', 'MorphyHub CSV to EPUB Converter')
         book.add_metadata('DC', 'date', datetime.now().strftime('%Y-%m-%d'))
         
         # Create cover page

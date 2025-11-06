@@ -23,7 +23,7 @@ providers:
 certificatesResolvers:
   letsencrypt:
     acme:
-      email: admin@morphyimg.com
+      email: admin@morphyhub.com
       storage: /letsencrypt/acme.json
       httpChallenge:
         entryPoint: web

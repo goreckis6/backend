@@ -11,7 +11,7 @@ http:
 
   routers:
     api:
-      rule: "Host(`api.morphyimg.com`)"
+      rule: "Host(`api.morphyhub.com`)"
       service: "backend"
       tls:
         certResolver: "letsencrypt"
