@@ -23065,9 +23065,9 @@ app.post('/api/youtube/transcript', async (req, res) => {
       return res.status(400).json({ error: 'Invalid video ID format' });
     }
 
-    // Validate format
+    // Validate format - always default to txt-timestamps for display
     const validFormats = ['txt', 'txt-timestamps', 'json', 'srt', 'vtt'];
-    const transcriptFormat = format || 'txt';
+    const transcriptFormat = format || 'txt-timestamps';
     if (!validFormats.includes(transcriptFormat)) {
       return res.status(400).json({ error: 'Invalid format. Supported formats: txt, txt-timestamps, json, srt, vtt' });
     }

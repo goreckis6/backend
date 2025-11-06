@@ -39,13 +39,44 @@ def get_available_languages(video_id):
     
     try:
         transcript_list = ytt_api.list(video_id)
-        for transcript in transcript_list:
-            available_languages.append({
-                'code': transcript.language_code,
-                'name': transcript.language,
-                'is_generated': transcript.is_generated
-            })
-    except Exception:
+        # transcript_list might be iterable, try to iterate over it
+        try:
+            # Try to iterate
+            for transcript in transcript_list:
+                try:
+                    # Try to access transcript attributes
+                    lang_code = getattr(transcript, 'language_code', None) or getattr(transcript, 'code', None)
+                    lang_name = getattr(transcript, 'language', None) or getattr(transcript, 'name', None)
+                    is_gen = getattr(transcript, 'is_generated', False)
+                    
+                    if lang_code and lang_name:
+                        available_languages.append({
+                            'code': lang_code,
+                            'name': lang_name,
+                            'is_generated': is_gen
+                        })
+                except Exception:
+                    # Skip individual transcript errors, continue with others
+                    continue
+        except TypeError:
+            # transcript_list might not be iterable directly, try find methods
+            try:
+                # Try common languages
+                for lang_code in ['en', 'es', 'fr', 'de', 'it', 'pt', 'ru', 'ja', 'ko', 'zh', 'sv', 'no', 'da', 'fi', 'nl']:
+                    try:
+                        transcript = transcript_list.find_transcript([lang_code])
+                        available_languages.append({
+                            'code': lang_code,
+                            'name': transcript.language if hasattr(transcript, 'language') else lang_code,
+                            'is_generated': getattr(transcript, 'is_generated', False)
+                        })
+                    except Exception:
+                        continue
+            except Exception:
+                pass
+    except Exception as e:
+        # If list() fails, return empty list - we'll try to populate it during fetch
+        # Could be VideoUnavailable, TranscriptsDisabled, or network issues
         pass
     
     return available_languages
@@ -65,30 +96,75 @@ def get_transcript(video_id, language_codes=None, return_available=False):
     # According to documentation, we need to create an instance first
     ytt_api = YouTubeTranscriptApi()
     available_languages = []
+    transcript_list_obj = None
     
     try:
-        # First, get available languages
-        available_languages = get_available_languages(video_id)
+        # First, try to get available languages by listing transcripts
+        # This also gives us the transcript_list object for later use
+        try:
+            transcript_list_obj = ytt_api.list(video_id)
+            for transcript in transcript_list_obj:
+                try:
+                    available_languages.append({
+                        'code': transcript.language_code,
+                        'name': transcript.language,
+                        'is_generated': transcript.is_generated
+                    })
+                except Exception:
+                    continue
+        except Exception:
+            # If list() fails, we'll try other methods and populate available_languages later
+            pass
         
-        # Try with preferred languages first
+        # Try with preferred languages first using fetch()
         if language_codes:
             try:
-                # fetch() returns a FetchedTranscript object
                 fetched_transcript = ytt_api.fetch(video_id, languages=language_codes)
-                # Convert to raw data (list of dicts) for easier processing
                 data = fetched_transcript.to_raw_data()
+                # If we got available_languages from list(), use them, otherwise try to get them now
+                if not available_languages and transcript_list_obj is None:
+                    try:
+                        transcript_list_obj = ytt_api.list(video_id)
+                        for transcript in transcript_list_obj:
+                            try:
+                                available_languages.append({
+                                    'code': transcript.language_code,
+                                    'name': transcript.language,
+                                    'is_generated': transcript.is_generated
+                                })
+                            except Exception:
+                                continue
+                    except Exception:
+                        pass
                 if return_available:
                     return (data, available_languages)
                 return data
-            except (NoTranscriptFound, TranscriptsDisabled):
+            except (NoTranscriptFound, TranscriptsDisabled) as e:
+                # These are expected exceptions, continue to next method
                 pass
             except Exception:
+                # Other exceptions, continue to next method
                 pass
         
-        # Try English as fallback
+        # Try English as fallback using fetch()
         try:
             fetched_transcript = ytt_api.fetch(video_id, languages=['en'])
             data = fetched_transcript.to_raw_data()
+            # Populate available_languages if we haven't yet
+            if not available_languages and transcript_list_obj is None:
+                try:
+                    transcript_list_obj = ytt_api.list(video_id)
+                    for transcript in transcript_list_obj:
+                        try:
+                            available_languages.append({
+                                'code': transcript.language_code,
+                                'name': transcript.language,
+                                'is_generated': transcript.is_generated
+                            })
+                        except Exception:
+                            continue
+                except Exception:
+                    pass
             if return_available:
                 return (data, available_languages)
             return data
@@ -97,10 +173,25 @@ def get_transcript(video_id, language_codes=None, return_available=False):
         except Exception:
             pass
         
-        # Try without language specification (defaults to English)
+        # Try without language specification (defaults to English) using fetch()
         try:
             fetched_transcript = ytt_api.fetch(video_id)
             data = fetched_transcript.to_raw_data()
+            # Populate available_languages if we haven't yet
+            if not available_languages and transcript_list_obj is None:
+                try:
+                    transcript_list_obj = ytt_api.list(video_id)
+                    for transcript in transcript_list_obj:
+                        try:
+                            available_languages.append({
+                                'code': transcript.language_code,
+                                'name': transcript.language,
+                                'is_generated': transcript.is_generated
+                            })
+                        except Exception:
+                            continue
+                except Exception:
+                    pass
             if return_available:
                 return (data, available_languages)
             return data
@@ -110,13 +201,30 @@ def get_transcript(video_id, language_codes=None, return_available=False):
             pass
         
         # If direct fetch fails, try using list() to find available transcripts
-        try:
-            transcript_list = ytt_api.list(video_id)
-            
-            # Try to find transcript in preferred languages
+        # If we already have transcript_list_obj, use it; otherwise get it
+        if transcript_list_obj is None:
+            try:
+                transcript_list_obj = ytt_api.list(video_id)
+                # Populate available_languages from transcript_list_obj
+                if not available_languages:
+                    for transcript in transcript_list_obj:
+                        try:
+                            available_languages.append({
+                                'code': transcript.language_code,
+                                'name': transcript.language,
+                                'is_generated': transcript.is_generated
+                            })
+                        except Exception:
+                            continue
+            except Exception as e:
+                # If list() fails completely, we can't get available languages
+                pass
+        
+        if transcript_list_obj:
+            # Try to find transcript in preferred languages using list()
             if language_codes:
                 try:
-                    transcript = transcript_list.find_transcript(language_codes)
+                    transcript = transcript_list_obj.find_transcript(language_codes)
                     fetched_transcript = transcript.fetch()
                     data = fetched_transcript.to_raw_data()
                     if return_available:
@@ -127,9 +235,9 @@ def get_transcript(video_id, language_codes=None, return_available=False):
                 except Exception:
                     pass
             
-            # Try English
+            # Try English using list()
             try:
-                transcript = transcript_list.find_transcript(['en'])
+                transcript = transcript_list_obj.find_transcript(['en'])
                 fetched_transcript = transcript.fetch()
                 data = fetched_transcript.to_raw_data()
                 if return_available:
@@ -140,20 +248,23 @@ def get_transcript(video_id, language_codes=None, return_available=False):
             except Exception:
                 pass
             
-            # Get any available transcript
+            # Get any available transcript from list()
             try:
-                for transcript in transcript_list:
-                    fetched_transcript = transcript.fetch()
-                    data = fetched_transcript.to_raw_data()
-                    if return_available:
-                        return (data, available_languages)
-                    return data
+                for transcript in transcript_list_obj:
+                    try:
+                        fetched_transcript = transcript.fetch()
+                        data = fetched_transcript.to_raw_data()
+                        if return_available:
+                            return (data, available_languages)
+                        return data
+                    except Exception:
+                        # Continue to next transcript
+                        continue
             except Exception:
                 pass
-        except Exception:
-            pass
         
         # If we get here, no transcript was found
+        # But we should have available_languages populated by now
         if return_available:
             raise Exception("No transcript available for this video")
         raise Exception("No transcript available for this video")
@@ -167,9 +278,14 @@ def get_transcript(video_id, language_codes=None, return_available=False):
             raise Exception("No transcript found for this video")
         raise Exception("No transcript found for this video")
     except VideoUnavailable:
+        if return_available:
+            raise Exception("Video is unavailable or doesn't exist")
         raise Exception("Video is unavailable or doesn't exist")
     except Exception as e:
-        raise Exception(f"Error fetching transcript: {str(e)}")
+        error_msg = str(e)
+        if return_available:
+            raise Exception(f"Error fetching transcript: {error_msg}")
+        raise Exception(f"Error fetching transcript: {error_msg}")
 
 def format_as_text(transcript_data, include_timestamps=False):
     """Format transcript as plain text"""
@@ -230,14 +346,35 @@ def main():
         if args.language != 'en':
             language_list.append('en')
         
+        available_languages = []
         try:
             transcript_data, available_languages = get_transcript(args.video_id, language_list, return_available=True)
         except Exception as e:
-            # Try to get available languages anyway
-            try:
-                available_languages = get_available_languages(args.video_id)
-            except:
-                available_languages = []
+            # If available_languages is empty, try multiple methods to get them
+            if not available_languages:
+                # Method 1: Try get_available_languages function
+                try:
+                    available_languages = get_available_languages(args.video_id)
+                except:
+                    pass
+                
+                # Method 2: Try direct API call
+                if not available_languages:
+                    try:
+                        ytt_api = YouTubeTranscriptApi()
+                        transcript_list = ytt_api.list(args.video_id)
+                        for transcript in transcript_list:
+                            try:
+                                available_languages.append({
+                                    'code': transcript.language_code,
+                                    'name': transcript.language,
+                                    'is_generated': transcript.is_generated
+                                })
+                            except Exception:
+                                continue
+                    except Exception:
+                        pass
+            
             error_result = {
                 'success': False,
                 'error': str(e),
