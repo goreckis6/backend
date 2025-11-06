@@ -11,10 +11,26 @@ import argparse
 # Import with error handling
 try:
     from youtube_transcript_api import YouTubeTranscriptApi
-    from youtube_transcript_api._errors import TranscriptsDisabled, NoTranscriptFound, VideoUnavailable
+    from youtube_transcript_api._errors import (
+        TranscriptsDisabled, 
+        NoTranscriptFound, 
+        VideoUnavailable,
+        TooManyRequests,
+        YouTubeRequestFailed,
+        CouldNotRetrieveTranscript
+    )
 except ImportError as e:
     print(json.dumps({"success": False, "error": f"Failed to import youtube_transcript_api: {str(e)}"}))
     sys.exit(1)
+
+# Try to import RequestBlocked if available (may not exist in all versions)
+try:
+    from youtube_transcript_api._errors import RequestBlocked, IpBlocked
+    HAS_BLOCKING_ERRORS = True
+except ImportError:
+    HAS_BLOCKING_ERRORS = False
+    RequestBlocked = type('RequestBlocked', (Exception,), {})
+    IpBlocked = type('IpBlocked', (Exception,), {})
 
 def format_time(seconds):
     """Convert seconds to SRT/VTT time format (HH:MM:SS,mmm)"""
@@ -99,32 +115,51 @@ def get_transcript(video_id, language_codes=None, return_available=False):
     transcript_list_obj = None
     last_error = None
     
+    # Log to stderr for debugging (will be visible in backend logs)
+    import sys
+    def log_debug(msg):
+        print(f"DEBUG: {msg}", file=sys.stderr)
+    
+    log_debug(f"Getting transcript for video_id: {video_id}, languages: {language_codes}")
+    
     try:
         # First, try to get available languages by listing transcripts
         # This also gives us the transcript_list object for later use
         try:
+            log_debug("Attempting to list transcripts...")
             transcript_list_obj = ytt_api.list(video_id)
+            log_debug(f"Successfully got transcript_list_obj: {type(transcript_list_obj)}")
             for transcript in transcript_list_obj:
                 try:
+                    lang_code = transcript.language_code
+                    lang_name = transcript.language
+                    is_gen = transcript.is_generated
                     available_languages.append({
-                        'code': transcript.language_code,
-                        'name': transcript.language,
-                        'is_generated': transcript.is_generated
+                        'code': lang_code,
+                        'name': lang_name,
+                        'is_generated': is_gen
                     })
+                    log_debug(f"Found language: {lang_name} ({lang_code}), generated: {is_gen}")
                 except Exception as e:
-                    last_error = str(e)
+                    last_error = f"Error processing transcript in list: {str(e)}"
+                    log_debug(f"Error processing transcript: {e}")
                     continue
+            log_debug(f"Total available languages found: {len(available_languages)}")
         except Exception as e:
             # If list() fails, we'll try other methods and populate available_languages later
-            last_error = str(e)
+            last_error = f"list() failed: {type(e).__name__}: {str(e)}"
+            log_debug(f"list() failed: {last_error}")
             # Try to continue anyway - sometimes list() fails but fetch() works
             pass
         
         # Try with preferred languages first using fetch()
         if language_codes:
             try:
+                log_debug(f"Trying fetch() with languages: {language_codes}")
                 fetched_transcript = ytt_api.fetch(video_id, languages=language_codes)
+                log_debug(f"Successfully fetched transcript with fetch()")
                 data = fetched_transcript.to_raw_data()
+                log_debug(f"Got {len(data)} transcript entries")
                 # If we got available_languages from list(), use them, otherwise try to get them now
                 if not available_languages and transcript_list_obj is None:
                     try:
@@ -146,16 +181,21 @@ def get_transcript(video_id, language_codes=None, return_available=False):
             except (NoTranscriptFound, TranscriptsDisabled) as e:
                 # These are expected exceptions, continue to next method
                 last_error = f"{type(e).__name__}: {str(e)}"
+                log_debug(f"fetch() with {language_codes} failed: {last_error}")
                 pass
             except Exception as e:
                 # Other exceptions, continue to next method
                 last_error = f"{type(e).__name__}: {str(e)}"
+                log_debug(f"fetch() with {language_codes} raised exception: {last_error}")
                 pass
         
         # Try English as fallback using fetch()
         try:
+            log_debug("Trying fetch() with English as fallback...")
             fetched_transcript = ytt_api.fetch(video_id, languages=['en'])
+            log_debug("Successfully fetched English transcript")
             data = fetched_transcript.to_raw_data()
+            log_debug(f"Got {len(data)} transcript entries")
             # Populate available_languages if we haven't yet
             if not available_languages and transcript_list_obj is None:
                 try:
@@ -176,15 +216,20 @@ def get_transcript(video_id, language_codes=None, return_available=False):
             return data
         except (NoTranscriptFound, TranscriptsDisabled) as e:
             last_error = f"{type(e).__name__}: {str(e)}"
+            log_debug(f"fetch() with English failed: {last_error}")
             pass
         except Exception as e:
             last_error = f"{type(e).__name__}: {str(e)}"
+            log_debug(f"fetch() with English raised exception: {last_error}")
             pass
         
         # Try without language specification (defaults to English) using fetch()
         try:
+            log_debug("Trying fetch() without language specification...")
             fetched_transcript = ytt_api.fetch(video_id)
+            log_debug("Successfully fetched transcript without language")
             data = fetched_transcript.to_raw_data()
+            log_debug(f"Got {len(data)} transcript entries")
             # Populate available_languages if we haven't yet
             if not available_languages and transcript_list_obj is None:
                 try:
@@ -205,9 +250,11 @@ def get_transcript(video_id, language_codes=None, return_available=False):
             return data
         except (NoTranscriptFound, TranscriptsDisabled) as e:
             last_error = f"{type(e).__name__}: {str(e)}"
+            log_debug(f"fetch() without language failed: {last_error}")
             pass
         except Exception as e:
             last_error = f"{type(e).__name__}: {str(e)}"
+            log_debug(f"fetch() without language raised exception: {last_error}")
             pass
         
         # If direct fetch fails, try using list() to find available transcripts
@@ -281,27 +328,61 @@ def get_transcript(video_id, language_codes=None, return_available=False):
         
         # If we get here, no transcript was found
         # But we should have available_languages populated by now
+        log_debug(f"All fetch() methods failed. Last error: {last_error}")
+        log_debug(f"Available languages found: {len(available_languages)}")
+        if available_languages:
+            lang_list = [f"{lang['name']} ({lang['code']})" for lang in available_languages]
+            log_debug(f"Available languages: {lang_list}")
+        
         error_msg = "No transcript available for this video"
         if last_error:
             error_msg += f" (Last error: {last_error})"
+        if available_languages:
+            lang_display = [f"{lang['name']} ({lang['code']})" for lang in available_languages[:5]]
+            error_msg += f". However, {len(available_languages)} language(s) are available: {', '.join(lang_display)}"
         if return_available:
             raise Exception(error_msg)
         raise Exception(error_msg)
         
-    except TranscriptsDisabled:
+    except TranscriptsDisabled as e:
+        log_debug(f"TranscriptsDisabled exception: {str(e)}")
         if return_available:
             raise Exception("Transcripts are disabled for this video")
         raise Exception("Transcripts are disabled for this video")
-    except NoTranscriptFound:
+    except NoTranscriptFound as e:
+        log_debug(f"NoTranscriptFound exception: {str(e)}")
         if return_available:
             raise Exception("No transcript found for this video")
         raise Exception("No transcript found for this video")
-    except VideoUnavailable:
+    except VideoUnavailable as e:
+        log_debug(f"VideoUnavailable exception: {str(e)}")
         if return_available:
             raise Exception("Video is unavailable or doesn't exist")
         raise Exception("Video is unavailable or doesn't exist")
     except Exception as e:
+        # Check if this is an IP blocking error (if available in this version)
+        if HAS_BLOCKING_ERRORS and isinstance(e, (RequestBlocked, IpBlocked)):
+            log_debug(f"IP blocking detected: {type(e).__name__}: {str(e)}")
+            error_msg = "YouTube is blocking requests from this server. This is a known issue with cloud providers. Please try again later or contact support."
+            if return_available:
+                raise Exception(error_msg)
+            raise Exception(error_msg)
+        
+        # Check for other known YouTube API errors
+        if isinstance(e, (TooManyRequests, YouTubeRequestFailed, CouldNotRetrieveTranscript)):
+            log_debug(f"YouTube API error: {type(e).__name__}: {str(e)}")
+            error_msg = f"YouTube API error: {str(e)}"
+            if return_available:
+                raise Exception(error_msg)
+            raise Exception(error_msg)
+        
+        # Check if error message suggests IP blocking
         error_msg = str(e)
+        if 'blocked' in error_msg.lower() or 'request blocked' in error_msg.lower():
+            log_debug(f"IP blocking detected (from error message): {error_msg}")
+            error_msg = "YouTube is blocking requests from this server. Please try again later."
+        
+        log_debug(f"Unexpected exception in get_transcript: {type(e).__name__}: {error_msg}")
         if return_available:
             raise Exception(f"Error fetching transcript: {error_msg}")
         raise Exception(f"Error fetching transcript: {error_msg}")
@@ -359,17 +440,32 @@ def main():
     
     args = parser.parse_args()
     
+    # Log to stderr for debugging
+    import sys
+    def log_debug(msg):
+        print(f"DEBUG: {msg}", file=sys.stderr)
+    
     try:
+        log_debug(f"=== Starting transcript extraction ===")
+        log_debug(f"Video ID: {args.video_id}")
+        log_debug(f"Requested format: {args.format}")
+        log_debug(f"Requested language: {args.language}")
+        
         # Get transcript with available languages info
         language_list = [args.language] if args.language else ['en']
         if args.language != 'en':
             language_list.append('en')
         
+        log_debug(f"Language list to try: {language_list}")
+        
         available_languages = []
         try:
             transcript_data, available_languages = get_transcript(args.video_id, language_list, return_available=True)
+            log_debug(f"Successfully got transcript with {len(transcript_data)} entries")
+            log_debug(f"Available languages: {len(available_languages)}")
         except Exception as e:
             error_message = str(e)
+            log_debug(f"get_transcript() raised exception: {type(e).__name__}: {error_message}")
             
             # If available_languages is empty, try multiple methods to get them
             if not available_languages:
