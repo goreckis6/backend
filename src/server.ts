@@ -23121,9 +23121,11 @@ app.post('/api/youtube/transcript', async (req, res) => {
       try {
         // Try to parse JSON from stdout regardless of exit code
         // The Python script returns JSON even on errors
-        if (stdout) {
+        if (stdout && stdout.trim()) {
           try {
-            const result = JSON.parse(stdout);
+            // Trim stdout to remove any whitespace/newlines
+            const trimmedStdout = stdout.trim();
+            const result = JSON.parse(trimmedStdout);
             
             if (result.success) {
               res.json({
@@ -23134,18 +23136,21 @@ app.post('/api/youtube/transcript', async (req, res) => {
                 video_id: result.video_id,
                 entries_count: result.entries_count
               });
+              return;
             } else {
               // Script returned an error in JSON format
+              console.log('YouTube Transcript: Returning 400 error:', result.error);
               res.status(400).json({
                 success: false,
                 error: result.error || 'Failed to extract transcript',
                 video_id: result.video_id || videoId
               });
+              return;
             }
-            return;
           } catch (parseError) {
             // If JSON parsing fails, fall through to generic error handling
             console.error('YouTube Transcript: Failed to parse JSON output:', parseError);
+            console.error('YouTube Transcript: Raw stdout:', stdout);
           }
         }
         
