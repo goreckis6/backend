@@ -97,6 +97,7 @@ def get_transcript(video_id, language_codes=None, return_available=False):
     ytt_api = YouTubeTranscriptApi()
     available_languages = []
     transcript_list_obj = None
+    last_error = None
     
     try:
         # First, try to get available languages by listing transcripts
@@ -110,10 +111,13 @@ def get_transcript(video_id, language_codes=None, return_available=False):
                         'name': transcript.language,
                         'is_generated': transcript.is_generated
                     })
-                except Exception:
+                except Exception as e:
+                    last_error = str(e)
                     continue
-        except Exception:
+        except Exception as e:
             # If list() fails, we'll try other methods and populate available_languages later
+            last_error = str(e)
+            # Try to continue anyway - sometimes list() fails but fetch() works
             pass
         
         # Try with preferred languages first using fetch()
@@ -141,9 +145,11 @@ def get_transcript(video_id, language_codes=None, return_available=False):
                 return data
             except (NoTranscriptFound, TranscriptsDisabled) as e:
                 # These are expected exceptions, continue to next method
+                last_error = f"{type(e).__name__}: {str(e)}"
                 pass
-            except Exception:
+            except Exception as e:
                 # Other exceptions, continue to next method
+                last_error = f"{type(e).__name__}: {str(e)}"
                 pass
         
         # Try English as fallback using fetch()
@@ -168,9 +174,11 @@ def get_transcript(video_id, language_codes=None, return_available=False):
             if return_available:
                 return (data, available_languages)
             return data
-        except (NoTranscriptFound, TranscriptsDisabled):
+        except (NoTranscriptFound, TranscriptsDisabled) as e:
+            last_error = f"{type(e).__name__}: {str(e)}"
             pass
-        except Exception:
+        except Exception as e:
+            last_error = f"{type(e).__name__}: {str(e)}"
             pass
         
         # Try without language specification (defaults to English) using fetch()
@@ -195,9 +203,11 @@ def get_transcript(video_id, language_codes=None, return_available=False):
             if return_available:
                 return (data, available_languages)
             return data
-        except (NoTranscriptFound, TranscriptsDisabled):
+        except (NoTranscriptFound, TranscriptsDisabled) as e:
+            last_error = f"{type(e).__name__}: {str(e)}"
             pass
-        except Exception:
+        except Exception as e:
+            last_error = f"{type(e).__name__}: {str(e)}"
             pass
         
         # If direct fetch fails, try using list() to find available transcripts
@@ -230,9 +240,11 @@ def get_transcript(video_id, language_codes=None, return_available=False):
                     if return_available:
                         return (data, available_languages)
                     return data
-                except (NoTranscriptFound, TranscriptsDisabled):
+                except (NoTranscriptFound, TranscriptsDisabled) as e:
+                    last_error = f"{type(e).__name__}: {str(e)}"
                     pass
-                except Exception:
+                except Exception as e:
+                    last_error = f"{type(e).__name__}: {str(e)}"
                     pass
             
             # Try English using list()
@@ -243,9 +255,11 @@ def get_transcript(video_id, language_codes=None, return_available=False):
                 if return_available:
                     return (data, available_languages)
                 return data
-            except (NoTranscriptFound, TranscriptsDisabled):
+            except (NoTranscriptFound, TranscriptsDisabled) as e:
+                last_error = f"{type(e).__name__}: {str(e)}"
                 pass
-            except Exception:
+            except Exception as e:
+                last_error = f"{type(e).__name__}: {str(e)}"
                 pass
             
             # Get any available transcript from list()
@@ -257,17 +271,22 @@ def get_transcript(video_id, language_codes=None, return_available=False):
                         if return_available:
                             return (data, available_languages)
                         return data
-                    except Exception:
+                    except Exception as e:
                         # Continue to next transcript
+                        last_error = f"{type(e).__name__}: {str(e)}"
                         continue
-            except Exception:
+            except Exception as e:
+                last_error = f"{type(e).__name__}: {str(e)}"
                 pass
         
         # If we get here, no transcript was found
         # But we should have available_languages populated by now
+        error_msg = "No transcript available for this video"
+        if last_error:
+            error_msg += f" (Last error: {last_error})"
         if return_available:
-            raise Exception("No transcript available for this video")
-        raise Exception("No transcript available for this video")
+            raise Exception(error_msg)
+        raise Exception(error_msg)
         
     except TranscriptsDisabled:
         if return_available:
@@ -350,34 +369,46 @@ def main():
         try:
             transcript_data, available_languages = get_transcript(args.video_id, language_list, return_available=True)
         except Exception as e:
+            error_message = str(e)
+            
             # If available_languages is empty, try multiple methods to get them
             if not available_languages:
                 # Method 1: Try get_available_languages function
                 try:
                     available_languages = get_available_languages(args.video_id)
-                except:
-                    pass
-                
-                # Method 2: Try direct API call
-                if not available_languages:
+                except Exception as e2:
+                    # If that fails, try direct API call
                     try:
                         ytt_api = YouTubeTranscriptApi()
                         transcript_list = ytt_api.list(args.video_id)
                         for transcript in transcript_list:
                             try:
-                                available_languages.append({
-                                    'code': transcript.language_code,
-                                    'name': transcript.language,
-                                    'is_generated': transcript.is_generated
-                                })
+                                lang_code = getattr(transcript, 'language_code', None) or getattr(transcript, 'code', None)
+                                lang_name = getattr(transcript, 'language', None) or getattr(transcript, 'name', None)
+                                is_gen = getattr(transcript, 'is_generated', False)
+                                if lang_code:
+                                    available_languages.append({
+                                        'code': lang_code,
+                                        'name': lang_name or lang_code,
+                                        'is_generated': is_gen
+                                    })
                             except Exception:
                                 continue
-                    except Exception:
-                        pass
+                    except Exception as e3:
+                        # Last attempt: try to fetch without language to see if any transcript exists
+                        try:
+                            # Try fetching with no language to get default
+                            fetched = ytt_api.fetch(args.video_id)
+                            # If we get here, transcript exists but we couldn't list languages
+                            # At least we know transcripts are available
+                            error_message = f"Transcript exists but couldn't list languages. Original error: {error_message}"
+                        except Exception as e4:
+                            # All methods failed
+                            pass
             
             error_result = {
                 'success': False,
-                'error': str(e),
+                'error': error_message,
                 'video_id': args.video_id,
                 'available_languages': available_languages
             }
