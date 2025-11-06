@@ -281,37 +281,129 @@ def get_transcript(video_id, language_codes=None):
 
 def format_as_text(transcript_data, include_timestamps=False):
     """Format transcript as plain text"""
+    # Handle both list of dicts and FetchedTranscriptSnippet object
+    if not isinstance(transcript_data, list):
+        # If it's an object, try to convert it to a list
+        if hasattr(transcript_data, '__iter__'):
+            transcript_data = list(transcript_data)
+        elif hasattr(transcript_data, 'text') and hasattr(transcript_data, 'start'):
+            # Single item object
+            transcript_data = [transcript_data]
+        else:
+            # Try to get data attribute
+            if hasattr(transcript_data, 'data'):
+                transcript_data = transcript_data.data
+            elif hasattr(transcript_data, 'transcript'):
+                transcript_data = transcript_data.transcript
+    
     if include_timestamps:
         lines = []
         for item in transcript_data:
-            start_time = format_time(item['start']).replace(',', ':')
-            text = item['text'].strip()
+            # Handle both dict and object
+            if isinstance(item, dict):
+                start_time = format_time(item['start']).replace(',', ':')
+                text = item['text'].strip()
+            else:
+                # Object with attributes
+                start = getattr(item, 'start', getattr(item, 'timestamp', 0))
+                text = getattr(item, 'text', getattr(item, 'content', '')).strip()
+                start_time = format_time(start).replace(',', ':')
             lines.append(f"[{start_time}] {text}")
         return '\n'.join(lines)
     else:
-        return '\n'.join([item['text'].strip() for item in transcript_data])
+        result = []
+        for item in transcript_data:
+            if isinstance(item, dict):
+                result.append(item['text'].strip())
+            else:
+                text = getattr(item, 'text', getattr(item, 'content', '')).strip()
+                result.append(text)
+        return '\n'.join(result)
 
 def format_as_json(transcript_data):
     """Format transcript as JSON"""
-    return json.dumps(transcript_data, indent=2, ensure_ascii=False)
+    # Convert object to list of dicts if needed
+    if not isinstance(transcript_data, list):
+        if hasattr(transcript_data, '__iter__'):
+            transcript_data = list(transcript_data)
+        elif hasattr(transcript_data, 'text') and hasattr(transcript_data, 'start'):
+            transcript_data = [transcript_data]
+        elif hasattr(transcript_data, 'data'):
+            transcript_data = transcript_data.data
+        elif hasattr(transcript_data, 'transcript'):
+            transcript_data = transcript_data.transcript
+    
+    # Convert objects to dicts
+    result = []
+    for item in transcript_data:
+        if isinstance(item, dict):
+            result.append(item)
+        else:
+            # Convert object to dict
+            item_dict = {
+                'text': getattr(item, 'text', getattr(item, 'content', '')),
+                'start': getattr(item, 'start', getattr(item, 'timestamp', 0)),
+                'duration': getattr(item, 'duration', getattr(item, 'dur', 3.0))
+            }
+            result.append(item_dict)
+    
+    return json.dumps(result, indent=2, ensure_ascii=False)
 
 def format_as_srt(transcript_data):
     """Format transcript as SRT subtitle format"""
+    # Convert object to list if needed
+    if not isinstance(transcript_data, list):
+        if hasattr(transcript_data, '__iter__'):
+            transcript_data = list(transcript_data)
+        elif hasattr(transcript_data, 'text') and hasattr(transcript_data, 'start'):
+            transcript_data = [transcript_data]
+        elif hasattr(transcript_data, 'data'):
+            transcript_data = transcript_data.data
+        elif hasattr(transcript_data, 'transcript'):
+            transcript_data = transcript_data.transcript
+    
     srt_lines = []
     for index, item in enumerate(transcript_data, start=1):
-        start_time = format_time(item['start'])
-        end_time = format_time(item['start'] + item.get('duration', 3.0))
-        text = item['text'].strip().replace('\n', ' ')
+        if isinstance(item, dict):
+            start = item['start']
+            duration = item.get('duration', 3.0)
+            text = item['text'].strip().replace('\n', ' ')
+        else:
+            start = getattr(item, 'start', getattr(item, 'timestamp', 0))
+            duration = getattr(item, 'duration', getattr(item, 'dur', 3.0))
+            text = getattr(item, 'text', getattr(item, 'content', '')).strip().replace('\n', ' ')
+        
+        start_time = format_time(start)
+        end_time = format_time(start + duration)
         srt_lines.append(f"{index}\n{start_time} --> {end_time}\n{text}\n")
     return '\n'.join(srt_lines)
 
 def format_as_vtt(transcript_data):
     """Format transcript as VTT subtitle format"""
+    # Convert object to list if needed
+    if not isinstance(transcript_data, list):
+        if hasattr(transcript_data, '__iter__'):
+            transcript_data = list(transcript_data)
+        elif hasattr(transcript_data, 'text') and hasattr(transcript_data, 'start'):
+            transcript_data = [transcript_data]
+        elif hasattr(transcript_data, 'data'):
+            transcript_data = transcript_data.data
+        elif hasattr(transcript_data, 'transcript'):
+            transcript_data = transcript_data.transcript
+    
     vtt_lines = ["WEBVTT", ""]
     for item in transcript_data:
-        start_time = format_time_vtt(item['start'])
-        end_time = format_time_vtt(item['start'] + item.get('duration', 3.0))
-        text = item['text'].strip().replace('\n', ' ')
+        if isinstance(item, dict):
+            start = item['start']
+            duration = item.get('duration', 3.0)
+            text = item['text'].strip().replace('\n', ' ')
+        else:
+            start = getattr(item, 'start', getattr(item, 'timestamp', 0))
+            duration = getattr(item, 'duration', getattr(item, 'dur', 3.0))
+            text = getattr(item, 'text', getattr(item, 'content', '')).strip().replace('\n', ' ')
+        
+        start_time = format_time_vtt(start)
+        end_time = format_time_vtt(start + duration)
         vtt_lines.append(f"{start_time} --> {end_time}\n{text}")
     return '\n'.join(vtt_lines)
 
@@ -332,6 +424,28 @@ def main():
         
         transcript_data = get_transcript(args.video_id, language_list)
         
+        # Normalize transcript_data to a list format
+        # Handle FetchedTranscriptSnippet or other object types
+        if not isinstance(transcript_data, list):
+            try:
+                # Try to convert to list if it's iterable
+                if hasattr(transcript_data, '__iter__'):
+                    transcript_data = list(transcript_data)
+                # If it has a data attribute, use that
+                elif hasattr(transcript_data, 'data'):
+                    transcript_data = transcript_data.data
+                    if not isinstance(transcript_data, list):
+                        transcript_data = list(transcript_data) if hasattr(transcript_data, '__iter__') else [transcript_data]
+                # If it's a single object with text/start, wrap it in a list
+                elif hasattr(transcript_data, 'text') or hasattr(transcript_data, 'start'):
+                    transcript_data = [transcript_data]
+                else:
+                    # Last resort: try to iterate and convert
+                    transcript_data = [item for item in transcript_data] if hasattr(transcript_data, '__iter__') else [transcript_data]
+            except Exception:
+                # If conversion fails, wrap in list
+                transcript_data = [transcript_data] if transcript_data else []
+        
         # Format based on requested format
         if args.format == 'txt':
             output = format_as_text(transcript_data, include_timestamps=False)
@@ -349,6 +463,16 @@ def main():
             output = format_as_vtt(transcript_data)
             content_type = 'text/vtt'
         
+        # Get entries count - handle both list and object
+        if isinstance(transcript_data, list):
+            entries_count = len(transcript_data)
+        elif hasattr(transcript_data, '__len__'):
+            entries_count = len(transcript_data)
+        elif hasattr(transcript_data, '__iter__'):
+            entries_count = len(list(transcript_data))
+        else:
+            entries_count = 1
+        
         # Return as JSON for API
         result = {
             'success': True,
@@ -356,7 +480,7 @@ def main():
             'content': output,
             'content_type': content_type,
             'video_id': args.video_id,
-            'entries_count': len(transcript_data)
+            'entries_count': entries_count
         }
         
         print(json.dumps(result))
