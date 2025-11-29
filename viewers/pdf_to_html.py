@@ -175,10 +175,9 @@ def convert_pdf_to_html(pdf_file, output_file):
             right: 0;
             bottom: 0;
             overflow: auto;
-            background: #f3f4f6;
+            background: #525252;
             display: flex;
             justify-content: center;
-            align-items: flex-start;
             padding: 20px;
             scroll-behavior: smooth;
         }}
@@ -189,18 +188,18 @@ def convert_pdf_to_html(pdf_file, output_file):
         }}
         
         .canvas-container::-webkit-scrollbar-track {{
-            background: #e5e7eb;
+            background: #404040;
             border-radius: 6px;
         }}
         
         .canvas-container::-webkit-scrollbar-thumb {{
-            background: #9ca3af;
+            background: #666;
             border-radius: 6px;
-            border: 2px solid #e5e7eb;
+            border: 2px solid #404040;
         }}
         
         .canvas-container::-webkit-scrollbar-thumb:hover {{
-            background: #6b7280;
+            background: #777;
         }}
         
         #pdf-canvas {{
