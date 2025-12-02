@@ -7999,32 +7999,54 @@ app.post('/api/preview/docx', uploadDocument.single('file'), async (req, res) =>
       
       if (!content) return [''];
       
-      // Try to find block-level elements using a better regex
+      // Try to find block-level elements
       const blockElements: string[] = [];
       
-      // Match block elements (including self-closing tags)
-      const blockTagPattern = /<(p|div|h[1-6]|table|ul|ol|blockquote|pre|hr|section|article|header|footer|nav|aside)[^>]*(?:\/>|>[\s\S]*?<\/\1>)/gi;
+      // First, extract tables separately (they can be large)
+      const tableRegex = /<table[^>]*>[\s\S]*?<\/table>/gi;
+      const tables: Array<{content: string, index: number}> = [];
+      let tableMatch;
       
-      let lastIndex = 0;
-      let match;
-      
-      while ((match = blockTagPattern.exec(content)) !== null) {
-        // Add any text before this element
-        if (match.index > lastIndex) {
-          const textBefore = content.substring(lastIndex, match.index).trim();
-          if (textBefore && textBefore.length > 10) { // Only add if substantial
-            blockElements.push(textBefore);
-          }
-        }
-        blockElements.push(match[0]);
-        lastIndex = match.index + match[0].length;
+      while ((tableMatch = tableRegex.exec(content)) !== null) {
+        tables.push({content: tableMatch[0], index: tableMatch.index});
       }
       
-      // Add remaining content
-      if (lastIndex < content.length) {
-        const remaining = content.substring(lastIndex).trim();
-        if (remaining && remaining.length > 10) {
-          blockElements.push(remaining);
+      // Now extract other block elements, avoiding tables
+      let lastIndex = 0;
+      
+      // Process content between tables
+      for (let i = 0; i <= tables.length; i++) {
+        const startIdx = i === 0 ? 0 : tables[i - 1].index + tables[i - 1].content.length;
+        const endIdx = i === tables.length ? content.length : tables[i].index;
+        const segment = content.substring(startIdx, endIdx);
+        
+        // Extract block elements from this segment
+        const blockTagPattern = /<(p|div|h[1-6]|ul|ol|blockquote|pre|hr|section|article|header|footer|nav|aside)[^>]*>[\s\S]*?<\/\1>/gi;
+        let match;
+        let segLastIndex = 0;
+        
+        while ((match = blockTagPattern.exec(segment)) !== null) {
+          if (match.index > segLastIndex) {
+            const textBefore = segment.substring(segLastIndex, match.index).trim();
+            if (textBefore && textBefore.length > 5) {
+              blockElements.push(textBefore);
+            }
+          }
+          blockElements.push(match[0]);
+          segLastIndex = match.index + match[0].length;
+        }
+        
+        // Add remaining text from segment
+        if (segLastIndex < segment.length) {
+          const remaining = segment.substring(segLastIndex).trim();
+          if (remaining && remaining.length > 5) {
+            blockElements.push(remaining);
+          }
+        }
+        
+        // Add table after processing segment
+        if (i < tables.length) {
+          blockElements.push(tables[i].content);
         }
       }
       
