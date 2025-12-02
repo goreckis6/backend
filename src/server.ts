@@ -7978,150 +7978,148 @@ app.post('/api/preview/docx', uploadDocument.single('file'), async (req, res) =>
       outputLength: html.length
     });
 
-    // Send HTML wrapped in a styled document with A4 page layout
-    const styledHtml = `
-      <!DOCTYPE html>
-      <html>
-      <head>
-        <meta charset="UTF-8">
-        <title>${file.originalname}</title>
-        <style>
-          * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-          }
-          body {
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            background: #525659;
-            color: #333;
-            line-height: 1.6;
-            padding: 20px 0;
-          }
-          .toolbar {
-            position: sticky;
-            top: 0;
-            background: #2c3e50;
-            color: white;
-            padding: 15px 20px;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            box-shadow: 0 2px 8px rgba(0,0,0,0.2);
-            z-index: 1000;
-          }
-          .toolbar button {
-            background: #3498db;
-            color: white;
-            border: none;
-            padding: 8px 16px;
-            border-radius: 4px;
-            cursor: pointer;
-            margin-left: 10px;
-            font-size: 14px;
-          }
-          .toolbar button:hover {
-            background: #2980b9;
-          }
-          .page-container {
-            max-width: 210mm;
-            margin: 20px auto;
-            padding: 0 10px;
-          }
-          .page {
-            width: 210mm;
-            min-height: 297mm;
-            padding: 20mm;
-            margin-bottom: 20px;
-            background: white;
-            box-shadow: 0 0 10px rgba(0,0,0,0.3);
-            page-break-after: always;
-          }
-          .page:last-child {
-            margin-bottom: 0;
-          }
-          h1, h2, h3, h4, h5, h6 {
-            margin-top: 1.2em;
-            margin-bottom: 0.6em;
-            color: #2c3e50;
-            page-break-after: avoid;
-          }
-          h1 { font-size: 2em; }
-          h2 { font-size: 1.5em; }
-          h3 { font-size: 1.17em; }
-          p { 
-            margin-bottom: 1em;
-            text-align: justify;
-          }
-          table {
-            border-collapse: collapse;
-            width: 100%;
-            margin: 1em 0;
-            page-break-inside: avoid;
-          }
-          table, th, td {
-            border: 1px solid #ddd;
-          }
-          th, td {
-            padding: 8px 12px;
-            text-align: left;
-          }
-          th {
-            background-color: #f8f9fa;
-            font-weight: bold;
-          }
-          img {
-            max-width: 100%;
-            height: auto;
-            page-break-inside: avoid;
-          }
-          ul, ol {
-            margin-left: 2em;
-            margin-bottom: 1em;
-          }
-          li {
-            margin-bottom: 0.5em;
-          }
-          @media print {
-            body {
-              background: white;
-              padding: 0;
-            }
-            .toolbar {
-              display: none;
-            }
-            .page-container {
-              max-width: 100%;
-              margin: 0;
-              padding: 0;
-            }
-            .page {
-              margin: 0;
-              box-shadow: none;
-              page-break-after: always;
-            }
-          }
-        </style>
-      </head>
-      <body>
-        <div class="toolbar">
-          <span><strong>📄 ${file.originalname}</strong></span>
-          <div>
-            <button onclick="window.print()">🖨️ Print</button>
-            <button onclick="window.close()">✖️ Close</button>
-          </div>
-        </div>
-        <div class="page-container">
-          <div class="page">
-            ${html}
-          </div>
-        </div>
-      </body>
-      </html>
-    `;
+    // Extract body content from HTML
+    let bodyContent = html;
+    const bodyMatch = html.match(/<body[^>]*>([\s\S]*)<\/body>/i);
+    if (bodyMatch && bodyMatch[1]) {
+      bodyContent = bodyMatch[1];
+    } else {
+      // Remove HTML/HEAD tags if present
+      bodyContent = html.replace(/<html[^>]*>[\s\S]*?<body[^>]*>/i, '').replace(/<\/body>[\s\S]*?<\/html>/i, '');
+      bodyContent = bodyContent.replace(/<head[^>]*>[\s\S]*?<\/head>/i, '');
+    }
 
-    res.set('Content-Type', 'text/html');
-    res.send(styledHtml);
+    // Split content into A4 pages
+    // A4 page: 210mm x 297mm, content area: ~170mm x ~257mm (with 20mm padding)
+    // Estimate: ~2000-2500 characters per page or ~12-15 paragraphs
+    const splitIntoPages = (content: string): string[] => {
+      // Remove scripts and styles
+      content = content.replace(/<script[\s\S]*?<\/script>/gi, '').replace(/<style[\s\S]*?<\/style>/gi, '');
+      content = content.trim();
+      
+      if (!content) return [''];
+      
+      // Try to find block-level elements using a better regex
+      const blockElements: string[] = [];
+      
+      // Match block elements (including self-closing tags)
+      const blockTagPattern = /<(p|div|h[1-6]|table|ul|ol|blockquote|pre|hr|section|article|header|footer|nav|aside)[^>]*(?:\/>|>[\s\S]*?<\/\1>)/gi;
+      
+      let lastIndex = 0;
+      let match;
+      
+      while ((match = blockTagPattern.exec(content)) !== null) {
+        // Add any text before this element
+        if (match.index > lastIndex) {
+          const textBefore = content.substring(lastIndex, match.index).trim();
+          if (textBefore && textBefore.length > 10) { // Only add if substantial
+            blockElements.push(textBefore);
+          }
+        }
+        blockElements.push(match[0]);
+        lastIndex = match.index + match[0].length;
+      }
+      
+      // Add remaining content
+      if (lastIndex < content.length) {
+        const remaining = content.substring(lastIndex).trim();
+        if (remaining && remaining.length > 10) {
+          blockElements.push(remaining);
+        }
+      }
+      
+      // If no block elements found, try splitting by tables and paragraphs separately
+      if (blockElements.length === 0) {
+        // Try to find tables first
+        const tableRegex = /<table[^>]*>[\s\S]*?<\/table>/gi;
+        const tables: string[] = [];
+        let tableMatch;
+        let tableLastIndex = 0;
+        
+        while ((tableMatch = tableRegex.exec(content)) !== null) {
+          if (tableMatch.index > tableLastIndex) {
+            const beforeTable = content.substring(tableLastIndex, tableMatch.index).trim();
+            if (beforeTable) {
+              // Split non-table content by paragraphs
+              const paras = beforeTable.split(/(<p[^>]*>[\s\S]*?<\/p>)/gi).filter(p => p.trim());
+              blockElements.push(...paras);
+            }
+          }
+          blockElements.push(tableMatch[0]);
+          tableLastIndex = tableMatch.index + tableMatch[0].length;
+        }
+        
+        if (tableLastIndex < content.length) {
+          const remaining = content.substring(tableLastIndex).trim();
+          if (remaining) {
+            const paras = remaining.split(/(<p[^>]*>[\s\S]*?<\/p>)/gi).filter(p => p.trim());
+            blockElements.push(...paras);
+          }
+        }
+      }
+      
+      // If still no elements, split by character count with smart breaks
+      if (blockElements.length === 0) {
+        const charsPerPage = 2200; // Conservative estimate
+        const pages: string[] = [];
+        
+        // Try to break at paragraph boundaries
+        const paraRegex = /<p[^>]*>[\s\S]*?<\/p>/gi;
+        let paraMatch;
+        let currentPage = '';
+        let currentPageLength = 0;
+        
+        while ((paraMatch = paraRegex.exec(content)) !== null) {
+          const para = paraMatch[0];
+          if (currentPageLength + para.length > charsPerPage && currentPage.length > 0) {
+            pages.push(currentPage);
+            currentPage = para;
+            currentPageLength = para.length;
+          } else {
+            currentPage += para;
+            currentPageLength += para.length;
+          }
+        }
+        
+        if (currentPage) {
+          pages.push(currentPage);
+        }
+        
+        // If no paragraphs found, split by character count
+        if (pages.length === 0) {
+          for (let i = 0; i < content.length; i += charsPerPage) {
+            pages.push(content.substring(i, i + charsPerPage));
+          }
+        }
+        
+        return pages.length > 0 ? pages : [content];
+      }
+      
+      // Distribute block elements across pages
+      // Estimate pages needed: assume ~12-15 elements per page
+      const estimatedPages = Math.max(1, Math.ceil(blockElements.length / 12));
+      const elementsPerPage = Math.max(1, Math.ceil(blockElements.length / estimatedPages));
+      const pages: string[] = [];
+      
+      for (let i = 0; i < blockElements.length; i += elementsPerPage) {
+        const pageContent = blockElements.slice(i, i + elementsPerPage).join('\n');
+        pages.push(pageContent);
+      }
+      
+      return pages.length > 0 ? pages : [content];
+    };
+
+    const pages = splitIntoPages(bodyContent);
+    console.log(`Split content into ${pages.length} A4 pages`);
+
+    // Generate page HTML using .docx-a4-page class (matches frontend expectations)
+    const pagesHtml = pages.map((pageContent, index) => 
+      `<div class="docx-a4-page" data-page="${index + 1}">${pageContent}</div>`
+    ).join('\n');
+
+    // Return just the body content with pages split (frontend will wrap it)
+    res.set('Content-Type', 'text/html; charset=utf-8');
+    res.send(pagesHtml);
 
   } catch (error) {
     console.error('DOCX preview error:', error);
