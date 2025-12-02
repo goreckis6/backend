@@ -7989,6 +7989,64 @@ app.post('/api/preview/docx', uploadDocument.single('file'), async (req, res) =>
       bodyContent = bodyContent.replace(/<head[^>]*>[\s\S]*?<\/head>/i, '');
     }
 
+    // Helper function to split large tables by rows
+    const splitTable = (tableHtml: string, maxRowsPerPage: number = 20): string[] => {
+      // Extract table structure
+      const tableMatch = tableHtml.match(/<table[^>]*>([\s\S]*)<\/table>/i);
+      if (!tableMatch) return [tableHtml];
+      
+      const tableAttrs = tableHtml.match(/<table([^>]*)>/i)?.[1] || '';
+      const tableContent = tableMatch[1];
+      
+      // Extract thead (header) if present
+      const theadMatch = tableContent.match(/<thead[^>]*>([\s\S]*?)<\/thead>/i);
+      let thead = theadMatch ? `<thead>${theadMatch[1]}</thead>` : '';
+      let headerRow: string | null = null;
+      
+      // Extract tbody or all rows
+      const tbodyMatch = tableContent.match(/<tbody[^>]*>([\s\S]*?)<\/tbody>/i);
+      let rowsContent = tbodyMatch ? tbodyMatch[1] : tableContent.replace(/<thead[^>]*>[\s\S]*?<\/thead>/i, '');
+      
+      // Extract all rows (tr elements)
+      const rowRegex = /<tr[^>]*>[\s\S]*?<\/tr>/gi;
+      const rows: string[] = [];
+      let rowMatch;
+      
+      while ((rowMatch = rowRegex.exec(rowsContent)) !== null) {
+        rows.push(rowMatch[0]);
+      }
+      
+      // If no thead, use first row as header
+      if (!thead && rows.length > 0) {
+        headerRow = rows[0];
+        // Check if first row looks like a header (has th tags)
+        if (headerRow.includes('<th')) {
+          thead = `<thead>${headerRow}</thead>`;
+          rows.shift(); // Remove header row from data rows
+        } else {
+          headerRow = null; // Not a header row, keep it in data
+        }
+      }
+      
+      // If table has few rows, return as-is
+      if (rows.length <= maxRowsPerPage) {
+        return [tableHtml];
+      }
+      
+      // Split rows into chunks
+      const tablePages: string[] = [];
+      for (let i = 0; i < rows.length; i += maxRowsPerPage) {
+        const pageRows = rows.slice(i, i + maxRowsPerPage);
+        const tbody = `<tbody>${pageRows.join('\n')}</tbody>`;
+        // Include thead on each page, or headerRow if we extracted it
+        const header = thead || (headerRow ? `<thead>${headerRow}</thead>` : '');
+        const splitTable = `<table${tableAttrs}>${header}${tbody}</table>`;
+        tablePages.push(splitTable);
+      }
+      
+      return tablePages.length > 0 ? tablePages : [tableHtml];
+    };
+    
     // Split content into A4 pages
     // A4 page: 210mm x 297mm, content area: ~170mm x ~257mm (with 20mm padding)
     // Estimate: ~2000-2500 characters per page or ~12-15 paragraphs
@@ -8004,11 +8062,29 @@ app.post('/api/preview/docx', uploadDocument.single('file'), async (req, res) =>
       
       // First, extract tables separately (they can be large)
       const tableRegex = /<table[^>]*>[\s\S]*?<\/table>/gi;
-      const tables: Array<{content: string, index: number}> = [];
+      const tables: Array<{content: string, index: number, splitTables?: string[]}> = [];
       let tableMatch;
       
       while ((tableMatch = tableRegex.exec(content)) !== null) {
-        tables.push({content: tableMatch[0], index: tableMatch.index});
+        const tableHtml = tableMatch[0];
+        // Check if table is large (rough estimate: more than 2000 chars or has many rows)
+        const rowCount = (tableHtml.match(/<tr[^>]*>/gi) || []).length;
+        const isLargeTable = tableHtml.length > 2000 || rowCount > 25;
+        
+        if (isLargeTable) {
+          // Estimate columns to determine rows per page
+          // More columns = fewer rows per page
+          const firstRowMatch = tableHtml.match(/<tr[^>]*>([\s\S]*?)<\/tr>/i);
+          const colCount = firstRowMatch ? (firstRowMatch[1].match(/<(th|td)[^>]*>/gi) || []).length : 3;
+          // Adjust rows per page: 3 cols = 25 rows, 6 cols = 15 rows, 9+ cols = 10 rows
+          const rowsPerPage = colCount <= 3 ? 25 : colCount <= 6 ? 15 : 10;
+          
+          // Split the table
+          const splitTables = splitTable(tableHtml, rowsPerPage);
+          tables.push({content: tableHtml, index: tableMatch.index, splitTables});
+        } else {
+          tables.push({content: tableHtml, index: tableMatch.index});
+        }
       }
       
       // Now extract other block elements, avoiding tables
@@ -8044,9 +8120,14 @@ app.post('/api/preview/docx', uploadDocument.single('file'), async (req, res) =>
           }
         }
         
-        // Add table after processing segment
+        // Add table(s) after processing segment
         if (i < tables.length) {
-          blockElements.push(tables[i].content);
+          if (tables[i].splitTables && tables[i].splitTables.length > 0) {
+            // Add split tables as separate elements
+            blockElements.push(...tables[i].splitTables);
+          } else {
+            blockElements.push(tables[i].content);
+          }
         }
       }
       
@@ -8118,14 +8199,33 @@ app.post('/api/preview/docx', uploadDocument.single('file'), async (req, res) =>
       }
       
       // Distribute block elements across pages
-      // Estimate pages needed: assume ~12-15 elements per page
-      const estimatedPages = Math.max(1, Math.ceil(blockElements.length / 12));
-      const elementsPerPage = Math.max(1, Math.ceil(blockElements.length / estimatedPages));
-      const pages: string[] = [];
+      // Estimate pages based on content size, not just element count
+      const totalChars = blockElements.reduce((sum, el) => sum + el.length, 0);
+      const charsPerPage = 2200; // Conservative estimate
+      const estimatedPages = Math.max(1, Math.ceil(totalChars / charsPerPage));
       
-      for (let i = 0; i < blockElements.length; i += elementsPerPage) {
-        const pageContent = blockElements.slice(i, i + elementsPerPage).join('\n');
-        pages.push(pageContent);
+      // Distribute elements across pages, trying to balance content size
+      const pages: string[] = [];
+      let currentPage: string[] = [];
+      let currentPageSize = 0;
+      
+      for (const element of blockElements) {
+        const elementSize = element.length;
+        
+        // If adding this element would exceed page size and we already have content, start new page
+        if (currentPageSize + elementSize > charsPerPage && currentPage.length > 0) {
+          pages.push(currentPage.join('\n'));
+          currentPage = [element];
+          currentPageSize = elementSize;
+        } else {
+          currentPage.push(element);
+          currentPageSize += elementSize;
+        }
+      }
+      
+      // Add remaining content
+      if (currentPage.length > 0) {
+        pages.push(currentPage.join('\n'));
       }
       
       return pages.length > 0 ? pages : [content];
