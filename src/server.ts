@@ -8029,14 +8029,23 @@ app.post('/api/preview/docx', uploadDocument.single('file'), async (req, res) =>
       }
       
       // If table has few rows, return as-is
-      if (rows.length <= maxRowsPerPage) {
+      // But if it's very wide (many columns), still split it
+      const firstRowMatch = tableHtml.match(/<tr[^>]*>([\s\S]*?)<\/tr>/i);
+      const colCount = firstRowMatch ? (firstRowMatch[1].match(/<(th|td)[^>]*>/gi) || []).length : 3;
+      const isWideTable = colCount >= 6;
+      
+      // For wide tables, always split even if row count is low
+      if (rows.length <= maxRowsPerPage && !isWideTable) {
         return [tableHtml];
       }
       
+      // For wide tables with few rows, use smaller maxRowsPerPage
+      const actualMaxRows = isWideTable && rows.length <= maxRowsPerPage ? Math.max(3, Math.floor(rows.length / 2)) : maxRowsPerPage;
+      
       // Split rows into chunks
       const tablePages: string[] = [];
-      for (let i = 0; i < rows.length; i += maxRowsPerPage) {
-        const pageRows = rows.slice(i, i + maxRowsPerPage);
+      for (let i = 0; i < rows.length; i += actualMaxRows) {
+        const pageRows = rows.slice(i, i + actualMaxRows);
         const tbody = `<tbody>${pageRows.join('\n')}</tbody>`;
         // Include thead on each page, or headerRow if we extracted it
         const header = thead || (headerRow ? `<thead>${headerRow}</thead>` : '');
@@ -8061,31 +8070,47 @@ app.post('/api/preview/docx', uploadDocument.single('file'), async (req, res) =>
       const blockElements: string[] = [];
       
       // First, extract tables separately (they can be large)
+      // Use a more robust regex that handles nested content
       const tableRegex = /<table[^>]*>[\s\S]*?<\/table>/gi;
       const tables: Array<{content: string, index: number, splitTables?: string[]}> = [];
       let tableMatch;
+      let tableCount = 0;
       
       while ((tableMatch = tableRegex.exec(content)) !== null) {
+        tableCount++;
         const tableHtml = tableMatch[0];
-        // Check if table is large (rough estimate: more than 2000 chars or has many rows)
+        // Count rows in table
         const rowCount = (tableHtml.match(/<tr[^>]*>/gi) || []).length;
-        const isLargeTable = tableHtml.length > 2000 || rowCount > 25;
         
-        if (isLargeTable) {
+        // ALWAYS split tables with more than 10 rows (very aggressive)
+        // For tables with many columns, split even smaller tables
+        const firstRowMatch = tableHtml.match(/<tr[^>]*>([\s\S]*?)<\/tr>/i);
+        const colCount = firstRowMatch ? (firstRowMatch[1].match(/<(th|td)[^>]*>/gi) || []).length : 3;
+        
+        // ALWAYS split tables with more than 5 rows (very aggressive)
+        // More columns = split even smaller tables
+        const shouldSplit = rowCount > 5 || (colCount >= 6 && rowCount > 3) || (colCount >= 9 && rowCount > 2);
+        
+        if (shouldSplit || rowCount > 3) { // Split if more than 3 rows
           // Estimate columns to determine rows per page
           // More columns = fewer rows per page
-          const firstRowMatch = tableHtml.match(/<tr[^>]*>([\s\S]*?)<\/tr>/i);
-          const colCount = firstRowMatch ? (firstRowMatch[1].match(/<(th|td)[^>]*>/gi) || []).length : 3;
-          // Adjust rows per page: 3 cols = 25 rows, 6 cols = 15 rows, 9+ cols = 10 rows
-          const rowsPerPage = colCount <= 3 ? 25 : colCount <= 6 ? 15 : 10;
+          // Very aggressive: 3 cols = 12 rows, 6 cols = 6 rows, 9+ cols = 4 rows
+          const rowsPerPage = colCount <= 3 ? 12 : colCount <= 6 ? 6 : 4;
+          
+          console.log(`Splitting table: ${rowCount} rows, ${colCount} columns, ${rowsPerPage} rows per page`);
           
           // Split the table
           const splitTables = splitTable(tableHtml, rowsPerPage);
+          console.log(`Table split into ${splitTables.length} parts`);
           tables.push({content: tableHtml, index: tableMatch.index, splitTables});
         } else {
           tables.push({content: tableHtml, index: tableMatch.index});
         }
       }
+      
+      console.log(`Found ${tableCount} table(s) in content`);
+      const splitTableCount = tables.filter(t => t.splitTables).length;
+      console.log(`${splitTableCount} table(s) will be split`);
       
       // Now extract other block elements, avoiding tables
       let lastIndex = 0;
@@ -8211,9 +8236,17 @@ app.post('/api/preview/docx', uploadDocument.single('file'), async (req, res) =>
       
       for (const element of blockElements) {
         const elementSize = element.length;
+        const isTable = element.trim().startsWith('<table');
         
+        // Tables (especially split ones) should generally be on their own page or with minimal content
+        // If it's a table and current page has content, start new page
+        if (isTable && currentPage.length > 0 && currentPageSize > 500) {
+          pages.push(currentPage.join('\n'));
+          currentPage = [element];
+          currentPageSize = elementSize;
+        }
         // If adding this element would exceed page size and we already have content, start new page
-        if (currentPageSize + elementSize > charsPerPage && currentPage.length > 0) {
+        else if (currentPageSize + elementSize > charsPerPage && currentPage.length > 0) {
           pages.push(currentPage.join('\n'));
           currentPage = [element];
           currentPageSize = elementSize;
@@ -8233,11 +8266,24 @@ app.post('/api/preview/docx', uploadDocument.single('file'), async (req, res) =>
 
     const pages = splitIntoPages(bodyContent);
     console.log(`Split content into ${pages.length} A4 pages`);
+    
+    // Verify pages were created
+    if (pages.length === 0) {
+      console.warn('WARNING: No pages created, using original content');
+      pages.push(bodyContent);
+    }
+    
+    // Log page sizes for debugging
+    pages.forEach((page, idx) => {
+      console.log(`Page ${idx + 1}: ${page.length} characters, ${(page.match(/<tr[^>]*>/gi) || []).length} table rows`);
+    });
 
     // Generate page HTML using .docx-a4-page class (matches frontend expectations)
     const pagesHtml = pages.map((pageContent, index) => 
       `<div class="docx-a4-page" data-page="${index + 1}">${pageContent}</div>`
     ).join('\n');
+    
+    console.log(`Generated HTML with ${pages.length} page divs`);
 
     // Return just the body content with pages split (frontend will wrap it)
     res.set('Content-Type', 'text/html; charset=utf-8');
