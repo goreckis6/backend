@@ -16188,14 +16188,14 @@ app.post('/convert/doc-to-epub/batch', uploadBatch, async (req, res) => {
       if (result.status === 'fulfilled') {
         const value = result.value;
         // Ensure the result has the expected structure for batch conversion
-        if (value.storedFilename && (value.downloadUrl || value.downloadPath)) {
+        if (value.storedFilename && value.downloadUrl) {
           // Result from persistOutputBuffer - convert to expected format
           return {
             originalName: files[index].originalname,
             outputFilename: value.filename,
             size: value.size,
             success: true,
-            downloadPath: value.downloadUrl || value.downloadPath,
+            downloadPath: value.downloadUrl,
             storedFilename: value.storedFilename
           };
         } else if (value.buffer) {
