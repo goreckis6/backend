@@ -16186,7 +16186,38 @@ app.post('/convert/doc-to-epub/batch', uploadBatch, async (req, res) => {
     // Map results to include success/failure status
     const processedResults = results.map((result, index) => {
       if (result.status === 'fulfilled') {
-        return result.value;
+        const value = result.value;
+        // Ensure the result has the expected structure for batch conversion
+        if (value.storedFilename && (value.downloadUrl || value.downloadPath)) {
+          // Result from persistOutputBuffer - convert to expected format
+          return {
+            originalName: files[index].originalname,
+            outputFilename: value.filename,
+            size: value.size,
+            success: true,
+            downloadPath: value.downloadUrl || value.downloadPath,
+            storedFilename: value.storedFilename
+          };
+        } else if (value.buffer) {
+          // Direct buffer result - convert to base64 data URL
+          const base64 = value.buffer.toString('base64');
+          return {
+            originalName: files[index].originalname,
+            outputFilename: value.filename,
+            size: value.buffer.length,
+            success: true,
+            downloadPath: `data:application/epub+zip;base64,${base64}`
+          };
+        } else {
+          // Fallback for unexpected structure
+          return {
+            originalName: files[index].originalname,
+            outputFilename: value.filename || files[index].originalname.replace(/\.doc$/i, '.epub'),
+            size: value.size || 0,
+            success: false,
+            error: 'Unexpected result structure'
+          };
+        }
       } else {
         console.error(`File ${index} failed:`, result.reason);
         
@@ -16204,25 +16235,25 @@ app.post('/convert/doc-to-epub/batch', uploadBatch, async (req, res) => {
         }
         
         return {
-          filename: files[index].originalname.replace(/\.doc$/i, '.epub'),
-          error: errorMessage,
-          downloadUrl: '',
-          size: 0
+          originalName: files[index].originalname,
+          outputFilename: files[index].originalname.replace(/\.doc$/i, '.epub'),
+          size: 0,
+          success: false,
+          error: errorMessage
         };
       }
     });
 
+    // Return in the format expected by frontend
     res.set({
       'Access-Control-Allow-Origin': '*',
       'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
       'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept'
     });
-    res.set({
-      'Access-Control-Allow-Origin': '*',
-      'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
-      'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept'
+    res.json({
+      success: processedResults.some(r => r.success),
+      results: processedResults
     });
-    res.json(processedResults);
   } catch (error) {
     console.error('DOC->EPUB batch error:', error);
     res.set({
