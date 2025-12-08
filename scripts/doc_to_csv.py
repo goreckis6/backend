@@ -108,50 +108,60 @@ def convert_doc_to_csv_libreoffice(doc_file, output_file, delimiter=',', extract
             intermediate_docx = os.path.join(temp_dir, f"{base_name}.docx")
             
             print("Step 1: Converting DOC to DOCX using LibreOffice...")
-        cmd = [
+            cmd = [
                 libreoffice,
-            '--headless',
-            '--invisible',
-            '--nocrashreport',
-            '--nodefault',
-            '--nofirststartwizard',
-            '--nolockcheck',
-            '--nologo',
-            '--norestore',
+                '--headless',
+                '--invisible',
+                '--nocrashreport',
+                '--nodefault',
+                '--nofirststartwizard',
+                '--nolockcheck',
+                '--nologo',
+                '--norestore',
                 '--convert-to', 'docx',
                 '--outdir', temp_dir,
-            doc_file
-        ]
-        
+                doc_file
+            ]
+            
             # Set LibreOffice environment
-        env = os.environ.copy()
-        env['SAL_USE_VCLPLUGIN'] = 'svp'
-        env['HOME'] = '/tmp'
-        env['LANG'] = 'en_US.UTF-8'
-        env['LC_ALL'] = 'en_US.UTF-8'
-        
+            env = os.environ.copy()
+            env['SAL_USE_VCLPLUGIN'] = 'svp'
+            env['HOME'] = '/tmp'
+            env['LANG'] = 'en_US.UTF-8'
+            env['LC_ALL'] = 'en_US.UTF-8'
+            
             print(f"Running LibreOffice: {' '.join(cmd)}")
-        
-        result = subprocess.run(
-            cmd,
-            capture_output=True,
-            text=True,
+            
+            result = subprocess.run(
+                cmd,
+                capture_output=True,
+                text=True,
                 timeout=300,  # 5 minute timeout
-            env=env,
-            encoding='utf-8',
-            errors='replace'
-        )
-        
-        if result.stdout:
+                env=env,
+                encoding='utf-8',
+                errors='replace'
+            )
+            
+            if result.stdout:
                 print(f"LibreOffice stdout: {result.stdout}")
             if result.stderr and 'Error:' not in result.stderr:
                 print(f"LibreOffice stderr: {result.stderr}")
             
-            # Check if DOCX was created
+            # Check if DOCX was created (LibreOffice might create it with a different name)
             if not os.path.exists(intermediate_docx):
-                print(f"ERROR: LibreOffice did not create DOCX file: {intermediate_docx}")
-                print(f"Contents of temp directory {temp_dir}: {os.listdir(temp_dir)}")
-            return False
+                # Try to find the DOCX file in the temp directory
+                print(f"Expected DOCX not found at {intermediate_docx}, searching temp directory...")
+                temp_files = os.listdir(temp_dir)
+                print(f"Contents of temp directory {temp_dir}: {temp_files}")
+                
+                # Look for any .docx file in the temp directory
+                docx_files = [f for f in temp_files if f.lower().endswith('.docx')]
+                if docx_files:
+                    intermediate_docx = os.path.join(temp_dir, docx_files[0])
+                    print(f"Found DOCX file: {intermediate_docx}")
+                else:
+                    print(f"ERROR: LibreOffice did not create DOCX file")
+                    return False
             
             print(f"Step 1 complete: DOCX created at {intermediate_docx}")
             
@@ -199,8 +209,8 @@ def convert_doc_to_csv_libreoffice(doc_file, output_file, delimiter=',', extract
                     writer = csv.writer(f, delimiter=delimiter)
                     for row in all_rows:
                         writer.writerow(row)
-        
-        # Verify output file
+            
+            # Verify output file
             if os.path.exists(output_file):
                 output_size = os.path.getsize(output_file)
                 print(f"CSV file created successfully: {output_size} bytes, {len(all_rows)} rows")
