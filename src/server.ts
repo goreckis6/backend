@@ -163,6 +163,8 @@ const persistOutputBuffer = async (
 ): Promise<ConversionResult> => {
   const storedFilename = `${Date.now()}_${randomUUID()}_${downloadName}`;
   const storedFilePath = path.join(BATCH_OUTPUT_DIR, storedFilename);
+  // Ensure directory exists before writing
+  await fs.mkdir(BATCH_OUTPUT_DIR, { recursive: true });
   await fs.writeFile(storedFilePath, buffer);
   batchFileMetadata.set(storedFilename, {
     downloadName,
@@ -22633,6 +22635,7 @@ app.post('/api/compress/jpg/batch', uploadBatch, async (req, res) => {
           
           const storedFilename = `${randomUUID()}.jpg`;
           const storedPath = path.join(BATCH_OUTPUT_DIR, storedFilename);
+          await fs.mkdir(BATCH_OUTPUT_DIR, { recursive: true });
           await fs.writeFile(storedPath, outputBuffer);
           
           scheduleBatchFileCleanup(storedFilename);
@@ -22869,6 +22872,7 @@ app.post('/api/compress/png/batch', uploadBatch, async (req, res) => {
           
           const storedFilename = `${randomUUID()}.png`;
           const storedPath = path.join(BATCH_OUTPUT_DIR, storedFilename);
+          await fs.mkdir(BATCH_OUTPUT_DIR, { recursive: true });
           await fs.writeFile(storedPath, outputBuffer);
           
           scheduleBatchFileCleanup(storedFilename);
@@ -23142,6 +23146,7 @@ app.post('/api/compress/pdf/batch', uploadBatch, async (req, res) => {
           
           const storedFilename = `${randomUUID()}.pdf`;
           const storedPath = path.join(BATCH_OUTPUT_DIR, storedFilename);
+          await fs.mkdir(BATCH_OUTPUT_DIR, { recursive: true });
           await fs.writeFile(storedPath, outputBuffer);
           
           scheduleBatchFileCleanup(storedFilename);
