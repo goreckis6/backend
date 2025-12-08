@@ -54,6 +54,10 @@ def convert_doc_to_docx_with_libreoffice(doc_file, output_dir):
     if not libreoffice:
         return None
     
+    # Use absolute paths to avoid issues with special characters
+    doc_file = os.path.abspath(doc_file)
+    output_dir = os.path.abspath(output_dir)
+    
     base_name = os.path.splitext(os.path.basename(doc_file))[0]
     output_docx = os.path.join(output_dir, f"{base_name}.docx")
     
@@ -133,6 +137,10 @@ def convert_doc_to_odt(doc_file, output_file, preserve_formatting=True, include_
     print(f"Include images: {include_images}")
     
     try:
+        # Use absolute paths to avoid issues with special characters
+        doc_file = os.path.abspath(doc_file)
+        output_file = os.path.abspath(output_file)
+        
         # Check if DOC file exists
         if not os.path.exists(doc_file):
             print(f"ERROR: DOC file does not exist: {doc_file}")
@@ -173,6 +181,11 @@ def convert_doc_to_odt(doc_file, output_file, preserve_formatting=True, include_
             # Step 2: Convert DOCX to ODT using LibreOffice
             print("Step 2: Converting DOCX to ODT using LibreOffice...")
             
+            # Use absolute paths to avoid issues with special characters
+            intermediate_docx = os.path.abspath(intermediate_docx)
+            output_file = os.path.abspath(output_file)
+            output_dir_path = os.path.abspath(output_dir) if output_dir else os.path.dirname(output_file)
+            
             # Build LibreOffice command
             cmd = [
                 libreoffice,
@@ -185,7 +198,7 @@ def convert_doc_to_odt(doc_file, output_file, preserve_formatting=True, include_
                 '--nologo',
                 '--norestore',
                 '--convert-to', 'odt',
-                '--outdir', output_dir if output_dir else os.path.dirname(output_file),
+                '--outdir', output_dir_path,
                 intermediate_docx
             ]
             
@@ -216,7 +229,6 @@ def convert_doc_to_odt(doc_file, output_file, preserve_formatting=True, include_
             # LibreOffice creates filename.odt in output directory
             # We need to find and rename/move it to the target location
             base_name = os.path.splitext(os.path.basename(intermediate_docx))[0]
-            output_dir_path = output_dir if output_dir else os.path.dirname(output_file)
             actual_odt = os.path.join(output_dir_path, f"{base_name}.odt")
             
             if os.path.exists(actual_odt):
@@ -291,3 +303,4 @@ def main():
 
 if __name__ == '__main__':
     main()
+

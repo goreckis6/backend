@@ -20040,8 +20040,10 @@ app.post('/convert/doc-to-odt/single', upload.single('file'), async (req, res) =
     }
     await fs.mkdir(tmpDir, { recursive: true });
 
-    const inputPath = path.join(tmpDir, file.originalname);
-    const outputPath = path.join(tmpDir, file.originalname.replace(/\.doc$/i, '.odt'));
+    // Sanitize filename to avoid issues with special characters
+    const sanitizedBase = sanitizeFilename(path.parse(file.originalname).name);
+    const inputPath = path.join(tmpDir, `${sanitizedBase}.doc`);
+    const outputPath = path.join(tmpDir, `${sanitizedBase}.odt`);
 
     await fs.writeFile(inputPath, file.buffer);
 
@@ -20165,8 +20167,10 @@ app.post('/convert/doc-to-odt/batch', uploadBatch, async (req, res) => {
 
     for (const file of files) {
       try {
-        const inputPath = path.join(tmpDir, file.originalname);
-        const outputPath = path.join(tmpDir, file.originalname.replace(/\.doc$/i, '.odt'));
+        // Sanitize filename to avoid issues with special characters
+        const sanitizedBase = sanitizeFilename(path.parse(file.originalname).name);
+        const inputPath = path.join(tmpDir, `${sanitizedBase}.doc`);
+        const outputPath = path.join(tmpDir, `${sanitizedBase}.odt`);
 
         await fs.writeFile(inputPath, file.buffer);
 
