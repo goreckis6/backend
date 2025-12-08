@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# -*- coding: utf-8 -*-
 """
 DOC to CSV Converter
 Converts Microsoft Word DOC files to CSV format
@@ -13,6 +14,14 @@ import subprocess
 import tempfile
 import shutil
 import csv
+import io
+import unicodedata
+
+# Ensure UTF-8 encoding for stdout/stderr
+if sys.stdout.encoding != 'utf-8':
+    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='replace')
+if sys.stderr.encoding != 'utf-8':
+    sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8', errors='replace')
 try:
     import pandas as pd
     HAS_PANDAS = True
@@ -183,7 +192,11 @@ def convert_doc_to_csv_libreoffice(doc_file, output_file, delimiter=',', extract
                     for row in table.rows:
                         row_data = []
                         for cell in row.cells:
+                            # Extract text and ensure proper UTF-8 encoding
                             cell_text = cell.text.strip().replace('\n', ' ').replace('\r', '')
+                            # Normalize Unicode (NFC form) and ensure proper encoding
+                            cell_text = unicodedata.normalize('NFC', cell_text)
+                            cell_text = cell_text.encode('utf-8', errors='replace').decode('utf-8')
                             row_data.append(cell_text)
                         if any(cell for cell in row_data):  # Only add non-empty rows
                             all_rows.append(row_data)
@@ -194,21 +207,37 @@ def convert_doc_to_csv_libreoffice(doc_file, output_file, delimiter=',', extract
                 for para in doc.paragraphs:
                     para_text = para.text.strip()
                     if para_text:
+                        # Normalize Unicode (NFC form) and ensure proper UTF-8 encoding
+                        para_text = unicodedata.normalize('NFC', para_text)
+                        para_text = para_text.encode('utf-8', errors='replace').decode('utf-8')
                         all_rows.append([para_text])
             
             if len(all_rows) == 0:
                 print("WARNING: No data extracted from document")
-                # Create empty CSV file
-                with open(output_file, 'w', encoding='utf-8', newline='') as f:
-                    writer = csv.writer(f, delimiter=delimiter)
+                # Create empty CSV file with UTF-8 encoding
+                with open(output_file, 'w', encoding='utf-8-sig', newline='') as f:
+                    writer = csv.writer(f, delimiter=delimiter, quoting=csv.QUOTE_MINIMAL)
                     pass  # Empty file
             else:
                 # Write to CSV with specified delimiter
                 print(f"Writing {len(all_rows)} rows to CSV...")
-                with open(output_file, 'w', encoding='utf-8', newline='') as f:
-                    writer = csv.writer(f, delimiter=delimiter)
+                # Use UTF-8 with BOM for better Excel compatibility
+                with open(output_file, 'w', encoding='utf-8-sig', newline='') as f:
+                    writer = csv.writer(f, delimiter=delimiter, quoting=csv.QUOTE_MINIMAL)
                     for row in all_rows:
-                        writer.writerow(row)
+                        # Ensure all cell values are properly encoded as UTF-8 strings
+                        encoded_row = []
+                        for cell in row:
+                            if isinstance(cell, str):
+                                # Normalize Unicode (NFC form) and ensure proper UTF-8 encoding
+                                cell = unicodedata.normalize('NFC', cell)
+                                cell = cell.encode('utf-8', errors='replace').decode('utf-8')
+                            else:
+                                cell_str = str(cell)
+                                cell_str = unicodedata.normalize('NFC', cell_str)
+                                cell = cell_str.encode('utf-8', errors='replace').decode('utf-8')
+                            encoded_row.append(cell)
+                        writer.writerow(encoded_row)
             
             # Verify output file
             if os.path.exists(output_file):

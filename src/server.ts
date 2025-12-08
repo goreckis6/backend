@@ -20266,13 +20266,13 @@ app.post('/convert/doc-to-csv/single', upload.single('file'), async (req, res) =
     let stderr = '';
 
     python.stdout.on('data', (data: Buffer) => {
-      stdout += data.toString();
-      console.log('DOC to CSV stdout:', data.toString());
+      stdout += data.toString('utf-8');
+      console.log('DOC to CSV stdout:', data.toString('utf-8'));
     });
 
     python.stderr.on('data', (data: Buffer) => {
-      stderr += data.toString();
-      console.log('DOC to CSV stderr:', data.toString());
+      stderr += data.toString('utf-8');
+      console.log('DOC to CSV stderr:', data.toString('utf-8'));
     });
 
     python.on('close', async (code: number) => {
@@ -20282,16 +20282,18 @@ app.post('/convert/doc-to-csv/single', upload.single('file'), async (req, res) =
       
       try {
         if (code === 0 && await fs.access(outputPath).then(() => true).catch(() => false)) {
+          // Read file as UTF-8 to ensure proper encoding
           const outputBuffer = await fs.readFile(outputPath);
           console.log('DOC to CSV: Output file size:', outputBuffer.length);
           res.set({
             'Content-Type': 'text/csv; charset=utf-8',
-            'Content-Disposition': `attachment; filename="${path.basename(outputPath)}"`,
+            'Content-Disposition': `attachment; filename="${encodeURIComponent(path.basename(outputPath))}"`,
             'Access-Control-Allow-Origin': '*',
             'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
             'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept'
           });
-          res.send(outputBuffer);
+          // Ensure the buffer is sent with UTF-8 encoding
+          res.send(Buffer.from(outputBuffer));
           
         } else {
           console.error('DOC to CSV conversion failed. Code:', code, 'Stderr:', stderr);
@@ -20394,13 +20396,13 @@ app.post('/convert/doc-to-csv/batch', uploadBatch, async (req, res) => {
         let stderr = '';
 
         python.stdout.on('data', (data: Buffer) => {
-          stdout += data.toString();
-          console.log('DOC to CSV batch stdout:', data.toString());
+          stdout += data.toString('utf-8');
+          console.log('DOC to CSV batch stdout:', data.toString('utf-8'));
         });
 
         python.stderr.on('data', (data: Buffer) => {
-          stderr += data.toString();
-          console.log('DOC to CSV batch stderr:', data.toString());
+          stderr += data.toString('utf-8');
+          console.log('DOC to CSV batch stderr:', data.toString('utf-8'));
         });
 
         await new Promise<void>((resolve, reject) => {
