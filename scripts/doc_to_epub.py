@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# -*- coding: utf-8 -*-
 """
 DOC to EPUB Converter
 Converts Microsoft Word DOC files to EPUB format
@@ -13,6 +14,13 @@ import traceback
 import subprocess
 import tempfile
 import shutil
+import io
+
+# Ensure UTF-8 encoding for stdout/stderr
+if sys.stdout.encoding != 'utf-8':
+    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='replace')
+if sys.stderr.encoding != 'utf-8':
+    sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8', errors='replace')
 try:
     from docx import Document
     import ebooklib
@@ -118,8 +126,21 @@ def convert_doc_to_docx_with_libreoffice(doc_file, output_dir):
         if os.path.exists(output_docx):
             return output_docx
         else:
-            print(f"LibreOffice conversion failed: {result.stderr}")
-            return None
+            # LibreOffice might create the DOCX with a slightly different name
+            # Try to find any .docx file in the output directory
+            print(f"Expected DOCX not found at {output_docx}, searching output directory...")
+            temp_files = os.listdir(output_dir)
+            print(f"Contents of output directory {output_dir}: {temp_files}")
+            
+            # Look for any .docx file in the output directory
+            docx_files = [f for f in temp_files if f.lower().endswith('.docx')]
+            if docx_files:
+                found_docx = os.path.join(output_dir, docx_files[0])
+                print(f"Found DOCX file: {found_docx}")
+                return found_docx
+            else:
+                print(f"LibreOffice conversion failed: {result.stderr}")
+                return None
     except Exception as e:
         print(f"Error converting DOC to DOCX: {e}")
         return None
@@ -209,10 +230,11 @@ def convert_doc_to_epub(doc_file, output_file, include_images=True, preserve_for
                 cmd.extend(['--strip-comments'])
             
             # Set metadata
-            cmd.extend([
-                '--metadata', 'title=' + os.path.splitext(os.path.basename(doc_file))[0],
-                '--epub-cover-image=' if include_images else ''
-            ])
+            base_title = os.path.splitext(os.path.basename(doc_file))[0]
+            cmd.extend(['--metadata', f'title={base_title}'])
+            
+            # Only add epub-cover-image if we have an actual cover image file
+            # (Not adding it here since we don't have a cover image to use)
             
             print(f"Running Pandoc: {' '.join(cmd)}")
             
