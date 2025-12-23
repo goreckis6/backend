@@ -239,8 +239,8 @@ jobs:
           fi
           
           # Check if Traefik routing is working
-          if curl -f -s https://api.fomipeek.com/health > /dev/null; then
-            echo "✅ Traefik routing is working (https://api.fomipeek.com)"
+          if curl -f -s https://api.formipeek.com/health > /dev/null; then
+            echo "✅ Traefik routing is working (https://api.formipeek.com)"
           else
             echo "⚠️ WARNING: Traefik routing may not be working yet (allow 30s for SSL)"
           fi
@@ -363,8 +363,8 @@ jobs:
           docker compose -f traefik-only.yml ps
           echo ""
           echo "✅ Deployment completed successfully!"
-          echo "🌐 API: https://api.fomipeek.com"
-          echo "🏥 Health: https://api.fomipeek.com/health"
+          echo "🌐 API: https://api.formipeek.com"
+          echo "🏥 Health: https://api.formipeek.com/health"
 
     - name: Verify Deployment
       uses: appleboy/ssh-action@v1.0.3
@@ -377,11 +377,11 @@ jobs:
           sleep 10
           
           # Test health endpoint
-          if curl -f -s https://api.fomipeek.com/health | grep -q "healthy"; then
+          if curl -f -s https://api.formipeek.com/health | grep -q "healthy"; then
             echo "✅ Deployment verified: API is healthy"
           else
             echo "Testing health endpoint..."
-            HEALTH_RESPONSE=$(curl -f -s https://api.fomipeek.com/health 2>&1)
+            HEALTH_RESPONSE=$(curl -f -s https://api.formipeek.com/health 2>&1)
             CURL_EXIT_CODE=$?
             
             if [ $CURL_EXIT_CODE -eq 0 ]; then
