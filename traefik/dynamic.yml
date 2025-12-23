@@ -11,7 +11,7 @@ http:
 
   routers:
     api:
-      rule: "Host(`api.morphyhub.com`)"
+      rule: "Host(`api.formipeek.com`)"
       service: "backend"
       tls:
         certResolver: "letsencrypt"

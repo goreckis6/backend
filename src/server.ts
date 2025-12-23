@@ -17057,7 +17057,7 @@ dotenv.config();
 const allowedOrigins = [
   process.env.FRONTEND_URL,
   process.env.FRONTEND_URL_ALT,
-  'https://morphyhub.com',
+  'https://formipeek.com',
   'https://morphy-1-ulvv.onrender.com',
   'https://morphy-2-n2tb.onrender.com',
   'http://localhost:5173', // Frontend dev server
