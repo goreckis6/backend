@@ -9109,183 +9109,188 @@ app.options("/convert/heic-to-png/batch", (req, res) => {
 });
 
 // Route: HEIC to PNG (Batch)
-app.post("/convert/heic-to-png/batch", uploadBatch, async (req, res) => {
-  res.set({
-    "Access-Control-Allow-Origin": "*",
-    "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
-    "Access-Control-Allow-Headers": "Content-Type, Authorization, Accept",
-  });
+app.post(
+  "/convert/heic-to-png/batch",
+  conversionTimeout(20 * 60 * 1000),
+  uploadBatch,
+  async (req, res) => {
+    res.set({
+      "Access-Control-Allow-Origin": "*",
+      "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
+      "Access-Control-Allow-Headers": "Content-Type, Authorization, Accept",
+    });
 
-  console.log("HEIC->PNG batch conversion request");
+    console.log("HEIC->PNG batch conversion request");
 
-  const tmpDir = path.join(os.tmpdir(), `heic-png-batch-${Date.now()}`);
+    const tmpDir = path.join(os.tmpdir(), `heic-png-batch-${Date.now()}`);
 
-  try {
-    const files = req.files as Express.Multer.File[];
-    if (!files || files.length === 0) {
-      res.set({
-        "Access-Control-Allow-Origin": "*",
-        "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
-        "Access-Control-Allow-Headers": "Content-Type, Authorization, Accept",
-      });
-      return res.status(400).json({ error: "No files uploaded" });
-    }
+    try {
+      const files = req.files as Express.Multer.File[];
+      if (!files || files.length === 0) {
+        res.set({
+          "Access-Control-Allow-Origin": "*",
+          "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
+          "Access-Control-Allow-Headers": "Content-Type, Authorization, Accept",
+        });
+        return res.status(400).json({ error: "No files uploaded" });
+      }
 
-    await fs.mkdir(tmpDir, { recursive: true });
+      await fs.mkdir(tmpDir, { recursive: true });
 
-    const results: any[] = [];
+      const results: any[] = [];
 
-    const quality = parseInt(req.body.quality) || 95;
-    const maxDimension = parseInt(req.body.maxDimension) || 4096;
+      const quality = parseInt(req.body.quality) || 95;
+      const maxDimension = parseInt(req.body.maxDimension) || 4096;
 
-    for (const file of files) {
-      try {
-        const inputPath = path.join(tmpDir, file.originalname);
-        const outputPath = path.join(
-          tmpDir,
-          file.originalname.replace(/\.(heic|heif)$/i, ".png")
-        );
-
-        await fs.writeFile(inputPath, file.buffer);
-
-        const scriptPath = path.join(
-          __dirname,
-          "..",
-          "scripts",
-          "heic_to_png.py"
-        );
+      for (const file of files) {
         try {
-          await fs.access(scriptPath);
-        } catch {
-          results.push({
-            originalName: file.originalname,
-            outputFilename: "",
-            size: 0,
-            success: false,
-            error: "Conversion script not found",
+          const inputPath = path.join(tmpDir, file.originalname);
+          const outputPath = path.join(
+            tmpDir,
+            file.originalname.replace(/\.(heic|heif)$/i, ".png")
+          );
+
+          await fs.writeFile(inputPath, file.buffer);
+
+          const scriptPath = path.join(
+            __dirname,
+            "..",
+            "scripts",
+            "heic_to_png.py"
+          );
+          try {
+            await fs.access(scriptPath);
+          } catch {
+            results.push({
+              originalName: file.originalname,
+              outputFilename: "",
+              size: 0,
+              success: false,
+              error: "Conversion script not found",
+            });
+            continue;
+          }
+
+          const pythonArgs = [
+            scriptPath,
+            inputPath,
+            outputPath,
+            "--quality",
+            String(quality),
+            "--max-dimension",
+            String(maxDimension),
+          ];
+          const python = spawn("/opt/venv/bin/python", pythonArgs);
+
+          let stdout = "";
+          let stderr = "";
+
+          python.stdout.on("data", (d: Buffer) => {
+            stdout += d.toString();
           });
-          continue;
-        }
+          python.stderr.on("data", (d: Buffer) => {
+            stderr += d.toString();
+          });
 
-        const pythonArgs = [
-          scriptPath,
-          inputPath,
-          outputPath,
-          "--quality",
-          String(quality),
-          "--max-dimension",
-          String(maxDimension),
-        ];
-        const python = spawn("/opt/venv/bin/python", pythonArgs);
-
-        let stdout = "";
-        let stderr = "";
-
-        python.stdout.on("data", (d: Buffer) => {
-          stdout += d.toString();
-        });
-        python.stderr.on("data", (d: Buffer) => {
-          stderr += d.toString();
-        });
-
-        await new Promise<void>((resolve) => {
-          python.on("close", async (code: number) => {
-            try {
-              if (
-                code === 0 &&
-                (await fs
-                  .access(outputPath)
-                  .then(() => true)
-                  .catch(() => false))
-              ) {
-                const outputBuffer = await fs.readFile(outputPath);
-                results.push({
-                  originalName: file.originalname,
-                  outputFilename: path.basename(outputPath),
-                  size: outputBuffer.length,
-                  success: true,
-                  downloadPath: `data:image/png;base64,${outputBuffer.toString(
-                    "base64"
-                  )}`,
-                });
-              } else {
+          await new Promise<void>((resolve) => {
+            python.on("close", async (code: number) => {
+              try {
+                if (
+                  code === 0 &&
+                  (await fs
+                    .access(outputPath)
+                    .then(() => true)
+                    .catch(() => false))
+                ) {
+                  const outputBuffer = await fs.readFile(outputPath);
+                  results.push({
+                    originalName: file.originalname,
+                    outputFilename: path.basename(outputPath),
+                    size: outputBuffer.length,
+                    success: true,
+                    downloadPath: `data:image/png;base64,${outputBuffer.toString(
+                      "base64"
+                    )}`,
+                  });
+                } else {
+                  results.push({
+                    originalName: file.originalname,
+                    outputFilename: "",
+                    size: 0,
+                    success: false,
+                    error: (() => {
+                      // Sanitize error message - remove file paths and technical details
+                      if (
+                        stderr.includes("UnidentifiedImageError") ||
+                        stderr.includes("cannot identify image file") ||
+                        stderr.includes("PIL.UnidentifiedImageError")
+                      ) {
+                        return "The file is corrupted or not a valid HEIC image";
+                      } else if (stderr.includes("ERROR:")) {
+                        const errorMatch = stderr.match(/ERROR: (.+)/);
+                        if (errorMatch) {
+                          const errorMsg = errorMatch[1];
+                          return (
+                            errorMsg
+                              .replace(/\/[^\s]+/g, "")
+                              .replace(/File path:.*/g, "")
+                              .replace(/File header:.*/g, "")
+                              .trim() ||
+                            "The file is corrupted or not a valid HEIC image"
+                          );
+                        }
+                      }
+                      return code !== 0
+                        ? "The file is corrupted or not a valid HEIC image"
+                        : "Conversion failed";
+                    })(),
+                  });
+                }
+              } catch (err) {
                 results.push({
                   originalName: file.originalname,
                   outputFilename: "",
                   size: 0,
                   success: false,
-                  error: (() => {
-                    // Sanitize error message - remove file paths and technical details
-                    if (
-                      stderr.includes("UnidentifiedImageError") ||
-                      stderr.includes("cannot identify image file") ||
-                      stderr.includes("PIL.UnidentifiedImageError")
-                    ) {
-                      return "The file is corrupted or not a valid HEIC image";
-                    } else if (stderr.includes("ERROR:")) {
-                      const errorMatch = stderr.match(/ERROR: (.+)/);
-                      if (errorMatch) {
-                        const errorMsg = errorMatch[1];
-                        return (
-                          errorMsg
-                            .replace(/\/[^\s]+/g, "")
-                            .replace(/File path:.*/g, "")
-                            .replace(/File header:.*/g, "")
-                            .trim() ||
-                          "The file is corrupted or not a valid HEIC image"
-                        );
-                      }
-                    }
-                    return code !== 0
-                      ? "The file is corrupted or not a valid HEIC image"
-                      : "Conversion failed";
-                  })(),
+                  error: "The file is corrupted or not a valid HEIC image",
                 });
+              } finally {
+                resolve();
               }
-            } catch (err) {
-              results.push({
-                originalName: file.originalname,
-                outputFilename: "",
-                size: 0,
-                success: false,
-                error: "The file is corrupted or not a valid HEIC image",
-              });
-            } finally {
-              resolve();
-            }
+            });
           });
-        });
-      } catch (error) {
-        results.push({
-          originalName: file.originalname,
-          outputFilename: "",
-          size: 0,
-          success: false,
-          error: "The file is corrupted or not a valid HEIC image",
-        });
+        } catch (error) {
+          results.push({
+            originalName: file.originalname,
+            outputFilename: "",
+            size: 0,
+            success: false,
+            error: "The file is corrupted or not a valid HEIC image",
+          });
+        }
       }
-    }
 
-    res.set({
-      "Access-Control-Allow-Origin": "*",
-      "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
-      "Access-Control-Allow-Headers": "Content-Type, Authorization, Accept",
-    });
-    res.json({ success: true, results });
-  } catch (error) {
-    const message = error instanceof Error ? error.message : "Unknown error";
-    res.set({
-      "Access-Control-Allow-Origin": "*",
-      "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
-      "Access-Control-Allow-Headers": "Content-Type, Authorization, Accept",
-    });
-    res.status(500).json({ error: message });
-  } finally {
-    await fs
-      .rm(tmpDir, { recursive: true, force: true })
-      .catch(() => undefined);
+      res.set({
+        "Access-Control-Allow-Origin": "*",
+        "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
+        "Access-Control-Allow-Headers": "Content-Type, Authorization, Accept",
+      });
+      res.json({ success: true, results });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Unknown error";
+      res.set({
+        "Access-Control-Allow-Origin": "*",
+        "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
+        "Access-Control-Allow-Headers": "Content-Type, Authorization, Accept",
+      });
+      res.status(500).json({ error: message });
+    } finally {
+      await fs
+        .rm(tmpDir, { recursive: true, force: true })
+        .catch(() => undefined);
+    }
   }
-});
+);
 
 // Route: HEIC to JPG (Single) - OPTIONS for CORS preflight
 app.options("/convert/heic-to-jpg/single", (req, res) => {
@@ -9580,187 +9585,228 @@ app.options("/convert/heic-to-jpg/batch", (req, res) => {
 });
 
 // Route: HEIC to JPG (Batch)
-app.post("/convert/heic-to-jpg/batch", uploadBatch, async (req, res) => {
-  res.set({
-    "Access-Control-Allow-Origin": "*",
-    "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
-    "Access-Control-Allow-Headers": "Content-Type, Authorization, Accept",
-  });
+app.post(
+  "/convert/heic-to-jpg/batch",
+  conversionTimeout(20 * 60 * 1000),
+  uploadBatch,
+  async (req, res) => {
+    res.set({
+      "Access-Control-Allow-Origin": "*",
+      "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
+      "Access-Control-Allow-Headers": "Content-Type, Authorization, Accept",
+    });
 
-  console.log("HEIC->JPG batch conversion request");
+    console.log("HEIC->JPG batch conversion request");
 
-  const tmpDir = path.join(os.tmpdir(), `heic-jpg-batch-${Date.now()}`);
+    const tmpDir = path.join(os.tmpdir(), `heic-jpg-batch-${Date.now()}`);
 
-  try {
-    const files = req.files as Express.Multer.File[];
-    if (!files || files.length === 0) {
-      res.set({
-        "Access-Control-Allow-Origin": "*",
-        "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
-        "Access-Control-Allow-Headers": "Content-Type, Authorization, Accept",
-      });
-      return res.status(400).json({ error: "No files uploaded" });
-    }
+    try {
+      const files = req.files as Express.Multer.File[];
+      if (!files || files.length === 0) {
+        res.set({
+          "Access-Control-Allow-Origin": "*",
+          "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
+          "Access-Control-Allow-Headers": "Content-Type, Authorization, Accept",
+        });
+        return res.status(400).json({ error: "No files uploaded" });
+      }
 
-    await fs.mkdir(tmpDir, { recursive: true });
+      await fs.mkdir(tmpDir, { recursive: true });
 
-    const results: any[] = [];
+      const results: any[] = [];
 
-    const quality = parseInt(req.body.quality) || 90;
-    const maxDimension = parseInt(req.body.maxDimension) || 4096;
+      const quality = parseInt(req.body.quality) || 90;
+      const maxDimension = parseInt(req.body.maxDimension) || 4096;
 
-    for (const file of files) {
-      try {
-        const inputPath = path.join(tmpDir, file.originalname);
-        const outputPath = path.join(
-          tmpDir,
-          file.originalname.replace(/\.(heic|heif)$/i, ".jpg")
-        );
-
-        await fs.writeFile(inputPath, file.buffer);
-
-        const scriptPath = path.join(
-          __dirname,
-          "..",
-          "scripts",
-          "heic_to_jpg.py"
-        );
+      for (const file of files) {
         try {
-          await fs.access(scriptPath);
-        } catch {
-          results.push({
-            originalName: file.originalname,
-            outputFilename: "",
-            size: 0,
-            success: false,
-            error: "Conversion script not found",
+          const inputPath = path.join(tmpDir, file.originalname);
+          const outputPath = path.join(
+            tmpDir,
+            file.originalname.replace(/\.(heic|heif)$/i, ".jpg")
+          );
+
+          await fs.writeFile(inputPath, file.buffer);
+
+          const scriptPath = path.join(
+            __dirname,
+            "..",
+            "scripts",
+            "heic_to_jpg.py"
+          );
+          try {
+            await fs.access(scriptPath);
+          } catch {
+            results.push({
+              originalName: file.originalname,
+              outputFilename: "",
+              size: 0,
+              success: false,
+              error: "Conversion script not found",
+            });
+            continue;
+          }
+
+          const pythonArgs = [
+            scriptPath,
+            inputPath,
+            outputPath,
+            "--quality",
+            String(quality),
+            "--max-dimension",
+            String(maxDimension),
+          ];
+          const python = spawn("/opt/venv/bin/python", pythonArgs);
+
+          let stdout = "";
+          let stderr = "";
+
+          python.stdout.on("data", (d: Buffer) => {
+            stdout += d.toString();
           });
-          continue;
-        }
+          python.stderr.on("data", (d: Buffer) => {
+            stderr += d.toString();
+          });
 
-        const pythonArgs = [
-          scriptPath,
-          inputPath,
-          outputPath,
-          "--quality",
-          String(quality),
-          "--max-dimension",
-          String(maxDimension),
-        ];
-        const python = spawn("/opt/venv/bin/python", pythonArgs);
+          // Add timeout for each file conversion (3 minutes per file in batch)
+          let timeoutCleared = false;
+          let timeout: NodeJS.Timeout;
 
-        let stdout = "";
-        let stderr = "";
-
-        python.stdout.on("data", (d: Buffer) => {
-          stdout += d.toString();
-        });
-        python.stderr.on("data", (d: Buffer) => {
-          stderr += d.toString();
-        });
-
-        await new Promise<void>((resolve) => {
-          python.on("close", async (code: number) => {
-            try {
-              if (
-                code === 0 &&
-                (await fs
-                  .access(outputPath)
-                  .then(() => true)
-                  .catch(() => false))
-              ) {
-                const outputBuffer = await fs.readFile(outputPath);
-                results.push({
-                  originalName: file.originalname,
-                  outputFilename: path.basename(outputPath),
-                  size: outputBuffer.length,
-                  success: true,
-                  downloadPath: `data:image/jpeg;base64,${outputBuffer.toString(
-                    "base64"
-                  )}`,
-                });
-              } else {
-                // Sanitize error message - remove file paths and technical details
-                let userFriendlyError =
-                  "The file is corrupted or not a valid HEIC image";
-                if (
-                  stderr.includes("UnidentifiedImageError") ||
-                  stderr.includes("cannot identify image file") ||
-                  stderr.includes("PIL.UnidentifiedImageError")
-                ) {
-                  userFriendlyError =
-                    "The file is corrupted or not a valid HEIC image";
-                } else if (stderr.includes("ERROR:")) {
-                  // Extract error message but remove file paths
-                  const errorMatch = stderr.match(/ERROR: (.+)/);
-                  if (errorMatch) {
-                    const errorMsg = errorMatch[1];
-                    // Remove file paths (anything starting with /tmp, /opt, etc.)
-                    userFriendlyError =
-                      errorMsg
-                        .replace(/\/[^\s]+/g, "")
-                        .replace(/File path:.*/g, "")
-                        .replace(/File header:.*/g, "")
-                        .trim() ||
-                      "The file is corrupted or not a valid HEIC image";
-                  }
-                } else if (code !== 0) {
-                  userFriendlyError =
-                    "The file is corrupted or not a valid HEIC image";
-                }
-
+          await new Promise<void>((resolve) => {
+            timeout = setTimeout(() => {
+              if (!timeoutCleared) {
+                timeoutCleared = true;
+                python.kill();
                 results.push({
                   originalName: file.originalname,
                   outputFilename: "",
                   size: 0,
                   success: false,
-                  error: userFriendlyError,
+                  error:
+                    "Conversion timeout. The file may be too large or complex.",
                 });
+                resolve();
               }
-            } catch (err) {
+            }, 3 * 60 * 1000); // 3 minutes per file
+
+            python.on("close", async (code: number) => {
+              if (timeoutCleared) return; // Already handled by timeout
+              clearTimeout(timeout);
+              try {
+                if (
+                  code === 0 &&
+                  (await fs
+                    .access(outputPath)
+                    .then(() => true)
+                    .catch(() => false))
+                ) {
+                  const outputBuffer = await fs.readFile(outputPath);
+                  results.push({
+                    originalName: file.originalname,
+                    outputFilename: path.basename(outputPath),
+                    size: outputBuffer.length,
+                    success: true,
+                    downloadPath: `data:image/jpeg;base64,${outputBuffer.toString(
+                      "base64"
+                    )}`,
+                  });
+                } else {
+                  // Sanitize error message - remove file paths and technical details
+                  let userFriendlyError =
+                    "The file is corrupted or not a valid HEIC image";
+                  if (
+                    stderr.includes("UnidentifiedImageError") ||
+                    stderr.includes("cannot identify image file") ||
+                    stderr.includes("PIL.UnidentifiedImageError")
+                  ) {
+                    userFriendlyError =
+                      "The file is corrupted or not a valid HEIC image";
+                  } else if (stderr.includes("ERROR:")) {
+                    // Extract error message but remove file paths
+                    const errorMatch = stderr.match(/ERROR: (.+)/);
+                    if (errorMatch) {
+                      const errorMsg = errorMatch[1];
+                      // Remove file paths (anything starting with /tmp, /opt, etc.)
+                      userFriendlyError =
+                        errorMsg
+                          .replace(/\/[^\s]+/g, "")
+                          .replace(/File path:.*/g, "")
+                          .replace(/File header:.*/g, "")
+                          .trim() ||
+                        "The file is corrupted or not a valid HEIC image";
+                    }
+                  } else if (code !== 0) {
+                    userFriendlyError =
+                      "The file is corrupted or not a valid HEIC image";
+                  }
+
+                  results.push({
+                    originalName: file.originalname,
+                    outputFilename: "",
+                    size: 0,
+                    success: false,
+                    error: userFriendlyError,
+                  });
+                }
+              } catch (err) {
+                results.push({
+                  originalName: file.originalname,
+                  outputFilename: "",
+                  size: 0,
+                  success: false,
+                  error: "The file is corrupted or not a valid HEIC image",
+                });
+              } finally {
+                resolve();
+              }
+            });
+
+            python.on("error", (err) => {
+              if (timeoutCleared) return;
+              clearTimeout(timeout);
+              timeoutCleared = true;
               results.push({
                 originalName: file.originalname,
                 outputFilename: "",
                 size: 0,
                 success: false,
-                error: "The file is corrupted or not a valid HEIC image",
+                error: "Conversion failed. Please try again.",
               });
-            } finally {
               resolve();
-            }
+            });
           });
-        });
-      } catch (error) {
-        results.push({
-          originalName: file.originalname,
-          outputFilename: "",
-          size: 0,
-          success: false,
-          error: "The file is corrupted or not a valid HEIC image",
-        });
+        } catch (error) {
+          results.push({
+            originalName: file.originalname,
+            outputFilename: "",
+            size: 0,
+            success: false,
+            error: "The file is corrupted or not a valid HEIC image",
+          });
+        }
       }
-    }
 
-    res.set({
-      "Access-Control-Allow-Origin": "*",
-      "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
-      "Access-Control-Allow-Headers": "Content-Type, Authorization, Accept",
-    });
-    res.json({ success: true, results });
-  } catch (error) {
-    const message = error instanceof Error ? error.message : "Unknown error";
-    res.set({
-      "Access-Control-Allow-Origin": "*",
-      "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
-      "Access-Control-Allow-Headers": "Content-Type, Authorization, Accept",
-    });
-    res.status(500).json({ error: message });
-  } finally {
-    await fs
-      .rm(tmpDir, { recursive: true, force: true })
-      .catch(() => undefined);
+      res.set({
+        "Access-Control-Allow-Origin": "*",
+        "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
+        "Access-Control-Allow-Headers": "Content-Type, Authorization, Accept",
+      });
+      res.json({ success: true, results });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Unknown error";
+      res.set({
+        "Access-Control-Allow-Origin": "*",
+        "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
+        "Access-Control-Allow-Headers": "Content-Type, Authorization, Accept",
+      });
+      res.status(500).json({ error: message });
+    } finally {
+      await fs
+        .rm(tmpDir, { recursive: true, force: true })
+        .catch(() => undefined);
+    }
   }
-});
+);
 
 // X3F Preview endpoint - OPTIONS for CORS preflight
 app.options("/api/preview/x3f", (req, res) => {
@@ -27370,231 +27416,239 @@ app.options("/convert/heic-to-pdf/batch", (req, res) => {
 });
 
 // Route: HEIC to PDF (Batch)
-app.post("/convert/heic-to-pdf/batch", uploadBatch, async (req, res) => {
-  // Set CORS headers
-  res.set({
-    "Access-Control-Allow-Origin": "*",
-    "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
-    "Access-Control-Allow-Headers": "Content-Type, Authorization, Accept",
-  });
+app.post(
+  "/convert/heic-to-pdf/batch",
+  conversionTimeout(20 * 60 * 1000),
+  uploadBatch,
+  async (req, res) => {
+    // Set CORS headers
+    res.set({
+      "Access-Control-Allow-Origin": "*",
+      "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
+      "Access-Control-Allow-Headers": "Content-Type, Authorization, Accept",
+    });
 
-  console.log("HEIC->PDF batch conversion request");
+    console.log("HEIC->PDF batch conversion request");
 
-  const tmpDir = path.join(os.tmpdir(), `heic-pdf-batch-${Date.now()}`);
+    const tmpDir = path.join(os.tmpdir(), `heic-pdf-batch-${Date.now()}`);
 
-  try {
-    const files = req.files as Express.Multer.File[];
-    if (!files || files.length === 0) {
-      res.set({
-        "Access-Control-Allow-Origin": "*",
-        "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
-        "Access-Control-Allow-Headers": "Content-Type, Authorization, Accept",
-      });
-      return res.status(400).json({ error: "No files uploaded" });
-    }
-    await fs.mkdir(tmpDir, { recursive: true });
+    try {
+      const files = req.files as Express.Multer.File[];
+      if (!files || files.length === 0) {
+        res.set({
+          "Access-Control-Allow-Origin": "*",
+          "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
+          "Access-Control-Allow-Headers": "Content-Type, Authorization, Accept",
+        });
+        return res.status(400).json({ error: "No files uploaded" });
+      }
+      await fs.mkdir(tmpDir, { recursive: true });
 
-    const results = [];
+      const results = [];
 
-    // Get options from request body
-    const quality = parseInt(req.body.quality) || 95;
-    const pageSize = req.body.pageSize || "auto";
-    const fitToPage = req.body.fitToPage !== "false";
-    const maxDimension = parseInt(req.body.maxDimension) || 4096;
+      // Get options from request body
+      const quality = parseInt(req.body.quality) || 95;
+      const pageSize = req.body.pageSize || "auto";
+      const fitToPage = req.body.fitToPage !== "false";
+      const maxDimension = parseInt(req.body.maxDimension) || 4096;
 
-    for (const file of files) {
-      try {
-        const inputPath = path.join(tmpDir, file.originalname);
-        const outputPath = path.join(
-          tmpDir,
-          file.originalname.replace(/\.(heic|heif)$/i, ".pdf")
-        );
-
-        await fs.writeFile(inputPath, file.buffer);
-
-        const scriptPath = path.join(
-          __dirname,
-          "..",
-          "scripts",
-          "heic_to_pdf.py"
-        );
-        console.log("HEIC to PDF batch: Executing Python script:", scriptPath);
-        console.log("HEIC to PDF batch: Input file:", inputPath);
-        console.log("HEIC to PDF batch: Output file:", outputPath);
-
+      for (const file of files) {
         try {
-          await fs.access(scriptPath);
-          console.log("HEIC to PDF batch: Script exists");
+          const inputPath = path.join(tmpDir, file.originalname);
+          const outputPath = path.join(
+            tmpDir,
+            file.originalname.replace(/\.(heic|heif)$/i, ".pdf")
+          );
+
+          await fs.writeFile(inputPath, file.buffer);
+
+          const scriptPath = path.join(
+            __dirname,
+            "..",
+            "scripts",
+            "heic_to_pdf.py"
+          );
+          console.log(
+            "HEIC to PDF batch: Executing Python script:",
+            scriptPath
+          );
+          console.log("HEIC to PDF batch: Input file:", inputPath);
+          console.log("HEIC to PDF batch: Output file:", outputPath);
+
+          try {
+            await fs.access(scriptPath);
+            console.log("HEIC to PDF batch: Script exists");
+          } catch (error) {
+            console.error(
+              "HEIC to PDF batch: Script does not exist:",
+              scriptPath
+            );
+            results.push({
+              originalName: file.originalname,
+              outputFilename: "",
+              size: 0,
+              success: false,
+              error: "Conversion script not found",
+            });
+            continue;
+          }
+
+          const pythonArgs = [scriptPath, inputPath, outputPath];
+          if (quality !== 95) {
+            pythonArgs.push("--quality", quality.toString());
+          }
+          if (pageSize !== "auto") {
+            pythonArgs.push("--page-size", pageSize);
+          }
+          if (!fitToPage) {
+            pythonArgs.push("--no-fit-to-page");
+          }
+          if (maxDimension !== 8192) {
+            pythonArgs.push("--max-dimension", maxDimension.toString());
+          }
+
+          const python = spawn("/opt/venv/bin/python", pythonArgs);
+
+          let stdout = "";
+          let stderr = "";
+
+          python.stdout.on("data", (data: Buffer) => {
+            stdout += data.toString();
+            console.log("HEIC to PDF batch stdout:", data.toString());
+          });
+
+          python.stderr.on("data", (data: Buffer) => {
+            stderr += data.toString();
+            console.log("HEIC to PDF batch stderr:", data.toString());
+          });
+
+          await new Promise<void>((resolve, reject) => {
+            python.on("close", async (code: number) => {
+              console.log(
+                "HEIC to PDF batch: Python script finished with code:",
+                code
+              );
+
+              try {
+                if (
+                  code === 0 &&
+                  (await fs
+                    .access(outputPath)
+                    .then(() => true)
+                    .catch(() => false))
+                ) {
+                  const outputBuffer = await fs.readFile(outputPath);
+                  console.log(
+                    "HEIC to PDF batch: Output file size:",
+                    outputBuffer.length
+                  );
+                  results.push({
+                    originalName: file.originalname,
+                    outputFilename: path.basename(outputPath),
+                    size: outputBuffer.length,
+                    success: true,
+                    downloadPath: `data:application/pdf;base64,${outputBuffer.toString(
+                      "base64"
+                    )}`,
+                  });
+                  resolve();
+                } else {
+                  console.error(
+                    "HEIC to PDF batch conversion failed. Code:",
+                    code,
+                    "Stderr:",
+                    stderr
+                  );
+
+                  // Sanitize error message - remove file paths and technical details
+                  let userFriendlyError =
+                    "The file is corrupted or not a valid HEIC image";
+                  if (
+                    stderr.includes("UnidentifiedImageError") ||
+                    stderr.includes("cannot identify image file") ||
+                    stderr.includes("PIL.UnidentifiedImageError")
+                  ) {
+                    userFriendlyError =
+                      "The file is corrupted or not a valid HEIC image";
+                  } else if (stderr.includes("ERROR:")) {
+                    // Extract error message but remove file paths
+                    const errorMatch = stderr.match(/ERROR: (.+)/);
+                    if (errorMatch) {
+                      const errorMsg = errorMatch[1];
+                      // Remove file paths (anything starting with /tmp, /opt, etc.)
+                      userFriendlyError =
+                        errorMsg
+                          .replace(/\/[^\s]+/g, "")
+                          .replace(/File path:.*/g, "")
+                          .replace(/File header:.*/g, "")
+                          .trim() ||
+                        "The file is corrupted or not a valid HEIC image";
+                    }
+                  } else if (code !== 0) {
+                    userFriendlyError =
+                      "The file is corrupted or not a valid HEIC image";
+                  }
+
+                  results.push({
+                    originalName: file.originalname,
+                    outputFilename: "",
+                    size: 0,
+                    success: false,
+                    error: userFriendlyError,
+                  });
+                  resolve(); // Continue with other files
+                }
+              } catch (error) {
+                console.error("Error handling batch conversion result:", error);
+                results.push({
+                  originalName: file.originalname,
+                  outputFilename: "",
+                  size: 0,
+                  success: false,
+                  error: "The file is corrupted or not a valid HEIC image",
+                });
+                resolve(); // Continue with other files
+              }
+            });
+          });
         } catch (error) {
           console.error(
-            "HEIC to PDF batch: Script does not exist:",
-            scriptPath
+            "HEIC to PDF batch conversion error for file:",
+            file.originalname,
+            error
           );
           results.push({
             originalName: file.originalname,
             outputFilename: "",
             size: 0,
             success: false,
-            error: "Conversion script not found",
+            error: "The file is corrupted or not a valid HEIC image",
           });
-          continue;
         }
-
-        const pythonArgs = [scriptPath, inputPath, outputPath];
-        if (quality !== 95) {
-          pythonArgs.push("--quality", quality.toString());
-        }
-        if (pageSize !== "auto") {
-          pythonArgs.push("--page-size", pageSize);
-        }
-        if (!fitToPage) {
-          pythonArgs.push("--no-fit-to-page");
-        }
-        if (maxDimension !== 8192) {
-          pythonArgs.push("--max-dimension", maxDimension.toString());
-        }
-
-        const python = spawn("/opt/venv/bin/python", pythonArgs);
-
-        let stdout = "";
-        let stderr = "";
-
-        python.stdout.on("data", (data: Buffer) => {
-          stdout += data.toString();
-          console.log("HEIC to PDF batch stdout:", data.toString());
-        });
-
-        python.stderr.on("data", (data: Buffer) => {
-          stderr += data.toString();
-          console.log("HEIC to PDF batch stderr:", data.toString());
-        });
-
-        await new Promise<void>((resolve, reject) => {
-          python.on("close", async (code: number) => {
-            console.log(
-              "HEIC to PDF batch: Python script finished with code:",
-              code
-            );
-
-            try {
-              if (
-                code === 0 &&
-                (await fs
-                  .access(outputPath)
-                  .then(() => true)
-                  .catch(() => false))
-              ) {
-                const outputBuffer = await fs.readFile(outputPath);
-                console.log(
-                  "HEIC to PDF batch: Output file size:",
-                  outputBuffer.length
-                );
-                results.push({
-                  originalName: file.originalname,
-                  outputFilename: path.basename(outputPath),
-                  size: outputBuffer.length,
-                  success: true,
-                  downloadPath: `data:application/pdf;base64,${outputBuffer.toString(
-                    "base64"
-                  )}`,
-                });
-                resolve();
-              } else {
-                console.error(
-                  "HEIC to PDF batch conversion failed. Code:",
-                  code,
-                  "Stderr:",
-                  stderr
-                );
-
-                // Sanitize error message - remove file paths and technical details
-                let userFriendlyError =
-                  "The file is corrupted or not a valid HEIC image";
-                if (
-                  stderr.includes("UnidentifiedImageError") ||
-                  stderr.includes("cannot identify image file") ||
-                  stderr.includes("PIL.UnidentifiedImageError")
-                ) {
-                  userFriendlyError =
-                    "The file is corrupted or not a valid HEIC image";
-                } else if (stderr.includes("ERROR:")) {
-                  // Extract error message but remove file paths
-                  const errorMatch = stderr.match(/ERROR: (.+)/);
-                  if (errorMatch) {
-                    const errorMsg = errorMatch[1];
-                    // Remove file paths (anything starting with /tmp, /opt, etc.)
-                    userFriendlyError =
-                      errorMsg
-                        .replace(/\/[^\s]+/g, "")
-                        .replace(/File path:.*/g, "")
-                        .replace(/File header:.*/g, "")
-                        .trim() ||
-                      "The file is corrupted or not a valid HEIC image";
-                  }
-                } else if (code !== 0) {
-                  userFriendlyError =
-                    "The file is corrupted or not a valid HEIC image";
-                }
-
-                results.push({
-                  originalName: file.originalname,
-                  outputFilename: "",
-                  size: 0,
-                  success: false,
-                  error: userFriendlyError,
-                });
-                resolve(); // Continue with other files
-              }
-            } catch (error) {
-              console.error("Error handling batch conversion result:", error);
-              results.push({
-                originalName: file.originalname,
-                outputFilename: "",
-                size: 0,
-                success: false,
-                error: "The file is corrupted or not a valid HEIC image",
-              });
-              resolve(); // Continue with other files
-            }
-          });
-        });
-      } catch (error) {
-        console.error(
-          "HEIC to PDF batch conversion error for file:",
-          file.originalname,
-          error
-        );
-        results.push({
-          originalName: file.originalname,
-          outputFilename: "",
-          size: 0,
-          success: false,
-          error: "The file is corrupted or not a valid HEIC image",
-        });
       }
-    }
 
-    res.set({
-      "Access-Control-Allow-Origin": "*",
-      "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
-      "Access-Control-Allow-Headers": "Content-Type, Authorization, Accept",
-    });
-    res.json({ success: true, results });
-  } catch (error) {
-    console.error("HEIC to PDF batch conversion error:", error);
-    const message = error instanceof Error ? error.message : "Unknown error";
-    res.set({
-      "Access-Control-Allow-Origin": "*",
-      "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
-      "Access-Control-Allow-Headers": "Content-Type, Authorization, Accept",
-    });
-    res.status(500).json({ error: message });
-  } finally {
-    await fs
-      .rm(tmpDir, { recursive: true, force: true })
-      .catch(() => undefined);
+      res.set({
+        "Access-Control-Allow-Origin": "*",
+        "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
+        "Access-Control-Allow-Headers": "Content-Type, Authorization, Accept",
+      });
+      res.json({ success: true, results });
+    } catch (error) {
+      console.error("HEIC to PDF batch conversion error:", error);
+      const message = error instanceof Error ? error.message : "Unknown error";
+      res.set({
+        "Access-Control-Allow-Origin": "*",
+        "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
+        "Access-Control-Allow-Headers": "Content-Type, Authorization, Accept",
+      });
+      res.status(500).json({ error: message });
+    } finally {
+      await fs
+        .rm(tmpDir, { recursive: true, force: true })
+        .catch(() => undefined);
+    }
   }
-});
+);
 
 // Route: HEIF to PNG (Single) - OPTIONS for CORS preflight
 app.options("/convert/heif-to-png/single", (req, res) => {
