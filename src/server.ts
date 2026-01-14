@@ -6463,6 +6463,13 @@ app.use((err: any, _req: express.Request, res: express.Response, _next: express.
   console.error('Error code:', err.code);
   console.error('Error status:', err.status);
   
+  // Set CORS headers for all error responses
+  res.set({
+    'Access-Control-Allow-Origin': '*',
+    'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+    'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept'
+  });
+  
   const multerModule: any = multer;
   if (multerModule.MulterError && err instanceof multerModule.MulterError) {
     if (err.code === 'LIMIT_FILE_SIZE') {
