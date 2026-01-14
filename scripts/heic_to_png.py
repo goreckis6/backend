@@ -48,14 +48,11 @@ def convert_heic_to_png(heic_file: str, output_file: str, quality: int = 95, max
     try:
         img = Image.open(heic_file)
         print(f"Opened image. Format={img.format}, Mode={img.mode}, Size={img.size}")
-    except Exception as open_error:
-        # Log detailed error to console (for server logs) but don't expose file paths in user-facing messages
-        print(f"ERROR: Failed to open image: {open_error}")
-        print(f"ERROR: File path: {heic_file}")
-        # Print user-friendly error message (without file paths)
-        print("ERROR: The file is corrupted or not a valid HEIC image")
-        raise
-
+        
+        # Verify it's actually a HEIC/HEIF image
+        if img.format not in ['HEIC', 'HEIF']:
+            print(f"WARNING: Image format is {img.format}, not HEIC/HEIF")
+        
         # Downscale large images to speed up processing
         width, height = img.size
         if max(width, height) > max_dimension:
@@ -112,7 +109,10 @@ def convert_heic_to_png(heic_file: str, output_file: str, quality: int = 95, max
         print("ERROR: PNG output not created")
         return False
     except Exception as e:
+        # Log detailed error to console (for server logs) but don't expose file paths in user-facing messages
         print(f"ERROR: Failed to convert HEIC to PNG: {e}")
+        if "cannot identify image file" in str(e) or "UnidentifiedImageError" in str(e):
+            print("ERROR: The file is corrupted or not a valid HEIC image")
         traceback.print_exc()
         return False
 
