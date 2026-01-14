@@ -92,6 +92,13 @@ def convert_heic_to_pdf(heic_file, output_file, quality=95, page_size='auto', fi
             pil_image = Image.open(heic_file)
             original_size = pil_image.size
             print(f"Image opened successfully. Format: {pil_image.format}, Mode: {pil_image.mode}, Size: {original_size}")
+        except Exception as open_error:
+            # Log detailed error to console (for server logs) but don't expose file paths in user-facing messages
+            print(f"ERROR: Failed to open image: {open_error}")
+            print(f"ERROR: File path: {heic_file}")
+            # Print user-friendly error message (without file paths)
+            print("ERROR: The file is corrupted or not a valid HEIC image")
+            raise
             
             # OPTIMIZATION: Resize if image is too large (speed optimization)
             width, height = original_size

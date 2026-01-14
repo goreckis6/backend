@@ -42,20 +42,73 @@ def convert_heic_to_jpg(
     max_dimension: int = 4096
 ) -> bool:
     print("Starting HEIC → JPG conversion")
+    print(f"Input file: {heic_file}")
+    print(f"Output file: {output_file}")
 
     if not HAS_PIL:
         print("ERROR: Pillow not available")
+        return False
+
+    if not HAS_PILLOW_HEIF:
+        print("ERROR: pillow-heif not available")
         return False
 
     if not os.path.exists(heic_file):
         print(f"ERROR: File not found: {heic_file}")
         return False
 
+    # Check file size
+    file_size = os.path.getsize(heic_file)
+    print(f"File size: {file_size} bytes")
+    
+    if file_size == 0:
+        print("ERROR: File is empty")
+        return False
+
+    # Check file signature (HEIC files start with specific bytes)
+    try:
+        with open(heic_file, 'rb') as f:
+            header = f.read(12)
+            header_hex = header.hex()
+            print(f"File header (hex): {header_hex}")
+            
+            # HEIC/HEIF files typically start with:
+            # - ftyp box: bytes 4-8 contain "ftyp"
+            # - Then brand identifier like "heic", "heif", "mif1", etc.
+            if len(header) >= 8:
+                ftyp_pos = header.find(b'ftyp')
+                if ftyp_pos >= 0 and ftyp_pos < 8:
+                    brand_start = ftyp_pos + 4
+                    if len(header) > brand_start + 4:
+                        brand = header[brand_start:brand_start+4]
+                        print(f"Detected brand: {brand}")
+                        if brand not in [b'heic', b'heif', b'mif1', b'msf1']:
+                            print(f"WARNING: Unusual brand identifier: {brand}")
+                else:
+                    print("WARNING: 'ftyp' box not found in expected position")
+    except Exception as read_error:
+        print(f"WARNING: Could not read file header: {read_error}")
+
     try:
         _ensure_heif()
+        print("pillow-heif registered successfully")
 
-        img = Image.open(heic_file)
-        print(f"Opened: format={img.format}, mode={img.mode}, size={img.size}")
+        # Try to open the image
+        try:
+            img = Image.open(heic_file)
+            print(f"Opened: format={img.format}, mode={img.mode}, size={img.size}")
+            
+            # Verify it's actually a HEIC/HEIF image
+            if img.format not in ['HEIC', 'HEIF']:
+                print(f"WARNING: Image format is {img.format}, not HEIC/HEIF")
+        except Exception as open_error:
+            # Log detailed error to console (for server logs) but don't expose file paths in user-facing messages
+            print(f"ERROR: Failed to open image: {open_error}")
+            print(f"ERROR: File path: {heic_file}")
+            print(f"ERROR: File exists: {os.path.exists(heic_file)}")
+            # Print user-friendly error message (without file paths)
+            print("ERROR: The file is corrupted or not a valid HEIC image")
+            raise
 
         # Fix iPhone orientation
         img = ImageOps.exif_transpose(img)

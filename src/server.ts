@@ -7115,12 +7115,10 @@ app.post("/api/test-upload", upload.single("file"), (req, res) => {
     });
   } catch (error) {
     console.error("Test upload error:", error);
-    res
-      .status(500)
-      .json({
-        error: "Test upload failed",
-        details: error instanceof Error ? error.message : String(error),
-      });
+    res.status(500).json({
+      error: "Test upload failed",
+      details: error instanceof Error ? error.message : String(error),
+    });
   }
 });
 
@@ -7148,12 +7146,9 @@ const conversionTimeout = (timeoutMs: number) => {
   return (req: any, res: any, next: any) => {
     req.setTimeout(timeoutMs, () => {
       if (!res.headersSent) {
-        res
-          .status(408)
-          .json({
-            error:
-              "Request timeout - file too large or processing took too long",
-          });
+        res.status(408).json({
+          error: "Request timeout - file too large or processing took too long",
+        });
       }
     });
     next();
@@ -7294,11 +7289,9 @@ app.post(
               "Access-Control-Allow-Headers":
                 "Content-Type, Authorization, Accept",
             });
-            return res
-              .status(400)
-              .json({
-                error: "Invalid file upload - missing filename and content",
-              });
+            return res.status(400).json({
+              error: "Invalid file upload - missing filename and content",
+            });
           }
         }
       }
@@ -8320,15 +8313,13 @@ app.post("/api/preview/docx", upload.single("file"), async (req, res) => {
           outputPath,
         ]);
       } catch (e: any) {
-        return res
-          .status(500)
-          .json({
-            error: "Preview generation failed",
-            details:
-              e?.stderr ||
-              e?.message ||
-              (usedPandocFallback ? "Pandoc fallback failed" : ""),
-          });
+        return res.status(500).json({
+          error: "Preview generation failed",
+          details:
+            e?.stderr ||
+            e?.message ||
+            (usedPandocFallback ? "Pandoc fallback failed" : ""),
+        });
       }
     }
 
@@ -8401,12 +8392,10 @@ app.post("/api/preview/rtf", upload.single("file"), async (req, res) => {
         outputPath,
       ]);
     } catch (e: any) {
-      return res
-        .status(500)
-        .json({
-          error: "RTF preview conversion failed",
-          details: e?.stderr || e?.message || "",
-        });
+      return res.status(500).json({
+        error: "RTF preview conversion failed",
+        details: e?.stderr || e?.message || "",
+      });
     }
 
     try {
@@ -8877,15 +8866,11 @@ app.post(
           "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
           "Access-Control-Allow-Headers": "Content-Type, Authorization, Accept",
         });
-        return res
-          .status(500)
-          .json({
-            error: "Failed to create temporary directory",
-            details:
-              mkdirError instanceof Error
-                ? mkdirError.message
-                : "Unknown error",
-          });
+        return res.status(500).json({
+          error: "Failed to create temporary directory",
+          details:
+            mkdirError instanceof Error ? mkdirError.message : "Unknown error",
+        });
       }
 
       const inputPath = path.join(tmpDir, file.originalname);
@@ -8906,15 +8891,11 @@ app.post(
         await fs
           .rm(tmpDir, { recursive: true, force: true })
           .catch(() => undefined);
-        return res
-          .status(500)
-          .json({
-            error: "Failed to write input file",
-            details:
-              writeError instanceof Error
-                ? writeError.message
-                : "Unknown error",
-          });
+        return res.status(500).json({
+          error: "Failed to write input file",
+          details:
+            writeError instanceof Error ? writeError.message : "Unknown error",
+        });
       }
 
       const scriptPath = path.join(
@@ -8968,12 +8949,10 @@ app.post(
             "Access-Control-Allow-Headers":
               "Content-Type, Authorization, Accept",
           });
-          res
-            .status(500)
-            .json({
-              error: "Failed to start conversion process",
-              details: error.message,
-            });
+          res.status(500).json({
+            error: "Failed to start conversion process",
+            details: error.message,
+          });
         }
         await fs
           .rm(tmpDir, { recursive: true, force: true })
@@ -9000,12 +8979,9 @@ app.post(
             "Access-Control-Allow-Headers":
               "Content-Type, Authorization, Accept",
           });
-          res
-            .status(500)
-            .json({
-              error:
-                "Conversion timeout. The file may be too large or complex.",
-            });
+          res.status(500).json({
+            error: "Conversion timeout. The file may be too large or complex.",
+          });
         }
         await fs
           .rm(tmpDir, { recursive: true, force: true })
@@ -9051,6 +9027,33 @@ app.post(
                 "Stderr:",
                 stderr
               );
+
+              // Sanitize error message - remove file paths and technical details
+              let userFriendlyError =
+                "The file is corrupted or not a valid HEIC image";
+              if (
+                stderr.includes("UnidentifiedImageError") ||
+                stderr.includes("cannot identify image file") ||
+                stderr.includes("PIL.UnidentifiedImageError")
+              ) {
+                userFriendlyError =
+                  "The file is corrupted or not a valid HEIC image";
+              } else if (stderr.includes("ERROR:")) {
+                // Extract error message but remove file paths
+                const errorMatch = stderr.match(/ERROR: (.+)/);
+                if (errorMatch) {
+                  const errorMsg = errorMatch[1];
+                  // Remove file paths (anything starting with /tmp, /opt, etc.)
+                  userFriendlyError =
+                    errorMsg
+                      .replace(/\/[^\s]+/g, "")
+                      .replace(/File path:.*/g, "")
+                      .replace(/File header:.*/g, "")
+                      .trim() ||
+                    "The file is corrupted or not a valid HEIC image";
+                }
+              }
+
               res.set({
                 "Access-Control-Allow-Origin": "*",
                 "Access-Control-Allow-Methods":
@@ -9058,9 +9061,7 @@ app.post(
                 "Access-Control-Allow-Headers":
                   "Content-Type, Authorization, Accept",
               });
-              res
-                .status(500)
-                .json({ error: "Conversion failed", details: stderr });
+              res.status(500).json({ error: userFriendlyError });
             }
           }
         } catch (error) {
@@ -9072,13 +9073,10 @@ app.post(
               "Access-Control-Allow-Headers":
                 "Content-Type, Authorization, Accept",
             });
-            res
-              .status(500)
-              .json({
-                error: "Conversion failed",
-                details:
-                  error instanceof Error ? error.message : "Unknown error",
-              });
+            res.status(500).json({
+              error: "Conversion failed",
+              details: error instanceof Error ? error.message : "Unknown error",
+            });
           }
         } finally {
           await fs
@@ -9216,7 +9214,32 @@ app.post("/convert/heic-to-png/batch", uploadBatch, async (req, res) => {
                   outputFilename: "",
                   size: 0,
                   success: false,
-                  error: stderr || `Conversion failed with code ${code}`,
+                  error: (() => {
+                    // Sanitize error message - remove file paths and technical details
+                    if (
+                      stderr.includes("UnidentifiedImageError") ||
+                      stderr.includes("cannot identify image file") ||
+                      stderr.includes("PIL.UnidentifiedImageError")
+                    ) {
+                      return "The file is corrupted or not a valid HEIC image";
+                    } else if (stderr.includes("ERROR:")) {
+                      const errorMatch = stderr.match(/ERROR: (.+)/);
+                      if (errorMatch) {
+                        const errorMsg = errorMatch[1];
+                        return (
+                          errorMsg
+                            .replace(/\/[^\s]+/g, "")
+                            .replace(/File path:.*/g, "")
+                            .replace(/File header:.*/g, "")
+                            .trim() ||
+                          "The file is corrupted or not a valid HEIC image"
+                        );
+                      }
+                    }
+                    return code !== 0
+                      ? "The file is corrupted or not a valid HEIC image"
+                      : "Conversion failed";
+                  })(),
                 });
               }
             } catch (err) {
@@ -9225,7 +9248,7 @@ app.post("/convert/heic-to-png/batch", uploadBatch, async (req, res) => {
                 outputFilename: "",
                 size: 0,
                 success: false,
-                error: err instanceof Error ? err.message : "Unknown error",
+                error: "The file is corrupted or not a valid HEIC image",
               });
             } finally {
               resolve();
@@ -9238,7 +9261,7 @@ app.post("/convert/heic-to-png/batch", uploadBatch, async (req, res) => {
           outputFilename: "",
           size: 0,
           success: false,
-          error: error instanceof Error ? error.message : "Unknown error",
+          error: "The file is corrupted or not a valid HEIC image",
         });
       }
     }
@@ -9314,15 +9337,11 @@ app.post(
           "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
           "Access-Control-Allow-Headers": "Content-Type, Authorization, Accept",
         });
-        return res
-          .status(500)
-          .json({
-            error: "Failed to create temporary directory",
-            details:
-              mkdirError instanceof Error
-                ? mkdirError.message
-                : "Unknown error",
-          });
+        return res.status(500).json({
+          error: "Failed to create temporary directory",
+          details:
+            mkdirError instanceof Error ? mkdirError.message : "Unknown error",
+        });
       }
 
       const inputPath = path.join(tmpDir, file.originalname);
@@ -9343,15 +9362,11 @@ app.post(
         await fs
           .rm(tmpDir, { recursive: true, force: true })
           .catch(() => undefined);
-        return res
-          .status(500)
-          .json({
-            error: "Failed to write input file",
-            details:
-              writeError instanceof Error
-                ? writeError.message
-                : "Unknown error",
-          });
+        return res.status(500).json({
+          error: "Failed to write input file",
+          details:
+            writeError instanceof Error ? writeError.message : "Unknown error",
+        });
       }
 
       const scriptPath = path.join(
@@ -9405,12 +9420,10 @@ app.post(
             "Access-Control-Allow-Headers":
               "Content-Type, Authorization, Accept",
           });
-          res
-            .status(500)
-            .json({
-              error: "Failed to start conversion process",
-              details: error.message,
-            });
+          res.status(500).json({
+            error: "Failed to start conversion process",
+            details: error.message,
+          });
         }
         await fs
           .rm(tmpDir, { recursive: true, force: true })
@@ -9437,12 +9450,9 @@ app.post(
             "Access-Control-Allow-Headers":
               "Content-Type, Authorization, Accept",
           });
-          res
-            .status(500)
-            .json({
-              error:
-                "Conversion timeout. The file may be too large or complex.",
-            });
+          res.status(500).json({
+            error: "Conversion timeout. The file may be too large or complex.",
+          });
         }
         await fs
           .rm(tmpDir, { recursive: true, force: true })
@@ -9488,6 +9498,33 @@ app.post(
                 "Stderr:",
                 stderr
               );
+
+              // Sanitize error message - remove file paths and technical details
+              let userFriendlyError =
+                "The file is corrupted or not a valid HEIC image";
+              if (
+                stderr.includes("UnidentifiedImageError") ||
+                stderr.includes("cannot identify image file") ||
+                stderr.includes("PIL.UnidentifiedImageError")
+              ) {
+                userFriendlyError =
+                  "The file is corrupted or not a valid HEIC image";
+              } else if (stderr.includes("ERROR:")) {
+                // Extract error message but remove file paths
+                const errorMatch = stderr.match(/ERROR: (.+)/);
+                if (errorMatch) {
+                  const errorMsg = errorMatch[1];
+                  // Remove file paths (anything starting with /tmp, /opt, etc.)
+                  userFriendlyError =
+                    errorMsg
+                      .replace(/\/[^\s]+/g, "")
+                      .replace(/File path:.*/g, "")
+                      .replace(/File header:.*/g, "")
+                      .trim() ||
+                    "The file is corrupted or not a valid HEIC image";
+                }
+              }
+
               res.set({
                 "Access-Control-Allow-Origin": "*",
                 "Access-Control-Allow-Methods":
@@ -9495,9 +9532,7 @@ app.post(
                 "Access-Control-Allow-Headers":
                   "Content-Type, Authorization, Accept",
               });
-              res
-                .status(500)
-                .json({ error: "Conversion failed", details: stderr });
+              res.status(500).json({ error: userFriendlyError });
             }
           }
         } catch (error) {
@@ -9509,13 +9544,10 @@ app.post(
               "Access-Control-Allow-Headers":
                 "Content-Type, Authorization, Accept",
             });
-            res
-              .status(500)
-              .json({
-                error: "Conversion failed",
-                details:
-                  error instanceof Error ? error.message : "Unknown error",
-              });
+            res.status(500).json({
+              error: "Conversion failed",
+              details: error instanceof Error ? error.message : "Unknown error",
+            });
           }
         } finally {
           await fs
@@ -9648,12 +9680,41 @@ app.post("/convert/heic-to-jpg/batch", uploadBatch, async (req, res) => {
                   )}`,
                 });
               } else {
+                // Sanitize error message - remove file paths and technical details
+                let userFriendlyError =
+                  "The file is corrupted or not a valid HEIC image";
+                if (
+                  stderr.includes("UnidentifiedImageError") ||
+                  stderr.includes("cannot identify image file") ||
+                  stderr.includes("PIL.UnidentifiedImageError")
+                ) {
+                  userFriendlyError =
+                    "The file is corrupted or not a valid HEIC image";
+                } else if (stderr.includes("ERROR:")) {
+                  // Extract error message but remove file paths
+                  const errorMatch = stderr.match(/ERROR: (.+)/);
+                  if (errorMatch) {
+                    const errorMsg = errorMatch[1];
+                    // Remove file paths (anything starting with /tmp, /opt, etc.)
+                    userFriendlyError =
+                      errorMsg
+                        .replace(/\/[^\s]+/g, "")
+                        .replace(/File path:.*/g, "")
+                        .replace(/File header:.*/g, "")
+                        .trim() ||
+                      "The file is corrupted or not a valid HEIC image";
+                  }
+                } else if (code !== 0) {
+                  userFriendlyError =
+                    "The file is corrupted or not a valid HEIC image";
+                }
+
                 results.push({
                   originalName: file.originalname,
                   outputFilename: "",
                   size: 0,
                   success: false,
-                  error: stderr || `Conversion failed with code ${code}`,
+                  error: userFriendlyError,
                 });
               }
             } catch (err) {
@@ -9662,7 +9723,7 @@ app.post("/convert/heic-to-jpg/batch", uploadBatch, async (req, res) => {
                 outputFilename: "",
                 size: 0,
                 success: false,
-                error: err instanceof Error ? err.message : "Unknown error",
+                error: "The file is corrupted or not a valid HEIC image",
               });
             } finally {
               resolve();
@@ -9675,7 +9736,7 @@ app.post("/convert/heic-to-jpg/batch", uploadBatch, async (req, res) => {
           outputFilename: "",
           size: 0,
           success: false,
-          error: error instanceof Error ? error.message : "Unknown error",
+          error: "The file is corrupted or not a valid HEIC image",
         });
       }
     }
@@ -10087,12 +10148,10 @@ app.post(
           "Access-Control-Allow-Headers": "Content-Type, Authorization, Accept",
         });
         if (!res.headersSent)
-          res
-            .status(500)
-            .json({
-              error: "Failed to start conversion process",
-              details: err.message,
-            });
+          res.status(500).json({
+            error: "Failed to start conversion process",
+            details: err.message,
+          });
         await fs
           .rm(tmpDir, { recursive: true, force: true })
           .catch(() => undefined);
@@ -10253,7 +10312,32 @@ app.post("/convert/heic-to-eps/batch", uploadBatch, async (req, res) => {
                   outputFilename: "",
                   size: 0,
                   success: false,
-                  error: stderr || `Conversion failed with code ${code}`,
+                  error: (() => {
+                    // Sanitize error message - remove file paths and technical details
+                    if (
+                      stderr.includes("UnidentifiedImageError") ||
+                      stderr.includes("cannot identify image file") ||
+                      stderr.includes("PIL.UnidentifiedImageError")
+                    ) {
+                      return "The file is corrupted or not a valid HEIC image";
+                    } else if (stderr.includes("ERROR:")) {
+                      const errorMatch = stderr.match(/ERROR: (.+)/);
+                      if (errorMatch) {
+                        const errorMsg = errorMatch[1];
+                        return (
+                          errorMsg
+                            .replace(/\/[^\s]+/g, "")
+                            .replace(/File path:.*/g, "")
+                            .replace(/File header:.*/g, "")
+                            .trim() ||
+                          "The file is corrupted or not a valid HEIC image"
+                        );
+                      }
+                    }
+                    return code !== 0
+                      ? "The file is corrupted or not a valid HEIC image"
+                      : "Conversion failed";
+                  })(),
                 });
               }
             } finally {
@@ -10267,7 +10351,7 @@ app.post("/convert/heic-to-eps/batch", uploadBatch, async (req, res) => {
           outputFilename: "",
           size: 0,
           success: false,
-          error: err instanceof Error ? err.message : "Unknown error",
+          error: "The file is corrupted or not a valid HEIC image",
         });
       }
     }
@@ -11359,11 +11443,9 @@ app.post(
         .then(() => true)
         .catch(() => false);
       if (!htmlExists) {
-        res
-          .status(500)
-          .json({
-            error: `Python script did not produce HTML preview: ${htmlPath}`,
-          });
+        res.status(500).json({
+          error: `Python script did not produce HTML preview: ${htmlPath}`,
+        });
         return;
       }
 
@@ -11910,11 +11992,9 @@ app.post(
         .then(() => true)
         .catch(() => false);
       if (!htmlExists) {
-        res
-          .status(500)
-          .json({
-            error: `Python script did not produce HTML preview: ${htmlPath}`,
-          });
+        res.status(500).json({
+          error: `Python script did not produce HTML preview: ${htmlPath}`,
+        });
         return;
       }
 
@@ -12300,11 +12380,9 @@ app.post("/api/preview/md", uploadDocument.single("file"), async (req, res) => {
       .then(() => true)
       .catch(() => false);
     if (!htmlExists) {
-      res
-        .status(500)
-        .json({
-          error: `Python script did not produce HTML preview: ${htmlPath}`,
-        });
+      res.status(500).json({
+        error: `Python script did not produce HTML preview: ${htmlPath}`,
+      });
       return;
     }
 
@@ -13919,11 +13997,9 @@ app.post(
         .then(() => true)
         .catch(() => false);
       if (!outputExists) {
-        res
-          .status(500)
-          .json({
-            error: `Python script did not produce preview: ${outputPath}`,
-          });
+        res.status(500).json({
+          error: `Python script did not produce preview: ${outputPath}`,
+        });
         return;
       }
 
@@ -14294,11 +14370,9 @@ app.post("/api/preview/js", uploadDocument.single("file"), async (req, res) => {
       .then(() => true)
       .catch(() => false);
     if (!outputExists) {
-      res
-        .status(500)
-        .json({
-          error: `Python script did not produce JavaScript preview: ${outputPath}`,
-        });
+      res.status(500).json({
+        error: `Python script did not produce JavaScript preview: ${outputPath}`,
+      });
       return;
     }
 
@@ -14675,11 +14749,9 @@ app.post(
         .then(() => true)
         .catch(() => false);
       if (!outputExists) {
-        res
-          .status(500)
-          .json({
-            error: `Python script did not produce CSS preview: ${outputPath}`,
-          });
+        res.status(500).json({
+          error: `Python script did not produce CSS preview: ${outputPath}`,
+        });
         return;
       }
 
@@ -15055,11 +15127,9 @@ app.post(
         .then(() => true)
         .catch(() => false);
       if (!outputExists) {
-        res
-          .status(500)
-          .json({
-            error: `Python script did not produce HTML preview: ${outputPath}`,
-          });
+        res.status(500).json({
+          error: `Python script did not produce HTML preview: ${outputPath}`,
+        });
         return;
       }
 
@@ -15435,11 +15505,9 @@ app.post(
         .then(() => true)
         .catch(() => false);
       if (!htmlExists) {
-        res
-          .status(500)
-          .json({
-            error: `Python script did not produce HTML preview: ${htmlPath}`,
-          });
+        res.status(500).json({
+          error: `Python script did not produce HTML preview: ${htmlPath}`,
+        });
         return;
       }
 
@@ -15815,11 +15883,9 @@ app.post(
         .then(() => true)
         .catch(() => false);
       if (!htmlExists) {
-        res
-          .status(500)
-          .json({
-            error: `Python script did not produce HTML preview: ${htmlPath}`,
-          });
+        res.status(500).json({
+          error: `Python script did not produce HTML preview: ${htmlPath}`,
+        });
         return;
       }
 
@@ -16252,11 +16318,9 @@ app.post(
           "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
           "Access-Control-Allow-Headers": "Content-Type, Authorization, Accept",
         });
-        res
-          .status(500)
-          .json({
-            error: `Python script did not produce HTML preview. The ODS file might be corrupted or in an unsupported format.`,
-          });
+        res.status(500).json({
+          error: `Python script did not produce HTML preview. The ODS file might be corrupted or in an unsupported format.`,
+        });
         return;
       }
 
@@ -16632,11 +16696,9 @@ app.post(
         .then(() => true)
         .catch(() => false);
       if (!htmlExists) {
-        res
-          .status(500)
-          .json({
-            error: `Python script did not produce HTML preview: ${htmlPath}`,
-          });
+        res.status(500).json({
+          error: `Python script did not produce HTML preview: ${htmlPath}`,
+        });
         return;
       }
 
@@ -17016,11 +17078,9 @@ app.post(
         .then(() => true)
         .catch(() => false);
       if (!htmlExists) {
-        res
-          .status(500)
-          .json({
-            error: `Python script did not produce HTML preview: ${htmlPath}`,
-          });
+        res.status(500).json({
+          error: `Python script did not produce HTML preview: ${htmlPath}`,
+        });
         return;
       }
 
@@ -20802,7 +20862,7 @@ app.post("/convert/avro-to-json/batch", uploadBatch, async (req, res) => {
           outputFilename: "",
           size: 0,
           success: false,
-          error: error instanceof Error ? error.message : "Unknown error",
+          error: "The file is corrupted or not a valid HEIC image",
         });
       }
     }
@@ -20993,7 +21053,7 @@ app.post("/convert/avro-to-ndjson/batch", uploadBatch, async (req, res) => {
           outputFilename: "",
           size: 0,
           success: false,
-          error: error instanceof Error ? error.message : "Unknown error",
+          error: "The file is corrupted or not a valid HEIC image",
         });
       }
     }
@@ -21181,7 +21241,7 @@ app.post("/convert/csv-to-avro/batch", uploadBatch, async (req, res) => {
           outputFilename: "",
           size: 0,
           success: false,
-          error: error instanceof Error ? error.message : "Unknown error",
+          error: "The file is corrupted or not a valid HEIC image",
         });
       }
     }
@@ -21434,7 +21494,32 @@ app.post("/convert/bmp-to-webp/batch", uploadBatch, async (req, res) => {
                   outputFilename: "",
                   size: 0,
                   success: false,
-                  error: stderr || `Conversion failed with code ${code}`,
+                  error: (() => {
+                    // Sanitize error message - remove file paths and technical details
+                    if (
+                      stderr.includes("UnidentifiedImageError") ||
+                      stderr.includes("cannot identify image file") ||
+                      stderr.includes("PIL.UnidentifiedImageError")
+                    ) {
+                      return "The file is corrupted or not a valid HEIC image";
+                    } else if (stderr.includes("ERROR:")) {
+                      const errorMatch = stderr.match(/ERROR: (.+)/);
+                      if (errorMatch) {
+                        const errorMsg = errorMatch[1];
+                        return (
+                          errorMsg
+                            .replace(/\/[^\s]+/g, "")
+                            .replace(/File path:.*/g, "")
+                            .replace(/File header:.*/g, "")
+                            .trim() ||
+                          "The file is corrupted or not a valid HEIC image"
+                        );
+                      }
+                    }
+                    return code !== 0
+                      ? "The file is corrupted or not a valid HEIC image"
+                      : "Conversion failed";
+                  })(),
                 });
                 resolve(); // Continue with other files even if this one failed
               }
@@ -21445,7 +21530,7 @@ app.post("/convert/bmp-to-webp/batch", uploadBatch, async (req, res) => {
                 outputFilename: "",
                 size: 0,
                 success: false,
-                error: error instanceof Error ? error.message : "Unknown error",
+                error: "The file is corrupted or not a valid HEIC image",
               });
               resolve(); // Continue with other files even if this one failed
             }
@@ -21819,7 +21904,32 @@ app.post("/convert/cr2-to-ico/batch", uploadBatch, async (req, res) => {
                   outputFilename: "",
                   size: 0,
                   success: false,
-                  error: stderr || `Conversion failed with code ${code}`,
+                  error: (() => {
+                    // Sanitize error message - remove file paths and technical details
+                    if (
+                      stderr.includes("UnidentifiedImageError") ||
+                      stderr.includes("cannot identify image file") ||
+                      stderr.includes("PIL.UnidentifiedImageError")
+                    ) {
+                      return "The file is corrupted or not a valid HEIC image";
+                    } else if (stderr.includes("ERROR:")) {
+                      const errorMatch = stderr.match(/ERROR: (.+)/);
+                      if (errorMatch) {
+                        const errorMsg = errorMatch[1];
+                        return (
+                          errorMsg
+                            .replace(/\/[^\s]+/g, "")
+                            .replace(/File path:.*/g, "")
+                            .replace(/File header:.*/g, "")
+                            .trim() ||
+                          "The file is corrupted or not a valid HEIC image"
+                        );
+                      }
+                    }
+                    return code !== 0
+                      ? "The file is corrupted or not a valid HEIC image"
+                      : "Conversion failed";
+                  })(),
                 });
                 resolve(); // Continue with other files even if this one failed
               }
@@ -21830,7 +21940,7 @@ app.post("/convert/cr2-to-ico/batch", uploadBatch, async (req, res) => {
                 outputFilename: "",
                 size: 0,
                 success: false,
-                error: error instanceof Error ? error.message : "Unknown error",
+                error: "The file is corrupted or not a valid HEIC image",
               });
               resolve(); // Continue with other files even if this one failed
             }
@@ -21966,7 +22076,7 @@ app.post("/convert/dng-to-webp/batch", uploadBatch, async (req, res) => {
           outputFilename: "",
           size: 0,
           success: false,
-          error: error instanceof Error ? error.message : "Unknown error",
+          error: "The file is corrupted or not a valid HEIC image",
         });
       }
     }
@@ -22267,7 +22377,32 @@ app.post("/convert/cr2-to-webp/batch", uploadBatch, async (req, res) => {
                   outputFilename: "",
                   size: 0,
                   success: false,
-                  error: stderr || `Conversion failed with code ${code}`,
+                  error: (() => {
+                    // Sanitize error message - remove file paths and technical details
+                    if (
+                      stderr.includes("UnidentifiedImageError") ||
+                      stderr.includes("cannot identify image file") ||
+                      stderr.includes("PIL.UnidentifiedImageError")
+                    ) {
+                      return "The file is corrupted or not a valid HEIC image";
+                    } else if (stderr.includes("ERROR:")) {
+                      const errorMatch = stderr.match(/ERROR: (.+)/);
+                      if (errorMatch) {
+                        const errorMsg = errorMatch[1];
+                        return (
+                          errorMsg
+                            .replace(/\/[^\s]+/g, "")
+                            .replace(/File path:.*/g, "")
+                            .replace(/File header:.*/g, "")
+                            .trim() ||
+                          "The file is corrupted or not a valid HEIC image"
+                        );
+                      }
+                    }
+                    return code !== 0
+                      ? "The file is corrupted or not a valid HEIC image"
+                      : "Conversion failed";
+                  })(),
                 });
                 resolve(); // Continue with other files even if this one failed
               }
@@ -22278,7 +22413,7 @@ app.post("/convert/cr2-to-webp/batch", uploadBatch, async (req, res) => {
                 outputFilename: "",
                 size: 0,
                 success: false,
-                error: error instanceof Error ? error.message : "Unknown error",
+                error: "The file is corrupted or not a valid HEIC image",
               });
               resolve(); // Continue with other files even if this one failed
             }
@@ -22438,12 +22573,10 @@ app.post(
           }
         } catch (error) {
           console.error("Error handling conversion result:", error);
-          res
-            .status(500)
-            .json({
-              error: "Conversion failed",
-              details: error instanceof Error ? error.message : "Unknown error",
-            });
+          res.status(500).json({
+            error: "Conversion failed",
+            details: error instanceof Error ? error.message : "Unknown error",
+          });
         } finally {
           await fs
             .rm(tmpDir, { recursive: true, force: true })
@@ -22604,7 +22737,32 @@ app.post("/convert/eps-to-webp/batch", uploadBatch, async (req, res) => {
                   outputFilename: "",
                   size: 0,
                   success: false,
-                  error: stderr || `Conversion failed with code ${code}`,
+                  error: (() => {
+                    // Sanitize error message - remove file paths and technical details
+                    if (
+                      stderr.includes("UnidentifiedImageError") ||
+                      stderr.includes("cannot identify image file") ||
+                      stderr.includes("PIL.UnidentifiedImageError")
+                    ) {
+                      return "The file is corrupted or not a valid HEIC image";
+                    } else if (stderr.includes("ERROR:")) {
+                      const errorMatch = stderr.match(/ERROR: (.+)/);
+                      if (errorMatch) {
+                        const errorMsg = errorMatch[1];
+                        return (
+                          errorMsg
+                            .replace(/\/[^\s]+/g, "")
+                            .replace(/File path:.*/g, "")
+                            .replace(/File header:.*/g, "")
+                            .trim() ||
+                          "The file is corrupted or not a valid HEIC image"
+                        );
+                      }
+                    }
+                    return code !== 0
+                      ? "The file is corrupted or not a valid HEIC image"
+                      : "Conversion failed";
+                  })(),
                 });
                 resolve(); // Continue with other files
               }
@@ -22615,7 +22773,7 @@ app.post("/convert/eps-to-webp/batch", uploadBatch, async (req, res) => {
                 outputFilename: "",
                 size: 0,
                 success: false,
-                error: error instanceof Error ? error.message : "Unknown error",
+                error: "The file is corrupted or not a valid HEIC image",
               });
               resolve(); // Continue with other files
             }
@@ -22632,7 +22790,7 @@ app.post("/convert/eps-to-webp/batch", uploadBatch, async (req, res) => {
           outputFilename: "",
           size: 0,
           success: false,
-          error: error instanceof Error ? error.message : "Unknown error",
+          error: "The file is corrupted or not a valid HEIC image",
         });
       }
     }
@@ -22777,12 +22935,10 @@ app.post(
             "Access-Control-Allow-Headers":
               "Content-Type, Authorization, Accept",
           });
-          res
-            .status(500)
-            .json({
-              error: "Conversion failed",
-              details: error instanceof Error ? error.message : "Unknown error",
-            });
+          res.status(500).json({
+            error: "Conversion failed",
+            details: error instanceof Error ? error.message : "Unknown error",
+          });
         } finally {
           await fs
             .rm(tmpDir, { recursive: true, force: true })
@@ -22931,7 +23087,32 @@ app.post("/convert/epub-to-csv/batch", uploadBatch, async (req, res) => {
                   outputFilename: "",
                   size: 0,
                   success: false,
-                  error: stderr || `Conversion failed with code ${code}`,
+                  error: (() => {
+                    // Sanitize error message - remove file paths and technical details
+                    if (
+                      stderr.includes("UnidentifiedImageError") ||
+                      stderr.includes("cannot identify image file") ||
+                      stderr.includes("PIL.UnidentifiedImageError")
+                    ) {
+                      return "The file is corrupted or not a valid HEIC image";
+                    } else if (stderr.includes("ERROR:")) {
+                      const errorMatch = stderr.match(/ERROR: (.+)/);
+                      if (errorMatch) {
+                        const errorMsg = errorMatch[1];
+                        return (
+                          errorMsg
+                            .replace(/\/[^\s]+/g, "")
+                            .replace(/File path:.*/g, "")
+                            .replace(/File header:.*/g, "")
+                            .trim() ||
+                          "The file is corrupted or not a valid HEIC image"
+                        );
+                      }
+                    }
+                    return code !== 0
+                      ? "The file is corrupted or not a valid HEIC image"
+                      : "Conversion failed";
+                  })(),
                 });
                 resolve(); // Continue with other files
               }
@@ -22942,7 +23123,7 @@ app.post("/convert/epub-to-csv/batch", uploadBatch, async (req, res) => {
                 outputFilename: "",
                 size: 0,
                 success: false,
-                error: error instanceof Error ? error.message : "Unknown error",
+                error: "The file is corrupted or not a valid HEIC image",
               });
               resolve(); // Continue with other files
             }
@@ -22959,7 +23140,7 @@ app.post("/convert/epub-to-csv/batch", uploadBatch, async (req, res) => {
           outputFilename: "",
           size: 0,
           success: false,
-          error: error instanceof Error ? error.message : "Unknown error",
+          error: "The file is corrupted or not a valid HEIC image",
         });
       }
     }
@@ -23108,12 +23289,10 @@ app.post(
             "Access-Control-Allow-Headers":
               "Content-Type, Authorization, Accept",
           });
-          res
-            .status(500)
-            .json({
-              error: "Conversion failed",
-              details: error instanceof Error ? error.message : "Unknown error",
-            });
+          res.status(500).json({
+            error: "Conversion failed",
+            details: error instanceof Error ? error.message : "Unknown error",
+          });
         } finally {
           await fs
             .rm(tmpDir, { recursive: true, force: true })
@@ -23266,7 +23445,32 @@ app.post("/convert/docx-to-csv/batch", uploadBatch, async (req, res) => {
                   outputFilename: "",
                   size: 0,
                   success: false,
-                  error: stderr || `Conversion failed with code ${code}`,
+                  error: (() => {
+                    // Sanitize error message - remove file paths and technical details
+                    if (
+                      stderr.includes("UnidentifiedImageError") ||
+                      stderr.includes("cannot identify image file") ||
+                      stderr.includes("PIL.UnidentifiedImageError")
+                    ) {
+                      return "The file is corrupted or not a valid HEIC image";
+                    } else if (stderr.includes("ERROR:")) {
+                      const errorMatch = stderr.match(/ERROR: (.+)/);
+                      if (errorMatch) {
+                        const errorMsg = errorMatch[1];
+                        return (
+                          errorMsg
+                            .replace(/\/[^\s]+/g, "")
+                            .replace(/File path:.*/g, "")
+                            .replace(/File header:.*/g, "")
+                            .trim() ||
+                          "The file is corrupted or not a valid HEIC image"
+                        );
+                      }
+                    }
+                    return code !== 0
+                      ? "The file is corrupted or not a valid HEIC image"
+                      : "Conversion failed";
+                  })(),
                 });
                 resolve(); // Continue with other files
               }
@@ -23277,7 +23481,7 @@ app.post("/convert/docx-to-csv/batch", uploadBatch, async (req, res) => {
                 outputFilename: "",
                 size: 0,
                 success: false,
-                error: error instanceof Error ? error.message : "Unknown error",
+                error: "The file is corrupted or not a valid HEIC image",
               });
               resolve(); // Continue with other files
             }
@@ -23294,7 +23498,7 @@ app.post("/convert/docx-to-csv/batch", uploadBatch, async (req, res) => {
           outputFilename: "",
           size: 0,
           success: false,
-          error: error instanceof Error ? error.message : "Unknown error",
+          error: "The file is corrupted or not a valid HEIC image",
         });
       }
     }
@@ -23443,12 +23647,10 @@ app.post(
             "Access-Control-Allow-Headers":
               "Content-Type, Authorization, Accept",
           });
-          res
-            .status(500)
-            .json({
-              error: "Conversion failed",
-              details: error instanceof Error ? error.message : "Unknown error",
-            });
+          res.status(500).json({
+            error: "Conversion failed",
+            details: error instanceof Error ? error.message : "Unknown error",
+          });
         } finally {
           await fs
             .rm(tmpDir, { recursive: true, force: true })
@@ -23601,7 +23803,32 @@ app.post("/convert/docx-to-epub/batch", uploadBatch, async (req, res) => {
                   outputFilename: "",
                   size: 0,
                   success: false,
-                  error: stderr || `Conversion failed with code ${code}`,
+                  error: (() => {
+                    // Sanitize error message - remove file paths and technical details
+                    if (
+                      stderr.includes("UnidentifiedImageError") ||
+                      stderr.includes("cannot identify image file") ||
+                      stderr.includes("PIL.UnidentifiedImageError")
+                    ) {
+                      return "The file is corrupted or not a valid HEIC image";
+                    } else if (stderr.includes("ERROR:")) {
+                      const errorMatch = stderr.match(/ERROR: (.+)/);
+                      if (errorMatch) {
+                        const errorMsg = errorMatch[1];
+                        return (
+                          errorMsg
+                            .replace(/\/[^\s]+/g, "")
+                            .replace(/File path:.*/g, "")
+                            .replace(/File header:.*/g, "")
+                            .trim() ||
+                          "The file is corrupted or not a valid HEIC image"
+                        );
+                      }
+                    }
+                    return code !== 0
+                      ? "The file is corrupted or not a valid HEIC image"
+                      : "Conversion failed";
+                  })(),
                 });
                 resolve(); // Continue with other files
               }
@@ -23612,7 +23839,7 @@ app.post("/convert/docx-to-epub/batch", uploadBatch, async (req, res) => {
                 outputFilename: "",
                 size: 0,
                 success: false,
-                error: error instanceof Error ? error.message : "Unknown error",
+                error: "The file is corrupted or not a valid HEIC image",
               });
               resolve(); // Continue with other files
             }
@@ -23629,7 +23856,7 @@ app.post("/convert/docx-to-epub/batch", uploadBatch, async (req, res) => {
           outputFilename: "",
           size: 0,
           success: false,
-          error: error instanceof Error ? error.message : "Unknown error",
+          error: "The file is corrupted or not a valid HEIC image",
         });
       }
     }
@@ -23782,12 +24009,10 @@ app.post(
             "Access-Control-Allow-Headers":
               "Content-Type, Authorization, Accept",
           });
-          res
-            .status(500)
-            .json({
-              error: "Conversion failed",
-              details: error instanceof Error ? error.message : "Unknown error",
-            });
+          res.status(500).json({
+            error: "Conversion failed",
+            details: error instanceof Error ? error.message : "Unknown error",
+          });
         } finally {
           await fs
             .rm(tmpDir, { recursive: true, force: true })
@@ -23944,7 +24169,32 @@ app.post("/convert/docx-to-mobi/batch", uploadBatch, async (req, res) => {
                   outputFilename: "",
                   size: 0,
                   success: false,
-                  error: stderr || `Conversion failed with code ${code}`,
+                  error: (() => {
+                    // Sanitize error message - remove file paths and technical details
+                    if (
+                      stderr.includes("UnidentifiedImageError") ||
+                      stderr.includes("cannot identify image file") ||
+                      stderr.includes("PIL.UnidentifiedImageError")
+                    ) {
+                      return "The file is corrupted or not a valid HEIC image";
+                    } else if (stderr.includes("ERROR:")) {
+                      const errorMatch = stderr.match(/ERROR: (.+)/);
+                      if (errorMatch) {
+                        const errorMsg = errorMatch[1];
+                        return (
+                          errorMsg
+                            .replace(/\/[^\s]+/g, "")
+                            .replace(/File path:.*/g, "")
+                            .replace(/File header:.*/g, "")
+                            .trim() ||
+                          "The file is corrupted or not a valid HEIC image"
+                        );
+                      }
+                    }
+                    return code !== 0
+                      ? "The file is corrupted or not a valid HEIC image"
+                      : "Conversion failed";
+                  })(),
                 });
                 resolve(); // Continue with other files
               }
@@ -23955,7 +24205,7 @@ app.post("/convert/docx-to-mobi/batch", uploadBatch, async (req, res) => {
                 outputFilename: "",
                 size: 0,
                 success: false,
-                error: error instanceof Error ? error.message : "Unknown error",
+                error: "The file is corrupted or not a valid HEIC image",
               });
               resolve(); // Continue with other files
             }
@@ -23972,7 +24222,7 @@ app.post("/convert/docx-to-mobi/batch", uploadBatch, async (req, res) => {
           outputFilename: "",
           size: 0,
           success: false,
-          error: error instanceof Error ? error.message : "Unknown error",
+          error: "The file is corrupted or not a valid HEIC image",
         });
       }
     }
@@ -24113,12 +24363,10 @@ app.post(
             "Access-Control-Allow-Headers":
               "Content-Type, Authorization, Accept",
           });
-          res
-            .status(500)
-            .json({
-              error: "Conversion failed",
-              details: error instanceof Error ? error.message : "Unknown error",
-            });
+          res.status(500).json({
+            error: "Conversion failed",
+            details: error instanceof Error ? error.message : "Unknown error",
+          });
         } finally {
           await fs
             .rm(tmpDir, { recursive: true, force: true })
@@ -24263,7 +24511,32 @@ app.post("/convert/docx-to-odt/batch", uploadBatch, async (req, res) => {
                   outputFilename: "",
                   size: 0,
                   success: false,
-                  error: stderr || `Conversion failed with code ${code}`,
+                  error: (() => {
+                    // Sanitize error message - remove file paths and technical details
+                    if (
+                      stderr.includes("UnidentifiedImageError") ||
+                      stderr.includes("cannot identify image file") ||
+                      stderr.includes("PIL.UnidentifiedImageError")
+                    ) {
+                      return "The file is corrupted or not a valid HEIC image";
+                    } else if (stderr.includes("ERROR:")) {
+                      const errorMatch = stderr.match(/ERROR: (.+)/);
+                      if (errorMatch) {
+                        const errorMsg = errorMatch[1];
+                        return (
+                          errorMsg
+                            .replace(/\/[^\s]+/g, "")
+                            .replace(/File path:.*/g, "")
+                            .replace(/File header:.*/g, "")
+                            .trim() ||
+                          "The file is corrupted or not a valid HEIC image"
+                        );
+                      }
+                    }
+                    return code !== 0
+                      ? "The file is corrupted or not a valid HEIC image"
+                      : "Conversion failed";
+                  })(),
                 });
                 resolve(); // Continue with other files
               }
@@ -24274,7 +24547,7 @@ app.post("/convert/docx-to-odt/batch", uploadBatch, async (req, res) => {
                 outputFilename: "",
                 size: 0,
                 success: false,
-                error: error instanceof Error ? error.message : "Unknown error",
+                error: "The file is corrupted or not a valid HEIC image",
               });
               resolve(); // Continue with other files
             }
@@ -24291,7 +24564,7 @@ app.post("/convert/docx-to-odt/batch", uploadBatch, async (req, res) => {
           outputFilename: "",
           size: 0,
           success: false,
-          error: error instanceof Error ? error.message : "Unknown error",
+          error: "The file is corrupted or not a valid HEIC image",
         });
       }
     }
@@ -24432,12 +24705,10 @@ app.post(
             "Access-Control-Allow-Headers":
               "Content-Type, Authorization, Accept",
           });
-          res
-            .status(500)
-            .json({
-              error: "Conversion failed",
-              details: error instanceof Error ? error.message : "Unknown error",
-            });
+          res.status(500).json({
+            error: "Conversion failed",
+            details: error instanceof Error ? error.message : "Unknown error",
+          });
         } finally {
           await fs
             .rm(tmpDir, { recursive: true, force: true })
@@ -24584,7 +24855,32 @@ app.post("/convert/doc-to-odt/batch", uploadBatch, async (req, res) => {
                   outputFilename: "",
                   size: 0,
                   success: false,
-                  error: stderr || `Conversion failed with code ${code}`,
+                  error: (() => {
+                    // Sanitize error message - remove file paths and technical details
+                    if (
+                      stderr.includes("UnidentifiedImageError") ||
+                      stderr.includes("cannot identify image file") ||
+                      stderr.includes("PIL.UnidentifiedImageError")
+                    ) {
+                      return "The file is corrupted or not a valid HEIC image";
+                    } else if (stderr.includes("ERROR:")) {
+                      const errorMatch = stderr.match(/ERROR: (.+)/);
+                      if (errorMatch) {
+                        const errorMsg = errorMatch[1];
+                        return (
+                          errorMsg
+                            .replace(/\/[^\s]+/g, "")
+                            .replace(/File path:.*/g, "")
+                            .replace(/File header:.*/g, "")
+                            .trim() ||
+                          "The file is corrupted or not a valid HEIC image"
+                        );
+                      }
+                    }
+                    return code !== 0
+                      ? "The file is corrupted or not a valid HEIC image"
+                      : "Conversion failed";
+                  })(),
                 });
                 resolve(); // Continue with other files
               }
@@ -24595,7 +24891,7 @@ app.post("/convert/doc-to-odt/batch", uploadBatch, async (req, res) => {
                 outputFilename: "",
                 size: 0,
                 success: false,
-                error: error instanceof Error ? error.message : "Unknown error",
+                error: "The file is corrupted or not a valid HEIC image",
               });
               resolve(); // Continue with other files
             }
@@ -24608,7 +24904,7 @@ app.post("/convert/doc-to-odt/batch", uploadBatch, async (req, res) => {
           outputFilename: "",
           size: 0,
           success: false,
-          error: error instanceof Error ? error.message : "Unknown error",
+          error: "The file is corrupted or not a valid HEIC image",
         });
       }
     }
@@ -24629,11 +24925,9 @@ app.post("/convert/doc-to-odt/batch", uploadBatch, async (req, res) => {
       "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
       "Access-Control-Allow-Headers": "Content-Type, Authorization, Accept",
     });
-    res
-      .status(500)
-      .json({
-        error: error instanceof Error ? error.message : "Unknown error",
-      });
+    res.status(500).json({
+      error: "The file is corrupted or not a valid HEIC image",
+    });
   } finally {
     await fs
       .rm(tmpDir, { recursive: true, force: true })
@@ -24769,12 +25063,10 @@ app.post(
             "Access-Control-Allow-Headers":
               "Content-Type, Authorization, Accept",
           });
-          res
-            .status(500)
-            .json({
-              error: "Conversion failed",
-              details: error instanceof Error ? error.message : "Unknown error",
-            });
+          res.status(500).json({
+            error: "Conversion failed",
+            details: error instanceof Error ? error.message : "Unknown error",
+          });
         } finally {
           await fs
             .rm(tmpDir, { recursive: true, force: true })
@@ -24923,7 +25215,32 @@ app.post("/convert/docx-to-txt/batch", uploadBatch, async (req, res) => {
                   outputFilename: "",
                   size: 0,
                   success: false,
-                  error: stderr || `Conversion failed with code ${code}`,
+                  error: (() => {
+                    // Sanitize error message - remove file paths and technical details
+                    if (
+                      stderr.includes("UnidentifiedImageError") ||
+                      stderr.includes("cannot identify image file") ||
+                      stderr.includes("PIL.UnidentifiedImageError")
+                    ) {
+                      return "The file is corrupted or not a valid HEIC image";
+                    } else if (stderr.includes("ERROR:")) {
+                      const errorMatch = stderr.match(/ERROR: (.+)/);
+                      if (errorMatch) {
+                        const errorMsg = errorMatch[1];
+                        return (
+                          errorMsg
+                            .replace(/\/[^\s]+/g, "")
+                            .replace(/File path:.*/g, "")
+                            .replace(/File header:.*/g, "")
+                            .trim() ||
+                          "The file is corrupted or not a valid HEIC image"
+                        );
+                      }
+                    }
+                    return code !== 0
+                      ? "The file is corrupted or not a valid HEIC image"
+                      : "Conversion failed";
+                  })(),
                 });
                 resolve(); // Continue with other files
               }
@@ -24934,7 +25251,7 @@ app.post("/convert/docx-to-txt/batch", uploadBatch, async (req, res) => {
                 outputFilename: "",
                 size: 0,
                 success: false,
-                error: error instanceof Error ? error.message : "Unknown error",
+                error: "The file is corrupted or not a valid HEIC image",
               });
               resolve(); // Continue with other files
             }
@@ -24951,7 +25268,7 @@ app.post("/convert/docx-to-txt/batch", uploadBatch, async (req, res) => {
           outputFilename: "",
           size: 0,
           success: false,
-          error: error instanceof Error ? error.message : "Unknown error",
+          error: "The file is corrupted or not a valid HEIC image",
         });
       }
     }
@@ -25100,12 +25417,10 @@ app.post(
             "Access-Control-Allow-Headers":
               "Content-Type, Authorization, Accept",
           });
-          res
-            .status(500)
-            .json({
-              error: "Conversion failed",
-              details: error instanceof Error ? error.message : "Unknown error",
-            });
+          res.status(500).json({
+            error: "Conversion failed",
+            details: error instanceof Error ? error.message : "Unknown error",
+          });
         } finally {
           await fs
             .rm(tmpDir, { recursive: true, force: true })
@@ -25258,7 +25573,32 @@ app.post("/convert/doc-to-csv/batch", uploadBatch, async (req, res) => {
                   outputFilename: "",
                   size: 0,
                   success: false,
-                  error: stderr || `Conversion failed with code ${code}`,
+                  error: (() => {
+                    // Sanitize error message - remove file paths and technical details
+                    if (
+                      stderr.includes("UnidentifiedImageError") ||
+                      stderr.includes("cannot identify image file") ||
+                      stderr.includes("PIL.UnidentifiedImageError")
+                    ) {
+                      return "The file is corrupted or not a valid HEIC image";
+                    } else if (stderr.includes("ERROR:")) {
+                      const errorMatch = stderr.match(/ERROR: (.+)/);
+                      if (errorMatch) {
+                        const errorMsg = errorMatch[1];
+                        return (
+                          errorMsg
+                            .replace(/\/[^\s]+/g, "")
+                            .replace(/File path:.*/g, "")
+                            .replace(/File header:.*/g, "")
+                            .trim() ||
+                          "The file is corrupted or not a valid HEIC image"
+                        );
+                      }
+                    }
+                    return code !== 0
+                      ? "The file is corrupted or not a valid HEIC image"
+                      : "Conversion failed";
+                  })(),
                 });
                 resolve(); // Continue with other files
               }
@@ -25269,7 +25609,7 @@ app.post("/convert/doc-to-csv/batch", uploadBatch, async (req, res) => {
                 outputFilename: "",
                 size: 0,
                 success: false,
-                error: error instanceof Error ? error.message : "Unknown error",
+                error: "The file is corrupted or not a valid HEIC image",
               });
               resolve(); // Continue with other files
             }
@@ -25286,7 +25626,7 @@ app.post("/convert/doc-to-csv/batch", uploadBatch, async (req, res) => {
           outputFilename: "",
           size: 0,
           success: false,
-          error: error instanceof Error ? error.message : "Unknown error",
+          error: "The file is corrupted or not a valid HEIC image",
         });
       }
     }
@@ -25435,12 +25775,10 @@ app.post(
             "Access-Control-Allow-Headers":
               "Content-Type, Authorization, Accept",
           });
-          res
-            .status(500)
-            .json({
-              error: "Conversion failed",
-              details: error instanceof Error ? error.message : "Unknown error",
-            });
+          res.status(500).json({
+            error: "Conversion failed",
+            details: error instanceof Error ? error.message : "Unknown error",
+          });
         } finally {
           await fs
             .rm(tmpDir, { recursive: true, force: true })
@@ -25593,7 +25931,32 @@ app.post("/convert/doc-to-epub/batch", uploadBatch, async (req, res) => {
                   outputFilename: "",
                   size: 0,
                   success: false,
-                  error: stderr || `Conversion failed with code ${code}`,
+                  error: (() => {
+                    // Sanitize error message - remove file paths and technical details
+                    if (
+                      stderr.includes("UnidentifiedImageError") ||
+                      stderr.includes("cannot identify image file") ||
+                      stderr.includes("PIL.UnidentifiedImageError")
+                    ) {
+                      return "The file is corrupted or not a valid HEIC image";
+                    } else if (stderr.includes("ERROR:")) {
+                      const errorMatch = stderr.match(/ERROR: (.+)/);
+                      if (errorMatch) {
+                        const errorMsg = errorMatch[1];
+                        return (
+                          errorMsg
+                            .replace(/\/[^\s]+/g, "")
+                            .replace(/File path:.*/g, "")
+                            .replace(/File header:.*/g, "")
+                            .trim() ||
+                          "The file is corrupted or not a valid HEIC image"
+                        );
+                      }
+                    }
+                    return code !== 0
+                      ? "The file is corrupted or not a valid HEIC image"
+                      : "Conversion failed";
+                  })(),
                 });
                 resolve(); // Continue with other files
               }
@@ -25604,7 +25967,7 @@ app.post("/convert/doc-to-epub/batch", uploadBatch, async (req, res) => {
                 outputFilename: "",
                 size: 0,
                 success: false,
-                error: error instanceof Error ? error.message : "Unknown error",
+                error: "The file is corrupted or not a valid HEIC image",
               });
               resolve(); // Continue with other files
             }
@@ -25621,7 +25984,7 @@ app.post("/convert/doc-to-epub/batch", uploadBatch, async (req, res) => {
           outputFilename: "",
           size: 0,
           success: false,
-          error: error instanceof Error ? error.message : "Unknown error",
+          error: "The file is corrupted or not a valid HEIC image",
         });
       }
     }
@@ -25774,12 +26137,10 @@ app.post(
             "Access-Control-Allow-Headers":
               "Content-Type, Authorization, Accept",
           });
-          res
-            .status(500)
-            .json({
-              error: "Conversion failed",
-              details: error instanceof Error ? error.message : "Unknown error",
-            });
+          res.status(500).json({
+            error: "Conversion failed",
+            details: error instanceof Error ? error.message : "Unknown error",
+          });
         } finally {
           await fs
             .rm(tmpDir, { recursive: true, force: true })
@@ -25936,7 +26297,32 @@ app.post("/convert/doc-to-mobi/batch", uploadBatch, async (req, res) => {
                   outputFilename: "",
                   size: 0,
                   success: false,
-                  error: stderr || `Conversion failed with code ${code}`,
+                  error: (() => {
+                    // Sanitize error message - remove file paths and technical details
+                    if (
+                      stderr.includes("UnidentifiedImageError") ||
+                      stderr.includes("cannot identify image file") ||
+                      stderr.includes("PIL.UnidentifiedImageError")
+                    ) {
+                      return "The file is corrupted or not a valid HEIC image";
+                    } else if (stderr.includes("ERROR:")) {
+                      const errorMatch = stderr.match(/ERROR: (.+)/);
+                      if (errorMatch) {
+                        const errorMsg = errorMatch[1];
+                        return (
+                          errorMsg
+                            .replace(/\/[^\s]+/g, "")
+                            .replace(/File path:.*/g, "")
+                            .replace(/File header:.*/g, "")
+                            .trim() ||
+                          "The file is corrupted or not a valid HEIC image"
+                        );
+                      }
+                    }
+                    return code !== 0
+                      ? "The file is corrupted or not a valid HEIC image"
+                      : "Conversion failed";
+                  })(),
                 });
                 resolve(); // Continue with other files
               }
@@ -25947,7 +26333,7 @@ app.post("/convert/doc-to-mobi/batch", uploadBatch, async (req, res) => {
                 outputFilename: "",
                 size: 0,
                 success: false,
-                error: error instanceof Error ? error.message : "Unknown error",
+                error: "The file is corrupted or not a valid HEIC image",
               });
               resolve(); // Continue with other files
             }
@@ -25964,7 +26350,7 @@ app.post("/convert/doc-to-mobi/batch", uploadBatch, async (req, res) => {
           outputFilename: "",
           size: 0,
           success: false,
-          error: error instanceof Error ? error.message : "Unknown error",
+          error: "The file is corrupted or not a valid HEIC image",
         });
       }
     }
@@ -26104,12 +26490,10 @@ app.post(
             "Access-Control-Allow-Headers":
               "Content-Type, Authorization, Accept",
           });
-          res
-            .status(500)
-            .json({
-              error: "Conversion failed",
-              details: error instanceof Error ? error.message : "Unknown error",
-            });
+          res.status(500).json({
+            error: "Conversion failed",
+            details: error instanceof Error ? error.message : "Unknown error",
+          });
         } finally {
           await fs
             .rm(tmpDir, { recursive: true, force: true })
@@ -26255,7 +26639,32 @@ app.post("/convert/doc-to-txt/batch", uploadBatch, async (req, res) => {
                   outputFilename: "",
                   size: 0,
                   success: false,
-                  error: stderr || `Conversion failed with code ${code}`,
+                  error: (() => {
+                    // Sanitize error message - remove file paths and technical details
+                    if (
+                      stderr.includes("UnidentifiedImageError") ||
+                      stderr.includes("cannot identify image file") ||
+                      stderr.includes("PIL.UnidentifiedImageError")
+                    ) {
+                      return "The file is corrupted or not a valid HEIC image";
+                    } else if (stderr.includes("ERROR:")) {
+                      const errorMatch = stderr.match(/ERROR: (.+)/);
+                      if (errorMatch) {
+                        const errorMsg = errorMatch[1];
+                        return (
+                          errorMsg
+                            .replace(/\/[^\s]+/g, "")
+                            .replace(/File path:.*/g, "")
+                            .replace(/File header:.*/g, "")
+                            .trim() ||
+                          "The file is corrupted or not a valid HEIC image"
+                        );
+                      }
+                    }
+                    return code !== 0
+                      ? "The file is corrupted or not a valid HEIC image"
+                      : "Conversion failed";
+                  })(),
                 });
                 resolve(); // Continue with other files
               }
@@ -26266,7 +26675,7 @@ app.post("/convert/doc-to-txt/batch", uploadBatch, async (req, res) => {
                 outputFilename: "",
                 size: 0,
                 success: false,
-                error: error instanceof Error ? error.message : "Unknown error",
+                error: "The file is corrupted or not a valid HEIC image",
               });
               resolve(); // Continue with other files
             }
@@ -26283,7 +26692,7 @@ app.post("/convert/doc-to-txt/batch", uploadBatch, async (req, res) => {
           outputFilename: "",
           size: 0,
           success: false,
-          error: error instanceof Error ? error.message : "Unknown error",
+          error: "The file is corrupted or not a valid HEIC image",
         });
       }
     }
@@ -26433,12 +26842,10 @@ app.post(
             "Access-Control-Allow-Headers":
               "Content-Type, Authorization, Accept",
           });
-          res
-            .status(500)
-            .json({
-              error: "Conversion failed",
-              details: error instanceof Error ? error.message : "Unknown error",
-            });
+          res.status(500).json({
+            error: "Conversion failed",
+            details: error instanceof Error ? error.message : "Unknown error",
+          });
         } finally {
           await fs
             .rm(tmpDir, { recursive: true, force: true })
@@ -26592,7 +26999,32 @@ app.post("/convert/heic-to-svg/batch", uploadBatch, async (req, res) => {
                   outputFilename: "",
                   size: 0,
                   success: false,
-                  error: stderr || `Conversion failed with code ${code}`,
+                  error: (() => {
+                    // Sanitize error message - remove file paths and technical details
+                    if (
+                      stderr.includes("UnidentifiedImageError") ||
+                      stderr.includes("cannot identify image file") ||
+                      stderr.includes("PIL.UnidentifiedImageError")
+                    ) {
+                      return "The file is corrupted or not a valid HEIC image";
+                    } else if (stderr.includes("ERROR:")) {
+                      const errorMatch = stderr.match(/ERROR: (.+)/);
+                      if (errorMatch) {
+                        const errorMsg = errorMatch[1];
+                        return (
+                          errorMsg
+                            .replace(/\/[^\s]+/g, "")
+                            .replace(/File path:.*/g, "")
+                            .replace(/File header:.*/g, "")
+                            .trim() ||
+                          "The file is corrupted or not a valid HEIC image"
+                        );
+                      }
+                    }
+                    return code !== 0
+                      ? "The file is corrupted or not a valid HEIC image"
+                      : "Conversion failed";
+                  })(),
                 });
                 resolve(); // Continue with other files
               }
@@ -26603,7 +27035,7 @@ app.post("/convert/heic-to-svg/batch", uploadBatch, async (req, res) => {
                 outputFilename: "",
                 size: 0,
                 success: false,
-                error: error instanceof Error ? error.message : "Unknown error",
+                error: "The file is corrupted or not a valid HEIC image",
               });
               resolve(); // Continue with other files
             }
@@ -26620,7 +27052,7 @@ app.post("/convert/heic-to-svg/batch", uploadBatch, async (req, res) => {
           outputFilename: "",
           size: 0,
           success: false,
-          error: error instanceof Error ? error.message : "Unknown error",
+          error: "The file is corrupted or not a valid HEIC image",
         });
       }
     }
@@ -26686,15 +27118,11 @@ app.post(
           "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
           "Access-Control-Allow-Headers": "Content-Type, Authorization, Accept",
         });
-        return res
-          .status(500)
-          .json({
-            error: "Failed to create temporary directory",
-            details:
-              mkdirError instanceof Error
-                ? mkdirError.message
-                : "Unknown error",
-          });
+        return res.status(500).json({
+          error: "Failed to create temporary directory",
+          details:
+            mkdirError instanceof Error ? mkdirError.message : "Unknown error",
+        });
       }
 
       const inputPath = path.join(tmpDir, file.originalname);
@@ -26715,15 +27143,11 @@ app.post(
         await fs
           .rm(tmpDir, { recursive: true, force: true })
           .catch(() => undefined);
-        return res
-          .status(500)
-          .json({
-            error: "Failed to write input file",
-            details:
-              writeError instanceof Error
-                ? writeError.message
-                : "Unknown error",
-          });
+        return res.status(500).json({
+          error: "Failed to write input file",
+          details:
+            writeError instanceof Error ? writeError.message : "Unknown error",
+        });
       }
 
       const scriptPath = path.join(
@@ -26785,12 +27209,10 @@ app.post(
             "Access-Control-Allow-Headers":
               "Content-Type, Authorization, Accept",
           });
-          res
-            .status(500)
-            .json({
-              error: "Failed to start conversion process",
-              details: error.message,
-            });
+          res.status(500).json({
+            error: "Failed to start conversion process",
+            details: error.message,
+          });
         }
         await fs
           .rm(tmpDir, { recursive: true, force: true })
@@ -26818,12 +27240,9 @@ app.post(
             "Access-Control-Allow-Headers":
               "Content-Type, Authorization, Accept",
           });
-          res
-            .status(500)
-            .json({
-              error:
-                "Conversion timeout. The file may be too large or complex.",
-            });
+          res.status(500).json({
+            error: "Conversion timeout. The file may be too large or complex.",
+          });
         }
         await fs
           .rm(tmpDir, { recursive: true, force: true })
@@ -26869,6 +27288,33 @@ app.post(
                 "Stderr:",
                 stderr
               );
+
+              // Sanitize error message - remove file paths and technical details
+              let userFriendlyError =
+                "The file is corrupted or not a valid HEIC image";
+              if (
+                stderr.includes("UnidentifiedImageError") ||
+                stderr.includes("cannot identify image file") ||
+                stderr.includes("PIL.UnidentifiedImageError")
+              ) {
+                userFriendlyError =
+                  "The file is corrupted or not a valid HEIC image";
+              } else if (stderr.includes("ERROR:")) {
+                // Extract error message but remove file paths
+                const errorMatch = stderr.match(/ERROR: (.+)/);
+                if (errorMatch) {
+                  const errorMsg = errorMatch[1];
+                  // Remove file paths (anything starting with /tmp, /opt, etc.)
+                  userFriendlyError =
+                    errorMsg
+                      .replace(/\/[^\s]+/g, "")
+                      .replace(/File path:.*/g, "")
+                      .replace(/File header:.*/g, "")
+                      .trim() ||
+                    "The file is corrupted or not a valid HEIC image";
+                }
+              }
+
               res.set({
                 "Access-Control-Allow-Origin": "*",
                 "Access-Control-Allow-Methods":
@@ -26876,9 +27322,7 @@ app.post(
                 "Access-Control-Allow-Headers":
                   "Content-Type, Authorization, Accept",
               });
-              res
-                .status(500)
-                .json({ error: "Conversion failed", details: stderr });
+              res.status(500).json({ error: userFriendlyError });
             }
           }
         } catch (error) {
@@ -26890,13 +27334,10 @@ app.post(
               "Access-Control-Allow-Headers":
                 "Content-Type, Authorization, Accept",
             });
-            res
-              .status(500)
-              .json({
-                error: "Conversion failed",
-                details:
-                  error instanceof Error ? error.message : "Unknown error",
-              });
+            res.status(500).json({
+              error: "Conversion failed",
+              details: error instanceof Error ? error.message : "Unknown error",
+            });
           }
         } finally {
           await fs
@@ -27065,12 +27506,42 @@ app.post("/convert/heic-to-pdf/batch", uploadBatch, async (req, res) => {
                   "Stderr:",
                   stderr
                 );
+
+                // Sanitize error message - remove file paths and technical details
+                let userFriendlyError =
+                  "The file is corrupted or not a valid HEIC image";
+                if (
+                  stderr.includes("UnidentifiedImageError") ||
+                  stderr.includes("cannot identify image file") ||
+                  stderr.includes("PIL.UnidentifiedImageError")
+                ) {
+                  userFriendlyError =
+                    "The file is corrupted or not a valid HEIC image";
+                } else if (stderr.includes("ERROR:")) {
+                  // Extract error message but remove file paths
+                  const errorMatch = stderr.match(/ERROR: (.+)/);
+                  if (errorMatch) {
+                    const errorMsg = errorMatch[1];
+                    // Remove file paths (anything starting with /tmp, /opt, etc.)
+                    userFriendlyError =
+                      errorMsg
+                        .replace(/\/[^\s]+/g, "")
+                        .replace(/File path:.*/g, "")
+                        .replace(/File header:.*/g, "")
+                        .trim() ||
+                      "The file is corrupted or not a valid HEIC image";
+                  }
+                } else if (code !== 0) {
+                  userFriendlyError =
+                    "The file is corrupted or not a valid HEIC image";
+                }
+
                 results.push({
                   originalName: file.originalname,
                   outputFilename: "",
                   size: 0,
                   success: false,
-                  error: stderr || `Conversion failed with code ${code}`,
+                  error: userFriendlyError,
                 });
                 resolve(); // Continue with other files
               }
@@ -27081,7 +27552,7 @@ app.post("/convert/heic-to-pdf/batch", uploadBatch, async (req, res) => {
                 outputFilename: "",
                 size: 0,
                 success: false,
-                error: error instanceof Error ? error.message : "Unknown error",
+                error: "The file is corrupted or not a valid HEIC image",
               });
               resolve(); // Continue with other files
             }
@@ -27098,7 +27569,7 @@ app.post("/convert/heic-to-pdf/batch", uploadBatch, async (req, res) => {
           outputFilename: "",
           size: 0,
           success: false,
-          error: error instanceof Error ? error.message : "Unknown error",
+          error: "The file is corrupted or not a valid HEIC image",
         });
       }
     }
@@ -27197,12 +27668,10 @@ app.post(
             "Access-Control-Allow-Headers":
               "Content-Type, Authorization, Accept",
           });
-          res
-            .status(500)
-            .json({
-              error: "Failed to start conversion process",
-              details: err.message,
-            });
+          res.status(500).json({
+            error: "Failed to start conversion process",
+            details: err.message,
+          });
         }
         await fs
           .rm(tmpDir, { recursive: true, force: true })
@@ -27367,7 +27836,32 @@ app.post("/convert/heif-to-png/batch", uploadBatch, async (req, res) => {
                   outputFilename: "",
                   size: 0,
                   success: false,
-                  error: stderr || `Conversion failed with code ${code}`,
+                  error: (() => {
+                    // Sanitize error message - remove file paths and technical details
+                    if (
+                      stderr.includes("UnidentifiedImageError") ||
+                      stderr.includes("cannot identify image file") ||
+                      stderr.includes("PIL.UnidentifiedImageError")
+                    ) {
+                      return "The file is corrupted or not a valid HEIC image";
+                    } else if (stderr.includes("ERROR:")) {
+                      const errorMatch = stderr.match(/ERROR: (.+)/);
+                      if (errorMatch) {
+                        const errorMsg = errorMatch[1];
+                        return (
+                          errorMsg
+                            .replace(/\/[^\s]+/g, "")
+                            .replace(/File path:.*/g, "")
+                            .replace(/File header:.*/g, "")
+                            .trim() ||
+                          "The file is corrupted or not a valid HEIC image"
+                        );
+                      }
+                    }
+                    return code !== 0
+                      ? "The file is corrupted or not a valid HEIC image"
+                      : "Conversion failed";
+                  })(),
                 });
               }
             } finally {
@@ -27381,7 +27875,7 @@ app.post("/convert/heif-to-png/batch", uploadBatch, async (req, res) => {
           outputFilename: "",
           size: 0,
           success: false,
-          error: err instanceof Error ? err.message : "Unknown error",
+          error: "The file is corrupted or not a valid HEIC image",
         });
       }
     }
@@ -27483,12 +27977,10 @@ app.post(
             "Access-Control-Allow-Headers":
               "Content-Type, Authorization, Accept",
           });
-          res
-            .status(500)
-            .json({
-              error: "Failed to start conversion process",
-              details: err.message,
-            });
+          res.status(500).json({
+            error: "Failed to start conversion process",
+            details: err.message,
+          });
         }
         await fs
           .rm(tmpDir, { recursive: true, force: true })
@@ -27653,7 +28145,32 @@ app.post("/convert/heif-to-jpg/batch", uploadBatch, async (req, res) => {
                   outputFilename: "",
                   size: 0,
                   success: false,
-                  error: stderr || `Conversion failed with code ${code}`,
+                  error: (() => {
+                    // Sanitize error message - remove file paths and technical details
+                    if (
+                      stderr.includes("UnidentifiedImageError") ||
+                      stderr.includes("cannot identify image file") ||
+                      stderr.includes("PIL.UnidentifiedImageError")
+                    ) {
+                      return "The file is corrupted or not a valid HEIC image";
+                    } else if (stderr.includes("ERROR:")) {
+                      const errorMatch = stderr.match(/ERROR: (.+)/);
+                      if (errorMatch) {
+                        const errorMsg = errorMatch[1];
+                        return (
+                          errorMsg
+                            .replace(/\/[^\s]+/g, "")
+                            .replace(/File path:.*/g, "")
+                            .replace(/File header:.*/g, "")
+                            .trim() ||
+                          "The file is corrupted or not a valid HEIC image"
+                        );
+                      }
+                    }
+                    return code !== 0
+                      ? "The file is corrupted or not a valid HEIC image"
+                      : "Conversion failed";
+                  })(),
                 });
               }
             } finally {
@@ -27667,7 +28184,7 @@ app.post("/convert/heif-to-jpg/batch", uploadBatch, async (req, res) => {
           outputFilename: "",
           size: 0,
           success: false,
-          error: err instanceof Error ? err.message : "Unknown error",
+          error: "The file is corrupted or not a valid HEIC image",
         });
       }
     }
@@ -27942,7 +28459,32 @@ app.post("/convert/heic-to-webp/batch", uploadBatch, async (req, res) => {
                   outputFilename: "",
                   size: 0,
                   success: false,
-                  error: stderr || `Conversion failed with code ${code}`,
+                  error: (() => {
+                    // Sanitize error message - remove file paths and technical details
+                    if (
+                      stderr.includes("UnidentifiedImageError") ||
+                      stderr.includes("cannot identify image file") ||
+                      stderr.includes("PIL.UnidentifiedImageError")
+                    ) {
+                      return "The file is corrupted or not a valid HEIC image";
+                    } else if (stderr.includes("ERROR:")) {
+                      const errorMatch = stderr.match(/ERROR: (.+)/);
+                      if (errorMatch) {
+                        const errorMsg = errorMatch[1];
+                        return (
+                          errorMsg
+                            .replace(/\/[^\s]+/g, "")
+                            .replace(/File path:.*/g, "")
+                            .replace(/File header:.*/g, "")
+                            .trim() ||
+                          "The file is corrupted or not a valid HEIC image"
+                        );
+                      }
+                    }
+                    return code !== 0
+                      ? "The file is corrupted or not a valid HEIC image"
+                      : "Conversion failed";
+                  })(),
                 });
               }
             } finally {
@@ -27956,7 +28498,7 @@ app.post("/convert/heic-to-webp/batch", uploadBatch, async (req, res) => {
           outputFilename: "",
           size: 0,
           success: false,
-          error: err instanceof Error ? err.message : "Unknown error",
+          error: "The file is corrupted or not a valid HEIC image",
         });
       }
     }
@@ -28139,12 +28681,10 @@ app.post("/api/compress/jpg", upload.single("file"), async (req, res) => {
         }
       } catch (error) {
         console.error("Error handling compression result:", error);
-        res
-          .status(500)
-          .json({
-            error: "Compression failed",
-            details: error instanceof Error ? error.message : "Unknown error",
-          });
+        res.status(500).json({
+          error: "Compression failed",
+          details: error instanceof Error ? error.message : "Unknown error",
+        });
       } finally {
         await fs
           .rm(tmpDir, { recursive: true, force: true })
@@ -28154,12 +28694,10 @@ app.post("/api/compress/jpg", upload.single("file"), async (req, res) => {
 
     python.on("error", async (error) => {
       console.error("JPG Compression: Python process error:", error);
-      res
-        .status(500)
-        .json({
-          error: "Failed to start compression process",
-          details: error.message,
-        });
+      res.status(500).json({
+        error: "Failed to start compression process",
+        details: error.message,
+      });
       await fs
         .rm(tmpDir, { recursive: true, force: true })
         .catch(() => undefined);
@@ -28437,12 +28975,10 @@ app.post("/api/compress/png", upload.single("file"), async (req, res) => {
         }
       } catch (error) {
         console.error("Error handling compression result:", error);
-        res
-          .status(500)
-          .json({
-            error: "Compression failed",
-            details: error instanceof Error ? error.message : "Unknown error",
-          });
+        res.status(500).json({
+          error: "Compression failed",
+          details: error instanceof Error ? error.message : "Unknown error",
+        });
       } finally {
         await fs
           .rm(tmpDir, { recursive: true, force: true })
@@ -28452,12 +28988,10 @@ app.post("/api/compress/png", upload.single("file"), async (req, res) => {
 
     python.on("error", async (error) => {
       console.error("PNG Compression: Python process error:", error);
-      res
-        .status(500)
-        .json({
-          error: "Failed to start compression process",
-          details: error.message,
-        });
+      res.status(500).json({
+        error: "Failed to start compression process",
+        details: error.message,
+      });
       await fs
         .rm(tmpDir, { recursive: true, force: true })
         .catch(() => undefined);
@@ -28772,12 +29306,10 @@ app.post("/api/compress/pdf", upload.single("file"), async (req, res) => {
         }
       } catch (error) {
         console.error("Error handling compression result:", error);
-        res
-          .status(500)
-          .json({
-            error: "Compression failed",
-            details: error instanceof Error ? error.message : "Unknown error",
-          });
+        res.status(500).json({
+          error: "Compression failed",
+          details: error instanceof Error ? error.message : "Unknown error",
+        });
       } finally {
         await fs
           .rm(tmpDir, { recursive: true, force: true })
@@ -28787,12 +29319,10 @@ app.post("/api/compress/pdf", upload.single("file"), async (req, res) => {
 
     python.on("error", async (error) => {
       console.error("PDF Compression: Python process error:", error);
-      res
-        .status(500)
-        .json({
-          error: "Failed to start compression process",
-          details: error.message,
-        });
+      res.status(500).json({
+        error: "Failed to start compression process",
+        details: error.message,
+      });
       await fs
         .rm(tmpDir, { recursive: true, force: true })
         .catch(() => undefined);
@@ -28979,12 +29509,10 @@ app.post("/api/youtube/transcript", async (req, res) => {
     const validFormats = ["txt", "txt-timestamps", "json", "srt", "vtt"];
     const transcriptFormat = format || "txt-timestamps";
     if (!validFormats.includes(transcriptFormat)) {
-      return res
-        .status(400)
-        .json({
-          error:
-            "Invalid format. Supported formats: txt, txt-timestamps, json, srt, vtt",
-        });
+      return res.status(400).json({
+        error:
+          "Invalid format. Supported formats: txt, txt-timestamps, json, srt, vtt",
+      });
     }
 
     // Validate language (default to 'en' if not provided)
