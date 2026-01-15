@@ -1,12 +1,8 @@
 #!/usr/bin/env python3
 """
-HEIC → WebP converter (backend-ready)
-
-- HEIC/HEIF via pillow-heif
-- WebP via Pillow
-- EXIF orientation fix
-- Optional max-dimension downscale
-- Stateless, safe for workers / API
+HEIC to TIFF Converter
+Reads HEIC/HEIF via pillow-heif and saves TIFF using Pillow
+Supports lossless compression, EXIF metadata preservation, and optional max-dimension downscale
 """
 
 import os
@@ -40,28 +36,26 @@ def _ensure_heif():
         raise ImportError("pillow-heif is not installed. Please install it with: pip install pillow-heif")
 
 
-def convert_heic_to_webp(heic_file: str, output_file: str, quality: int = 90, lossless: bool = False, max_dimension: int = 4096, method: int = 6) -> bool:
+def convert_heic_to_tiff(heic_file: str, output_file: str, quality: int = 95, max_dimension: int = 4096, compression: str = 'tiff_lzw') -> bool:
     """
-    Convert HEIC/HEIF image to WebP format.
+    Convert HEIC/HEIF image to TIFF format.
     
     Args:
         heic_file: Path to input HEIC/HEIF file
-        output_file: Path to output WebP file
-        quality: WebP quality (0-100), ignored if lossless=True
-        lossless: Use lossless WebP compression
+        output_file: Path to output TIFF file
+        quality: Quality hint (0-100, affects compression)
         max_dimension: Maximum width or height (will downscale if exceeded)
-        method: WebP encoding method (0-6, higher = better compression but slower)
+        compression: TIFF compression method ('tiff_lzw', 'tiff_adobe_deflate', 'tiff_jpeg', 'tiff_ccitt', 'tiff_deflate', 'tiff_sgilog', 'tiff_raw')
     
     Returns:
         True if conversion successful, False otherwise
     """
-    print("Starting HEIC to WebP conversion")
+    print("Starting HEIC to TIFF conversion")
     print(f"Input: {heic_file}")
     print(f"Output: {output_file}")
     print(f"Quality: {quality}")
-    print(f"Lossless: {lossless}")
     print(f"Max dimension: {max_dimension}")
-    print(f"Method: {method}")
+    print(f"Compression: {compression}")
 
     if not HAS_PIL:
         print("ERROR: Pillow not available. Please install with: pip install Pillow", file=sys.stderr)
@@ -76,9 +70,6 @@ def convert_heic_to_webp(heic_file: str, output_file: str, quality: int = 90, lo
 
         # Validate quality range
         quality = max(0, min(100, quality))
-        
-        # Validate method range
-        method = max(0, min(6, method))
 
         img = Image.open(heic_file)
         print(f"Opened image. Format={img.format}, Mode={img.mode}, Size={img.size}")
@@ -98,21 +89,31 @@ def convert_heic_to_webp(heic_file: str, output_file: str, quality: int = 90, lo
             img = img.resize((new_w, new_h), resample)
             print(f"Resized to {new_w}x{new_h}")
 
-        # Ensure webp-compatible mode
-        if img.mode not in ("RGB", "RGBA"):
-            img = img.convert("RGBA" if ('transparency' in img.info or img.mode in ("LA",)) else "RGB")
+        # Ensure TIFF-compatible mode
+        # TIFF supports RGB, RGBA, L (grayscale), LA (grayscale + alpha), P (palette)
+        if img.mode not in ("RGB", "RGBA", "L", "LA", "P"):
+            # Convert to RGBA if transparency exists, otherwise RGB
+            if 'transparency' in img.info or img.mode in ("LA", "PA"):
+                img = img.convert("RGBA")
+            else:
+                img = img.convert("RGB")
+            print(f"Converted to mode: {img.mode}")
 
         # Ensure output directory exists
         out_dir = os.path.dirname(output_file)
         if out_dir and not os.path.exists(out_dir):
             os.makedirs(out_dir, exist_ok=True)
 
-        # Save as WebP
-        save_kwargs = {"format": "WEBP", "method": method}
-        if lossless:
-            save_kwargs.update({"lossless": True, "quality": 100})
-        else:
-            save_kwargs.update({"quality": quality})
+        # Save as TIFF with specified compression
+        # TIFF compression options: 'tiff_lzw', 'tiff_adobe_deflate', 'tiff_jpeg', 'tiff_ccitt', 'tiff_deflate', 'tiff_sgilog', 'tiff_raw'
+        save_kwargs = {
+            "format": "TIFF",
+            "compression": compression,
+        }
+
+        # For JPEG compression in TIFF, quality matters
+        if compression == 'tiff_jpeg':
+            save_kwargs["quality"] = quality
 
         img.save(output_file, **save_kwargs)
 
@@ -125,37 +126,37 @@ def convert_heic_to_webp(heic_file: str, output_file: str, quality: int = 90, lo
             print(f"ERROR: Output file is empty: {output_file}", file=sys.stderr)
             return False
 
-        print("WebP created successfully")
+        print("TIFF created successfully")
         return True
 
     except ImportError as e:
         print(f"ERROR: Missing dependency: {e}", file=sys.stderr)
         return False
     except Exception as e:
-        print(f"ERROR: HEIC → WebP conversion failed: {e}", file=sys.stderr)
+        print(f"ERROR: HEIC → TIFF conversion failed: {e}", file=sys.stderr)
         traceback.print_exc()
         return False
 
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Convert HEIC/HEIF images to WebP format",
+        description="Convert HEIC/HEIF images to TIFF format",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  %(prog)s input.heic output.webp
-  %(prog)s input.heic output.webp --quality 90
-  %(prog)s input.heic output.webp --max-dimension 2048 --lossless
-  %(prog)s input.heic output.webp --quality 90 --method 6
+  %(prog)s input.heic output.tiff
+  %(prog)s input.heic output.tiff --quality 95
+  %(prog)s input.heic output.tiff --max-dimension 2048 --compression tiff_lzw
+  %(prog)s input.heic output.tiff --quality 90 --compression tiff_deflate
         """
     )
     parser.add_argument("heic_file", help="Input HEIC/HEIF file path")
-    parser.add_argument("output_file", help="Output WebP file path")
+    parser.add_argument("output_file", help="Output TIFF file path")
     parser.add_argument(
         "--quality",
         type=int,
-        default=90,
-        help="WebP quality (0-100, default: 90). Ignored if --lossless is used."
+        default=95,
+        help="Quality hint (0-100, default: 95). Only affects JPEG compression in TIFF."
     )
     parser.add_argument(
         "--max-dimension",
@@ -164,31 +165,24 @@ Examples:
         help="Maximum width or height in pixels (default: 4096). Images larger than this will be downscaled."
     )
     parser.add_argument(
-        "--lossless",
-        action="store_true",
-        help="Use lossless WebP compression (quality parameter will be ignored)"
-    )
-    parser.add_argument(
-        "--method",
-        type=int,
-        default=6,
-        choices=range(0, 7),
-        metavar="[0-6]",
-        help="WebP encoding method (0-6, default: 6). Higher values provide better compression but are slower."
+        "--compression",
+        type=str,
+        default="tiff_lzw",
+        choices=["tiff_lzw", "tiff_adobe_deflate", "tiff_jpeg", "tiff_ccitt", "tiff_deflate", "tiff_sgilog", "tiff_raw"],
+        help="TIFF compression method (default: tiff_lzw). tiff_lzw is lossless and efficient."
     )
     args = parser.parse_args()
 
-    print("=== HEIC to WebP Converter ===")
+    print("=== HEIC to TIFF Converter ===")
     print(f"Python: {sys.version}")
     print(f"Args: {vars(args)}")
 
-    ok = convert_heic_to_webp(
+    ok = convert_heic_to_tiff(
         args.heic_file,
         args.output_file,
         args.quality,
-        args.lossless,
         args.max_dimension,
-        args.method
+        args.compression
     )
 
     sys.exit(0 if ok else 1)
@@ -196,5 +190,3 @@ Examples:
 
 if __name__ == '__main__':
     main()
-
-
