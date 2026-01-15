@@ -1,8 +1,12 @@
 #!/usr/bin/env python3
 """
-HEIC to WEBP Converter
-Reads HEIC/HEIF via pillow-heif and saves WEBP using Pillow
-Supports adjustable quality, optional lossless, and max-dimension downscale
+HEIC → WebP converter (backend-ready)
+
+- HEIC/HEIF via pillow-heif
+- WebP via Pillow
+- EXIF orientation fix
+- Optional max-dimension downscale
+- Stateless, safe for workers / API
 """
 
 import os
@@ -11,7 +15,7 @@ import argparse
 import traceback
 
 try:
-    from PIL import Image
+    from PIL import Image, ImageOps
     HAS_PIL = True
 except ImportError:
     HAS_PIL = False
@@ -23,88 +27,170 @@ except ImportError:
     HAS_PILLOW_HEIF = False
 
 
-def convert_heic_to_webp(heic_file: str, output_file: str, quality: int = 90, lossless: bool = False, max_dimension: int = 4096) -> bool:
-    print("Starting HEIC to WEBP conversion")
+_HEIF_REGISTERED = False
+
+
+def _ensure_heif():
+    """Register HEIF opener once per process"""
+    global _HEIF_REGISTERED
+    if HAS_PILLOW_HEIF and not _HEIF_REGISTERED:
+        register_heif_opener()
+        _HEIF_REGISTERED = True
+    elif not HAS_PILLOW_HEIF:
+        raise ImportError("pillow-heif is not installed. Please install it with: pip install pillow-heif")
+
+
+def convert_heic_to_webp(heic_file: str, output_file: str, quality: int = 90, lossless: bool = False, max_dimension: int = 4096, method: int = 6) -> bool:
+    """
+    Convert HEIC/HEIF image to WebP format.
+    
+    Args:
+        heic_file: Path to input HEIC/HEIF file
+        output_file: Path to output WebP file
+        quality: WebP quality (0-100), ignored if lossless=True
+        lossless: Use lossless WebP compression
+        max_dimension: Maximum width or height (will downscale if exceeded)
+        method: WebP encoding method (0-6, higher = better compression but slower)
+    
+    Returns:
+        True if conversion successful, False otherwise
+    """
+    print("Starting HEIC to WebP conversion")
     print(f"Input: {heic_file}")
     print(f"Output: {output_file}")
     print(f"Quality: {quality}")
     print(f"Lossless: {lossless}")
     print(f"Max dimension: {max_dimension}")
+    print(f"Method: {method}")
 
     if not HAS_PIL:
-        print("ERROR: Pillow (PIL) not available")
+        print("ERROR: Pillow not available. Please install with: pip install Pillow", file=sys.stderr)
         return False
 
-    if HAS_PILLOW_HEIF:
-        try:
-            register_heif_opener()
-            print("HEIF opener registered")
-        except Exception as e:
-            print(f"Warning: Could not register HEIF opener: {e}")
-
     if not os.path.exists(heic_file):
-        print(f"ERROR: Input file not found: {heic_file}")
+        print(f"ERROR: File not found: {heic_file}", file=sys.stderr)
         return False
 
     try:
+        _ensure_heif()
+
+        # Validate quality range
+        quality = max(0, min(100, quality))
+        
+        # Validate method range
+        method = max(0, min(6, method))
+
         img = Image.open(heic_file)
         print(f"Opened image. Format={img.format}, Mode={img.mode}, Size={img.size}")
+        
+        # Fix EXIF orientation
+        img = ImageOps.exif_transpose(img)
+        print(f"After EXIF transpose: Size={img.size}")
 
-        # Downscale large images to speed up processing
-        width, height = img.size
-        if max(width, height) > max_dimension:
-            if width > height:
-                new_w = max_dimension
-                new_h = int(height * (max_dimension / width))
-            else:
-                new_h = max_dimension
-                new_w = int(width * (max_dimension / height))
-            img = img.resize((new_w, new_h), Image.Resampling.BILINEAR)
+        # Downscale if needed
+        w, h = img.size
+        if max(w, h) > max_dimension:
+            scale = max_dimension / max(w, h)
+            new_w = int(w * scale)
+            new_h = int(h * scale)
+            # Use LANCZOS for larger downscales, BILINEAR for smaller
+            resample = Image.Resampling.LANCZOS if scale < 0.5 else Image.Resampling.BILINEAR
+            img = img.resize((new_w, new_h), resample)
             print(f"Resized to {new_w}x{new_h}")
 
         # Ensure webp-compatible mode
         if img.mode not in ("RGB", "RGBA"):
             img = img.convert("RGBA" if ('transparency' in img.info or img.mode in ("LA",)) else "RGB")
 
-        # Ensure output dir exists
+        # Ensure output directory exists
         out_dir = os.path.dirname(output_file)
-        if out_dir:
+        if out_dir and not os.path.exists(out_dir):
             os.makedirs(out_dir, exist_ok=True)
 
-        save_kwargs = {"format": "WEBP"}
+        # Save as WebP
+        save_kwargs = {"format": "WEBP", "method": method}
         if lossless:
-            save_kwargs.update({"lossless": True, "quality": 100, "method": 4})
+            save_kwargs.update({"lossless": True, "quality": 100})
         else:
-            # quality 0-100; method 4 is a good speed/quality balance
-            save_kwargs.update({"quality": max(1, min(100, int(quality))), "method": 4})
+            save_kwargs.update({"quality": quality})
 
         img.save(output_file, **save_kwargs)
 
-        if os.path.exists(output_file) and os.path.getsize(output_file) > 0:
-            print("WEBP created successfully")
-            return True
-        print("ERROR: WEBP output not created")
+        # Verify output file was created and has content
+        if not os.path.exists(output_file):
+            print(f"ERROR: Output file was not created: {output_file}", file=sys.stderr)
+            return False
+        
+        if os.path.getsize(output_file) == 0:
+            print(f"ERROR: Output file is empty: {output_file}", file=sys.stderr)
+            return False
+
+        print("WebP created successfully")
+        return True
+
+    except ImportError as e:
+        print(f"ERROR: Missing dependency: {e}", file=sys.stderr)
         return False
     except Exception as e:
-        print(f"ERROR: Failed to convert HEIC to WEBP: {e}")
+        print(f"ERROR: HEIC → WebP conversion failed: {e}", file=sys.stderr)
         traceback.print_exc()
         return False
 
 
 def main():
-    parser = argparse.ArgumentParser(description='Convert HEIC/HEIF image to WEBP')
-    parser.add_argument('heic_file', help='Path to input HEIC/HEIF file')
-    parser.add_argument('output_file', help='Path to output WEBP file')
-    parser.add_argument('--quality', type=int, default=90, help='WEBP quality (1-100). Ignored when --lossless set')
-    parser.add_argument('--lossless', action='store_true', help='Use lossless WEBP')
-    parser.add_argument('--max-dimension', type=int, default=4096, help='Max width or height for downscaling')
+    parser = argparse.ArgumentParser(
+        description="Convert HEIC/HEIF images to WebP format",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+Examples:
+  %(prog)s input.heic output.webp
+  %(prog)s input.heic output.webp --quality 90
+  %(prog)s input.heic output.webp --max-dimension 2048 --lossless
+  %(prog)s input.heic output.webp --quality 90 --method 6
+        """
+    )
+    parser.add_argument("heic_file", help="Input HEIC/HEIF file path")
+    parser.add_argument("output_file", help="Output WebP file path")
+    parser.add_argument(
+        "--quality",
+        type=int,
+        default=90,
+        help="WebP quality (0-100, default: 90). Ignored if --lossless is used."
+    )
+    parser.add_argument(
+        "--max-dimension",
+        type=int,
+        default=4096,
+        help="Maximum width or height in pixels (default: 4096). Images larger than this will be downscaled."
+    )
+    parser.add_argument(
+        "--lossless",
+        action="store_true",
+        help="Use lossless WebP compression (quality parameter will be ignored)"
+    )
+    parser.add_argument(
+        "--method",
+        type=int,
+        default=6,
+        choices=range(0, 7),
+        metavar="[0-6]",
+        help="WebP encoding method (0-6, default: 6). Higher values provide better compression but are slower."
+    )
     args = parser.parse_args()
 
-    print("=== HEIC to WEBP Converter ===")
+    print("=== HEIC to WebP Converter ===")
     print(f"Python: {sys.version}")
     print(f"Args: {vars(args)}")
 
-    ok = convert_heic_to_webp(args.heic_file, args.output_file, args.quality, args.lossless, args.max_dimension)
+    ok = convert_heic_to_webp(
+        args.heic_file,
+        args.output_file,
+        args.quality,
+        args.lossless,
+        args.max_dimension,
+        args.method
+    )
+
     sys.exit(0 if ok else 1)
 
 

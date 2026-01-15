@@ -28344,46 +28344,146 @@ app.post(
 
       const python = spawn("/opt/venv/bin/python", pythonArgs);
 
-      let stdout = "",
-        stderr = "";
-      python.stdout.on("data", (d: Buffer) => {
-        stdout += d.toString();
-      });
-      python.stderr.on("data", (d: Buffer) => {
-        stderr += d.toString();
+      let stdout = "";
+      let stderr = "";
+
+      python.on("error", async (error: Error) => {
+        console.error("HEIC to WebP: Failed to start Python process:", error);
+        if (!res.headersSent) {
+          res.set({
+            "Access-Control-Allow-Origin": "*",
+            "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
+            "Access-Control-Allow-Headers":
+              "Content-Type, Authorization, Accept",
+          });
+          res.status(500).json({
+            error: "Failed to start conversion process",
+            details: error.message,
+          });
+        }
+        await fs
+          .rm(tmpDir, { recursive: true, force: true })
+          .catch(() => undefined);
       });
 
+      python.stdout.on("data", (data: Buffer) => {
+        stdout += data.toString();
+        console.log("HEIC to WebP stdout:", data.toString());
+      });
+
+      python.stderr.on("data", (data: Buffer) => {
+        stderr += data.toString();
+        console.log("HEIC to WebP stderr:", data.toString());
+      });
+
+      const timeout = setTimeout(async () => {
+        console.error("HEIC to WebP: Conversion timeout after 5 minutes");
+        python.kill();
+        if (!res.headersSent) {
+          res.set({
+            "Access-Control-Allow-Origin": "*",
+            "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
+            "Access-Control-Allow-Headers":
+              "Content-Type, Authorization, Accept",
+          });
+          res.status(500).json({
+            error: "Conversion timeout. The file may be too large or complex.",
+          });
+        }
+        await fs
+          .rm(tmpDir, { recursive: true, force: true })
+          .catch(() => undefined);
+      }, 5 * 60 * 1000);
+
       python.on("close", async (code: number) => {
+        clearTimeout(timeout);
+        console.log("HEIC to WebP: Python script finished with code:", code);
+        console.log("HEIC to WebP: stdout:", stdout);
+        console.log("HEIC to WebP: stderr:", stderr);
+
         try {
-          if (
-            code === 0 &&
-            (await fs
-              .access(outputPath)
-              .then(() => true)
-              .catch(() => false))
-          ) {
-            const outputBuffer = await fs.readFile(outputPath);
+          if (!res.headersSent) {
+            if (
+              code === 0 &&
+              (await fs
+                .access(outputPath)
+                .then(() => true)
+                .catch(() => false))
+            ) {
+              const outputBuffer = await fs.readFile(outputPath);
+              console.log(
+                "HEIC to WebP: Output file size:",
+                outputBuffer.length
+              );
+              res.set({
+                "Content-Type": "image/webp",
+                "Content-Disposition": `attachment; filename="${path.basename(
+                  outputPath
+                )}"`,
+                "Access-Control-Allow-Origin": "*",
+                "Access-Control-Allow-Methods":
+                  "GET, POST, PUT, DELETE, OPTIONS",
+                "Access-Control-Allow-Headers":
+                  "Content-Type, Authorization, Accept",
+              });
+              res.send(outputBuffer);
+            } else {
+              console.error(
+                "HEIC to WebP conversion failed. Code:",
+                code,
+                "Stderr:",
+                stderr
+              );
+
+              // Sanitize error message - remove file paths and technical details
+              let userFriendlyError =
+                "The file is corrupted or not a valid HEIC image";
+              if (
+                stderr.includes("UnidentifiedImageError") ||
+                stderr.includes("cannot identify image file") ||
+                stderr.includes("PIL.UnidentifiedImageError")
+              ) {
+                userFriendlyError =
+                  "The file is corrupted or not a valid HEIC image";
+              } else if (stderr.includes("ERROR:")) {
+                // Extract error message but remove file paths
+                const errorMatch = stderr.match(/ERROR: (.+)/);
+                if (errorMatch) {
+                  const errorMsg = errorMatch[1];
+                  // Remove file paths (anything starting with /tmp, /opt, etc.)
+                  userFriendlyError =
+                    errorMsg
+                      .replace(/\/[^\s]+/g, "")
+                      .replace(/File path:.*/g, "")
+                      .replace(/File header:.*/g, "")
+                      .trim() ||
+                    "The file is corrupted or not a valid HEIC image";
+                }
+              }
+
+              res.set({
+                "Access-Control-Allow-Origin": "*",
+                "Access-Control-Allow-Methods":
+                  "GET, POST, PUT, DELETE, OPTIONS",
+                "Access-Control-Allow-Headers":
+                  "Content-Type, Authorization, Accept",
+              });
+              res.status(500).json({ error: userFriendlyError });
+            }
+          }
+        } catch (error) {
+          console.error("Error handling conversion result (WebP):", error);
+          if (!res.headersSent) {
             res.set({
-              "Content-Type": "image/webp",
-              "Content-Disposition": `attachment; filename="${path.basename(
-                outputPath
-              )}"`,
               "Access-Control-Allow-Origin": "*",
               "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
               "Access-Control-Allow-Headers":
                 "Content-Type, Authorization, Accept",
             });
-            res.send(outputBuffer);
-          } else {
-            res.set({
-              "Access-Control-Allow-Origin": "*",
-              "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
-              "Access-Control-Allow-Headers":
-                "Content-Type, Authorization, Accept",
+            res.status(500).json({
+              error: "Conversion failed",
+              details: error instanceof Error ? error.message : "Unknown error",
             });
-            res
-              .status(500)
-              .json({ error: "Conversion failed", details: stderr });
           }
         } finally {
           await fs
@@ -28504,6 +28604,420 @@ app.post("/convert/heic-to-webp/batch", uploadBatch, async (req, res) => {
                   size: outputBuffer.length,
                   success: true,
                   downloadPath: `data:image/webp;base64,${outputBuffer.toString(
+                    "base64"
+                  )}`,
+                });
+              } else {
+                results.push({
+                  originalName: file.originalname,
+                  outputFilename: "",
+                  size: 0,
+                  success: false,
+                  error: (() => {
+                    // Sanitize error message - remove file paths and technical details
+                    if (
+                      stderr.includes("UnidentifiedImageError") ||
+                      stderr.includes("cannot identify image file") ||
+                      stderr.includes("PIL.UnidentifiedImageError")
+                    ) {
+                      return "The file is corrupted or not a valid HEIC image";
+                    } else if (stderr.includes("ERROR:")) {
+                      const errorMatch = stderr.match(/ERROR: (.+)/);
+                      if (errorMatch) {
+                        const errorMsg = errorMatch[1];
+                        return (
+                          errorMsg
+                            .replace(/\/[^\s]+/g, "")
+                            .replace(/File path:.*/g, "")
+                            .replace(/File header:.*/g, "")
+                            .trim() ||
+                          "The file is corrupted or not a valid HEIC image"
+                        );
+                      }
+                    }
+                    return code !== 0
+                      ? "The file is corrupted or not a valid HEIC image"
+                      : "Conversion failed";
+                  })(),
+                });
+              }
+            } finally {
+              resolve();
+            }
+          });
+        });
+      } catch (err) {
+        results.push({
+          originalName: file.originalname,
+          outputFilename: "",
+          size: 0,
+          success: false,
+          error: "The file is corrupted or not a valid HEIC image",
+        });
+      }
+    }
+
+    res.set({
+      "Access-Control-Allow-Origin": "*",
+      "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
+      "Access-Control-Allow-Headers": "Content-Type, Authorization, Accept",
+    });
+    res.json({ success: true, results });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Unknown error";
+    res.set({
+      "Access-Control-Allow-Origin": "*",
+      "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
+      "Access-Control-Allow-Headers": "Content-Type, Authorization, Accept",
+    });
+    res.status(500).json({ error: message });
+  } finally {
+    await fs
+      .rm(tmpDir, { recursive: true, force: true })
+      .catch(() => undefined);
+  }
+});
+
+app.options("/convert/heic-to-avif/single", (req, res) => {
+  res.set({
+    "Access-Control-Allow-Origin": "*",
+    "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
+    "Access-Control-Allow-Headers": "Content-Type, Authorization, Accept",
+    "Access-Control-Max-Age": "86400",
+  });
+  res.sendStatus(200);
+});
+
+// Route: HEIC to AVIF (Single)
+app.post(
+  "/convert/heic-to-avif/single",
+  upload.single("file"),
+  async (req, res) => {
+    res.set({
+      "Access-Control-Allow-Origin": "*",
+      "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
+      "Access-Control-Allow-Headers": "Content-Type, Authorization, Accept",
+    });
+
+    console.log("HEIC->AVIF single conversion request");
+
+    const tmpDir = path.join(os.tmpdir(), `heic-avif-${Date.now()}`);
+
+    try {
+      const file = req.file;
+      if (!file) {
+        res.set({
+          "Access-Control-Allow-Origin": "*",
+          "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
+          "Access-Control-Allow-Headers": "Content-Type, Authorization, Accept",
+        });
+        return res.status(400).json({ error: "No file uploaded" });
+      }
+
+      await fs.mkdir(tmpDir, { recursive: true });
+
+      const inputPath = path.join(tmpDir, file.originalname);
+      const outputPath = path.join(
+        tmpDir,
+        file.originalname.replace(/\.(heic|heif)$/i, ".avif")
+      );
+
+      await fs.writeFile(inputPath, file.buffer);
+
+      const scriptPath = path.join(
+        __dirname,
+        "..",
+        "scripts",
+        "heic_to_avif.py"
+      );
+      try {
+        await fs.access(scriptPath);
+      } catch {
+        res.set({
+          "Access-Control-Allow-Origin": "*",
+          "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
+          "Access-Control-Allow-Headers": "Content-Type, Authorization, Accept",
+        });
+        return res.status(500).json({ error: "Conversion script not found" });
+      }
+
+      const quality = parseInt(req.body.quality) || 90;
+      const lossless = req.body.lossless === "true";
+      const maxDimension = parseInt(req.body.maxDimension) || 4096;
+
+      const pythonArgs = [
+        scriptPath,
+        inputPath,
+        outputPath,
+        "--quality",
+        String(quality),
+        "--max-dimension",
+        String(maxDimension),
+      ];
+      if (lossless) pythonArgs.push("--lossless");
+
+      const python = spawn("/opt/venv/bin/python", pythonArgs);
+
+      let stdout = "";
+      let stderr = "";
+
+      python.on("error", async (error: Error) => {
+        console.error("HEIC to AVIF: Failed to start Python process:", error);
+        if (!res.headersSent) {
+          res.set({
+            "Access-Control-Allow-Origin": "*",
+            "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
+            "Access-Control-Allow-Headers":
+              "Content-Type, Authorization, Accept",
+          });
+          res.status(500).json({
+            error: "Failed to start conversion process",
+            details: error.message,
+          });
+        }
+        await fs
+          .rm(tmpDir, { recursive: true, force: true })
+          .catch(() => undefined);
+      });
+
+      python.stdout.on("data", (data: Buffer) => {
+        stdout += data.toString();
+        console.log("HEIC to AVIF stdout:", data.toString());
+      });
+
+      python.stderr.on("data", (data: Buffer) => {
+        stderr += data.toString();
+        console.log("HEIC to AVIF stderr:", data.toString());
+      });
+
+      const timeout = setTimeout(async () => {
+        console.error("HEIC to AVIF: Conversion timeout after 5 minutes");
+        python.kill();
+        if (!res.headersSent) {
+          res.set({
+            "Access-Control-Allow-Origin": "*",
+            "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
+            "Access-Control-Allow-Headers":
+              "Content-Type, Authorization, Accept",
+          });
+          res.status(500).json({
+            error: "Conversion timeout. The file may be too large or complex.",
+          });
+        }
+        await fs
+          .rm(tmpDir, { recursive: true, force: true })
+          .catch(() => undefined);
+      }, 5 * 60 * 1000);
+
+      python.on("close", async (code: number) => {
+        clearTimeout(timeout);
+        console.log("HEIC to AVIF: Python script finished with code:", code);
+        console.log("HEIC to AVIF: stdout:", stdout);
+        console.log("HEIC to AVIF: stderr:", stderr);
+
+        try {
+          if (!res.headersSent) {
+            if (
+              code === 0 &&
+              (await fs
+                .access(outputPath)
+                .then(() => true)
+                .catch(() => false))
+            ) {
+              const outputBuffer = await fs.readFile(outputPath);
+              console.log(
+                "HEIC to AVIF: Output file size:",
+                outputBuffer.length
+              );
+              res.set({
+                "Content-Type": "image/avif",
+                "Content-Disposition": `attachment; filename="${path.basename(
+                  outputPath
+                )}"`,
+                "Access-Control-Allow-Origin": "*",
+                "Access-Control-Allow-Methods":
+                  "GET, POST, PUT, DELETE, OPTIONS",
+                "Access-Control-Allow-Headers":
+                  "Content-Type, Authorization, Accept",
+              });
+              res.send(outputBuffer);
+            } else {
+              console.error(
+                "HEIC to AVIF conversion failed. Code:",
+                code,
+                "Stderr:",
+                stderr
+              );
+
+              // Sanitize error message - remove file paths and technical details
+              let userFriendlyError =
+                "The file is corrupted or not a valid HEIC image";
+              if (
+                stderr.includes("UnidentifiedImageError") ||
+                stderr.includes("cannot identify image file") ||
+                stderr.includes("PIL.UnidentifiedImageError")
+              ) {
+                userFriendlyError =
+                  "The file is corrupted or not a valid HEIC image";
+              } else if (stderr.includes("ERROR:")) {
+                // Extract error message but remove file paths
+                const errorMatch = stderr.match(/ERROR: (.+)/);
+                if (errorMatch) {
+                  const errorMsg = errorMatch[1];
+                  // Remove file paths (anything starting with /tmp, /opt, etc.)
+                  userFriendlyError =
+                    errorMsg
+                      .replace(/\/[^\s]+/g, "")
+                      .replace(/File path:.*/g, "")
+                      .replace(/File header:.*/g, "")
+                      .trim() ||
+                    "The file is corrupted or not a valid HEIC image";
+                }
+              }
+
+              res.set({
+                "Access-Control-Allow-Origin": "*",
+                "Access-Control-Allow-Methods":
+                  "GET, POST, PUT, DELETE, OPTIONS",
+                "Access-Control-Allow-Headers":
+                  "Content-Type, Authorization, Accept",
+              });
+              res.status(500).json({ error: userFriendlyError });
+            }
+          }
+        } catch (error) {
+          console.error("Error handling conversion result (AVIF):", error);
+          if (!res.headersSent) {
+            res.set({
+              "Access-Control-Allow-Origin": "*",
+              "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
+              "Access-Control-Allow-Headers":
+                "Content-Type, Authorization, Accept",
+            });
+            res.status(500).json({
+              error: "Conversion failed",
+              details: error instanceof Error ? error.message : "Unknown error",
+            });
+          }
+        } finally {
+          await fs
+            .rm(tmpDir, { recursive: true, force: true })
+            .catch(() => undefined);
+        }
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Unknown error";
+      res.set({
+        "Access-Control-Allow-Origin": "*",
+        "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
+        "Access-Control-Allow-Headers": "Content-Type, Authorization, Accept",
+      });
+      res.status(500).json({ error: message });
+    }
+  }
+);
+
+// Route: HEIC to AVIF (Batch) - OPTIONS for CORS preflight
+app.options("/convert/heic-to-avif/batch", (req, res) => {
+  res.set({
+    "Access-Control-Allow-Origin": "*",
+    "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
+    "Access-Control-Allow-Headers": "Content-Type, Authorization, Accept",
+    "Access-Control-Max-Age": "86400",
+  });
+  res.sendStatus(200);
+});
+
+// Route: HEIC to AVIF (Batch)
+app.post("/convert/heic-to-avif/batch", uploadBatch, async (req, res) => {
+  res.set({
+    "Access-Control-Allow-Origin": "*",
+    "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
+    "Access-Control-Allow-Headers": "Content-Type, Authorization, Accept",
+  });
+
+  console.log("HEIC->AVIF batch conversion request");
+  const tmpDir = path.join(os.tmpdir(), `heic-avif-batch-${Date.now()}`);
+
+  try {
+    const files = req.files as Express.Multer.File[];
+    if (!files || files.length === 0) {
+      return res.status(400).json({ error: "No files uploaded" });
+    }
+
+    await fs.mkdir(tmpDir, { recursive: true });
+
+    const results: any[] = [];
+    const quality = parseInt(req.body.quality) || 90;
+    const lossless = req.body.lossless === "true";
+    const maxDimension = parseInt(req.body.maxDimension) || 4096;
+
+    for (const file of files) {
+      try {
+        const inputPath = path.join(tmpDir, file.originalname);
+        const outputPath = path.join(
+          tmpDir,
+          file.originalname.replace(/\.(heic|heif)$/i, ".avif")
+        );
+        await fs.writeFile(inputPath, file.buffer);
+
+        const scriptPath = path.join(
+          __dirname,
+          "..",
+          "scripts",
+          "heic_to_avif.py"
+        );
+        try {
+          await fs.access(scriptPath);
+        } catch {
+          results.push({
+            originalName: file.originalname,
+            outputFilename: "",
+            size: 0,
+            success: false,
+            error: "Conversion script not found",
+          });
+          continue;
+        }
+
+        const pythonArgs = [
+          scriptPath,
+          inputPath,
+          outputPath,
+          "--quality",
+          String(quality),
+          "--max-dimension",
+          String(maxDimension),
+        ];
+        if (lossless) pythonArgs.push("--lossless");
+
+        const python = spawn("/opt/venv/bin/python", pythonArgs);
+        let stdout = "",
+          stderr = "";
+        python.stdout.on("data", (d: Buffer) => {
+          stdout += d.toString();
+        });
+        python.stderr.on("data", (d: Buffer) => {
+          stderr += d.toString();
+        });
+
+        await new Promise<void>((resolve) => {
+          python.on("close", async (code: number) => {
+            try {
+              if (
+                code === 0 &&
+                (await fs
+                  .access(outputPath)
+                  .then(() => true)
+                  .catch(() => false))
+              ) {
+                const outputBuffer = await fs.readFile(outputPath);
+                results.push({
+                  originalName: file.originalname,
+                  outputFilename: path.basename(outputPath),
+                  size: outputBuffer.length,
+                  success: true,
+                  downloadPath: `data:image/avif;base64,${outputBuffer.toString(
                     "base64"
                   )}`,
                 });
