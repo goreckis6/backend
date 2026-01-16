@@ -9808,6 +9808,522 @@ app.post(
   }
 );
 
+// Route: HEIC to GIF (Single) - OPTIONS for CORS preflight
+app.options("/convert/heic-to-gif/single", (req, res) => {
+  res.set({
+    "Access-Control-Allow-Origin": "*",
+    "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
+    "Access-Control-Allow-Headers": "Content-Type, Authorization, Accept",
+    "Access-Control-Max-Age": "86400",
+  });
+  res.sendStatus(200);
+});
+
+// Route: HEIC to GIF (Single)
+app.post(
+  "/convert/heic-to-gif/single",
+  upload.single("file"),
+  async (req, res) => {
+    // Set CORS headers
+    res.set({
+      "Access-Control-Allow-Origin": "*",
+      "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
+      "Access-Control-Allow-Headers": "Content-Type, Authorization, Accept",
+    });
+
+    console.log("HEIC->GIF single conversion request");
+
+    const tmpDir = path.join(os.tmpdir(), `heic-gif-${Date.now()}`);
+
+    try {
+      const file = req.file;
+      if (!file) {
+        res.set({
+          "Access-Control-Allow-Origin": "*",
+          "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
+          "Access-Control-Allow-Headers": "Content-Type, Authorization, Accept",
+        });
+        return res.status(400).json({ error: "No file uploaded" });
+      }
+
+      try {
+        await fs.mkdir(tmpDir, { recursive: true });
+      } catch (mkdirError) {
+        console.error(
+          "HEIC to GIF: Failed to create temp directory:",
+          mkdirError
+        );
+        res.set({
+          "Access-Control-Allow-Origin": "*",
+          "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
+          "Access-Control-Allow-Headers": "Content-Type, Authorization, Accept",
+        });
+        return res.status(500).json({
+          error: "Failed to create temporary directory",
+          details:
+            mkdirError instanceof Error ? mkdirError.message : "Unknown error",
+        });
+      }
+
+      const inputPath = path.join(tmpDir, file.originalname);
+      const outputPath = path.join(
+        tmpDir,
+        file.originalname.replace(/\.(heic|heif)$/i, ".gif")
+      );
+
+      try {
+        await fs.writeFile(inputPath, file.buffer);
+      } catch (writeError) {
+        console.error("HEIC to GIF: Failed to write input file:", writeError);
+        res.set({
+          "Access-Control-Allow-Origin": "*",
+          "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
+          "Access-Control-Allow-Headers": "Content-Type, Authorization, Accept",
+        });
+        await fs
+          .rm(tmpDir, { recursive: true, force: true })
+          .catch(() => undefined);
+        return res.status(500).json({
+          error: "Failed to write input file",
+          details:
+            writeError instanceof Error ? writeError.message : "Unknown error",
+        });
+      }
+
+      const scriptPath = path.join(
+        __dirname,
+        "..",
+        "scripts",
+        "heic_to_gif.py"
+      );
+      console.log("HEIC to GIF: Executing Python script:", scriptPath);
+      console.log("HEIC to GIF: Input file:", inputPath);
+      console.log("HEIC to GIF: Output file:", outputPath);
+
+      try {
+        await fs.access(scriptPath);
+        console.log("HEIC to GIF: Script exists");
+      } catch (error) {
+        console.error("HEIC to GIF: Script does not exist:", scriptPath);
+        res.set({
+          "Access-Control-Allow-Origin": "*",
+          "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
+          "Access-Control-Allow-Headers": "Content-Type, Authorization, Accept",
+        });
+        return res.status(500).json({ error: "Conversion script not found" });
+      }
+
+      // Optional quality param (0-100) for GIF palette size
+      const quality = parseInt(req.body.quality) || 85;
+      const maxDimension = parseInt(req.body.maxDimension) || 4096;
+
+      const pythonArgs = [
+        scriptPath,
+        inputPath,
+        outputPath,
+        "--quality",
+        String(quality),
+        "--max-dimension",
+        String(maxDimension),
+      ];
+
+      const python = spawn("/opt/venv/bin/python", pythonArgs);
+
+      let stdout = "";
+      let stderr = "";
+
+      python.on("error", async (error: Error) => {
+        console.error("HEIC to GIF: Failed to start Python process:", error);
+        if (!res.headersSent) {
+          res.set({
+            "Access-Control-Allow-Origin": "*",
+            "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
+            "Access-Control-Allow-Headers":
+              "Content-Type, Authorization, Accept",
+          });
+          res.status(500).json({
+            error: "Failed to start conversion process",
+            details: error.message,
+          });
+        }
+        await fs
+          .rm(tmpDir, { recursive: true, force: true })
+          .catch(() => undefined);
+      });
+
+      python.stdout.on("data", (data: Buffer) => {
+        stdout += data.toString();
+        console.log("HEIC to GIF stdout:", data.toString());
+      });
+
+      python.stderr.on("data", (data: Buffer) => {
+        stderr += data.toString();
+        console.log("HEIC to GIF stderr:", data.toString());
+      });
+
+      const timeout = setTimeout(async () => {
+        console.error("HEIC to GIF: Conversion timeout after 5 minutes");
+        python.kill();
+        if (!res.headersSent) {
+          res.set({
+            "Access-Control-Allow-Origin": "*",
+            "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
+            "Access-Control-Allow-Headers":
+              "Content-Type, Authorization, Accept",
+          });
+          res.status(500).json({
+            error: "Conversion timeout. The file may be too large or complex.",
+          });
+        }
+        await fs
+          .rm(tmpDir, { recursive: true, force: true })
+          .catch(() => undefined);
+      }, 5 * 60 * 1000);
+
+      python.on("close", async (code: number) => {
+        clearTimeout(timeout);
+        console.log("HEIC to GIF: Python script finished with code:", code);
+        console.log("HEIC to GIF: stdout:", stdout);
+        console.log("HEIC to GIF: stderr:", stderr);
+
+        try {
+          if (!res.headersSent) {
+            if (
+              code === 0 &&
+              (await fs
+                .access(outputPath)
+                .then(() => true)
+                .catch(() => false))
+            ) {
+              const outputBuffer = await fs.readFile(outputPath);
+              console.log(
+                "HEIC to GIF: Output file size:",
+                outputBuffer.length
+              );
+              res.set({
+                "Content-Type": "image/gif",
+                "Content-Disposition": `attachment; filename="${path.basename(
+                  outputPath
+                )}"`,
+                "Access-Control-Allow-Origin": "*",
+                "Access-Control-Allow-Methods":
+                  "GET, POST, PUT, DELETE, OPTIONS",
+                "Access-Control-Allow-Headers":
+                  "Content-Type, Authorization, Accept",
+              });
+              res.send(outputBuffer);
+            } else {
+              console.error(
+                "HEIC to GIF conversion failed. Code:",
+                code,
+                "Stderr:",
+                stderr
+              );
+
+              // Sanitize error message - remove file paths and technical details
+              let userFriendlyError =
+                "The file is corrupted or not a valid HEIC image";
+              if (
+                stderr.includes("UnidentifiedImageError") ||
+                stderr.includes("cannot identify image file") ||
+                stderr.includes("PIL.UnidentifiedImageError")
+              ) {
+                userFriendlyError =
+                  "The file is corrupted or not a valid HEIC image";
+              } else if (stderr.includes("ERROR:")) {
+                // Extract error message but remove file paths
+                const errorMatch = stderr.match(/ERROR: (.+)/);
+                if (errorMatch) {
+                  const errorMsg = errorMatch[1];
+                  // Remove file paths (anything starting with /tmp, /opt, etc.)
+                  userFriendlyError =
+                    errorMsg
+                      .replace(/\/[^\s]+/g, "")
+                      .replace(/File path:.*/g, "")
+                      .replace(/File header:.*/g, "")
+                      .trim() ||
+                    "The file is corrupted or not a valid HEIC image";
+                }
+              }
+
+              res.set({
+                "Access-Control-Allow-Origin": "*",
+                "Access-Control-Allow-Methods":
+                  "GET, POST, PUT, DELETE, OPTIONS",
+                "Access-Control-Allow-Headers":
+                  "Content-Type, Authorization, Accept",
+              });
+              res.status(500).json({ error: userFriendlyError });
+            }
+          }
+        } catch (error) {
+          console.error("Error handling conversion result (GIF):", error);
+          if (!res.headersSent) {
+            res.set({
+              "Access-Control-Allow-Origin": "*",
+              "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
+              "Access-Control-Allow-Headers":
+                "Content-Type, Authorization, Accept",
+            });
+            res.status(500).json({
+              error: "Conversion failed",
+              details: error instanceof Error ? error.message : "Unknown error",
+            });
+          }
+        } finally {
+          await fs
+            .rm(tmpDir, { recursive: true, force: true })
+            .catch(() => undefined);
+        }
+      });
+    } catch (error) {
+      console.error("HEIC to GIF conversion error:", error);
+      const message = error instanceof Error ? error.message : "Unknown error";
+      res.set({
+        "Access-Control-Allow-Origin": "*",
+        "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
+        "Access-Control-Allow-Headers": "Content-Type, Authorization, Accept",
+      });
+      res.status(500).json({ error: message });
+    }
+  }
+);
+
+// Route: HEIC to GIF (Batch) - OPTIONS for CORS preflight
+app.options("/convert/heic-to-gif/batch", (req, res) => {
+  res.set({
+    "Access-Control-Allow-Origin": "*",
+    "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
+    "Access-Control-Allow-Headers": "Content-Type, Authorization, Accept",
+    "Access-Control-Max-Age": "86400",
+  });
+  res.sendStatus(200);
+});
+
+// Route: HEIC to GIF (Batch)
+app.post(
+  "/convert/heic-to-gif/batch",
+  conversionTimeout(20 * 60 * 1000),
+  uploadBatch,
+  async (req, res) => {
+    res.set({
+      "Access-Control-Allow-Origin": "*",
+      "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
+      "Access-Control-Allow-Headers": "Content-Type, Authorization, Accept",
+    });
+
+    console.log("HEIC->GIF batch conversion request");
+
+    const tmpDir = path.join(os.tmpdir(), `heic-gif-batch-${Date.now()}`);
+
+    try {
+      const files = req.files as Express.Multer.File[];
+      if (!files || files.length === 0) {
+        res.set({
+          "Access-Control-Allow-Origin": "*",
+          "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
+          "Access-Control-Allow-Headers": "Content-Type, Authorization, Accept",
+        });
+        return res.status(400).json({ error: "No files uploaded" });
+      }
+
+      await fs.mkdir(tmpDir, { recursive: true });
+
+      const results: any[] = [];
+
+      const quality = parseInt(req.body.quality) || 85;
+      const maxDimension = parseInt(req.body.maxDimension) || 4096;
+
+      for (const file of files) {
+        try {
+          const inputPath = path.join(tmpDir, file.originalname);
+          const outputPath = path.join(
+            tmpDir,
+            file.originalname.replace(/\.(heic|heif)$/i, ".gif")
+          );
+
+          await fs.writeFile(inputPath, file.buffer);
+
+          const scriptPath = path.join(
+            __dirname,
+            "..",
+            "scripts",
+            "heic_to_gif.py"
+          );
+          try {
+            await fs.access(scriptPath);
+          } catch {
+            results.push({
+              originalName: file.originalname,
+              outputFilename: "",
+              size: 0,
+              success: false,
+              error: "Conversion script not found",
+            });
+            continue;
+          }
+
+          const pythonArgs = [
+            scriptPath,
+            inputPath,
+            outputPath,
+            "--quality",
+            String(quality),
+            "--max-dimension",
+            String(maxDimension),
+          ];
+          const python = spawn("/opt/venv/bin/python", pythonArgs);
+
+          let stdout = "";
+          let stderr = "";
+
+          python.stdout.on("data", (d: Buffer) => {
+            stdout += d.toString();
+          });
+          python.stderr.on("data", (d: Buffer) => {
+            stderr += d.toString();
+          });
+
+          // Add timeout for each file conversion (3 minutes per file in batch)
+          let timeoutCleared = false;
+          let timeout: NodeJS.Timeout;
+
+          await new Promise<void>((resolve) => {
+            timeout = setTimeout(() => {
+              if (!timeoutCleared) {
+                timeoutCleared = true;
+                python.kill();
+                results.push({
+                  originalName: file.originalname,
+                  outputFilename: "",
+                  size: 0,
+                  success: false,
+                  error:
+                    "Conversion timeout. The file may be too large or complex.",
+                });
+                resolve();
+              }
+            }, 3 * 60 * 1000); // 3 minutes per file
+
+            python.on("close", async (code: number) => {
+              if (timeoutCleared) return; // Already handled by timeout
+              clearTimeout(timeout);
+              try {
+                if (
+                  code === 0 &&
+                  (await fs
+                    .access(outputPath)
+                    .then(() => true)
+                    .catch(() => false))
+                ) {
+                  const outputBuffer = await fs.readFile(outputPath);
+                  results.push({
+                    originalName: file.originalname,
+                    outputFilename: path.basename(outputPath),
+                    size: outputBuffer.length,
+                    success: true,
+                    downloadPath: `data:image/gif;base64,${outputBuffer.toString(
+                      "base64"
+                    )}`,
+                  });
+                } else {
+                  // Sanitize error message - remove file paths and technical details
+                  let userFriendlyError =
+                    "The file is corrupted or not a valid HEIC image";
+                  if (
+                    stderr.includes("UnidentifiedImageError") ||
+                    stderr.includes("cannot identify image file") ||
+                    stderr.includes("PIL.UnidentifiedImageError")
+                  ) {
+                    userFriendlyError =
+                      "The file is corrupted or not a valid HEIC image";
+                  } else if (stderr.includes("ERROR:")) {
+                    // Extract error message but remove file paths
+                    const errorMatch = stderr.match(/ERROR: (.+)/);
+                    if (errorMatch) {
+                      const errorMsg = errorMatch[1];
+                      // Remove file paths (anything starting with /tmp, /opt, etc.)
+                      userFriendlyError =
+                        errorMsg
+                          .replace(/\/[^\s]+/g, "")
+                          .replace(/File path:.*/g, "")
+                          .replace(/File header:.*/g, "")
+                          .trim() ||
+                        "The file is corrupted or not a valid HEIC image";
+                    }
+                  } else if (code !== 0) {
+                    userFriendlyError =
+                      "The file is corrupted or not a valid HEIC image";
+                  }
+
+                  results.push({
+                    originalName: file.originalname,
+                    outputFilename: "",
+                    size: 0,
+                    success: false,
+                    error: userFriendlyError,
+                  });
+                }
+              } catch (err) {
+                results.push({
+                  originalName: file.originalname,
+                  outputFilename: "",
+                  size: 0,
+                  success: false,
+                  error: "The file is corrupted or not a valid HEIC image",
+                });
+              } finally {
+                resolve();
+              }
+            });
+
+            python.on("error", (err) => {
+              if (timeoutCleared) return;
+              clearTimeout(timeout);
+              timeoutCleared = true;
+              results.push({
+                originalName: file.originalname,
+                outputFilename: "",
+                size: 0,
+                success: false,
+                error: "Conversion failed. Please try again.",
+              });
+              resolve();
+            });
+          });
+        } catch (error) {
+          results.push({
+            originalName: file.originalname,
+            outputFilename: "",
+            size: 0,
+            success: false,
+            error: "The file is corrupted or not a valid HEIC image",
+          });
+        }
+      }
+
+      res.set({
+        "Access-Control-Allow-Origin": "*",
+        "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
+        "Access-Control-Allow-Headers": "Content-Type, Authorization, Accept",
+      });
+      res.json({ success: true, results });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Unknown error";
+      res.set({
+        "Access-Control-Allow-Origin": "*",
+        "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
+        "Access-Control-Allow-Headers": "Content-Type, Authorization, Accept",
+      });
+      res.status(500).json({ error: message });
+    } finally {
+      await fs
+        .rm(tmpDir, { recursive: true, force: true })
+        .catch(() => undefined);
+    }
+  }
+);
+
 // X3F Preview endpoint - OPTIONS for CORS preflight
 app.options("/api/preview/x3f", (req, res) => {
   res.set({
