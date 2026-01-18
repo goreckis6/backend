@@ -30114,6 +30114,273 @@ app.post("/convert/heif-to-tiff/batch", uploadBatch, async (req, res) => {
   }
 });
 
+// Route: HEIF to GIF (Single) - OPTIONS for CORS preflight
+app.options("/convert/heif-to-gif/single", (req, res) => {
+  res.set({
+    "Access-Control-Allow-Origin": "*",
+    "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
+    "Access-Control-Allow-Headers": "Content-Type, Authorization, Accept",
+    "Access-Control-Max-Age": "86400",
+  });
+  res.sendStatus(200);
+});
+
+// Route: HEIF to GIF (Single)
+app.post(
+  "/convert/heif-to-gif/single",
+  upload.single("file"),
+  async (req, res) => {
+    res.set({
+      "Access-Control-Allow-Origin": "*",
+      "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
+      "Access-Control-Allow-Headers": "Content-Type, Authorization, Accept",
+    });
+
+    console.log("HEIF->GIF single conversion request");
+    const tmpDir = path.join(os.tmpdir(), `heif-gif-${Date.now()}`);
+    try {
+      const file = req.file;
+      if (!file) {
+        return res.status(400).json({ error: "No file uploaded" });
+      }
+      await fs.mkdir(tmpDir, { recursive: true });
+      const inputPath = path.join(tmpDir, file.originalname);
+      const outputPath = path.join(
+        tmpDir,
+        file.originalname.replace(/\.(heic|heif)$/i, ".gif")
+      );
+      await fs.writeFile(inputPath, file.buffer);
+
+      const scriptPath = path.join(
+        __dirname,
+        "..",
+        "scripts",
+        "heif_to_gif.py"
+      );
+      try {
+        await fs.access(scriptPath);
+      } catch {
+        res.set({
+          "Access-Control-Allow-Origin": "*",
+          "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
+          "Access-Control-Allow-Headers": "Content-Type, Authorization, Accept",
+        });
+        return res.status(500).json({ error: "Conversion script not found" });
+      }
+
+      const quality = parseInt(req.body.quality) || 85;
+      const maxDimension = parseInt(req.body.maxDimension) || 4096;
+      const pythonArgs = [
+        scriptPath,
+        inputPath,
+        outputPath,
+        "--quality",
+        String(quality),
+        "--max-dimension",
+        String(maxDimension),
+      ];
+      const python = spawn("/opt/venv/bin/python", pythonArgs);
+      let stdout = "",
+        stderr = "";
+      python.on("error", async (err: Error) => {
+        console.error("HEIF->GIF single: failed to start python:", err);
+        if (!res.headersSent) {
+          res.set({
+            "Access-Control-Allow-Origin": "*",
+            "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
+            "Access-Control-Allow-Headers":
+              "Content-Type, Authorization, Accept",
+          });
+          res.status(500).json({
+            error: "Failed to start conversion process",
+            details: err.message,
+          });
+        }
+        await fs
+          .rm(tmpDir, { recursive: true, force: true })
+          .catch(() => undefined);
+      });
+      python.stdout.on("data", (d: Buffer) => {
+        stdout += d.toString();
+      });
+      python.stderr.on("data", (d: Buffer) => {
+        stderr += d.toString();
+      });
+      python.on("close", async (code: number) => {
+        try {
+          if (
+            code === 0 &&
+            (await fs
+              .access(outputPath)
+              .then(() => true)
+              .catch(() => false))
+          ) {
+            const outputBuffer = await fs.readFile(outputPath);
+            res.set({
+              "Content-Type": "image/gif",
+              "Content-Disposition": `attachment; filename="${path.basename(
+                outputPath
+              )}"`,
+              "Access-Control-Allow-Origin": "*",
+              "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
+              "Access-Control-Allow-Headers":
+                "Content-Type, Authorization, Accept",
+            });
+            res.send(outputBuffer);
+          } else {
+            res.set({
+              "Access-Control-Allow-Origin": "*",
+              "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
+              "Access-Control-Allow-Headers":
+                "Content-Type, Authorization, Accept",
+            });
+            res
+              .status(500)
+              .json({ error: "Conversion failed", details: stderr });
+          }
+        } finally {
+          await fs
+            .rm(tmpDir, { recursive: true, force: true })
+            .catch(() => undefined);
+        }
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Unknown error";
+      res.set({
+        "Access-Control-Allow-Origin": "*",
+        "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
+        "Access-Control-Allow-Headers": "Content-Type, Authorization, Accept",
+      });
+      res.status(500).json({ error: message });
+    }
+  }
+);
+
+// Route: HEIF to GIF (Batch) - OPTIONS for CORS preflight
+app.options("/convert/heif-to-gif/batch", (req, res) => {
+  res.set({
+    "Access-Control-Allow-Origin": "*",
+    "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
+    "Access-Control-Allow-Headers": "Content-Type, Authorization, Accept",
+    "Access-Control-Max-Age": "86400",
+  });
+  res.sendStatus(200);
+});
+
+// Route: HEIF to GIF (Batch)
+app.post("/convert/heif-to-gif/batch", uploadBatch, async (req, res) => {
+  const tmpDir = path.join(os.tmpdir(), `heif-gif-batch-${Date.now()}`);
+  try {
+    if (!req.files || !Array.isArray(req.files) || req.files.length === 0) {
+      res.set({
+        "Access-Control-Allow-Origin": "*",
+        "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
+        "Access-Control-Allow-Headers": "Content-Type, Authorization, Accept",
+      });
+      return res.status(400).json({ error: "No files uploaded" });
+    }
+    await fs.mkdir(tmpDir, { recursive: true });
+    const scriptPath = path.join(__dirname, "..", "scripts", "heif_to_gif.py");
+    try {
+      await fs.access(scriptPath);
+    } catch {
+      res.set({
+        "Access-Control-Allow-Origin": "*",
+        "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
+        "Access-Control-Allow-Headers": "Content-Type, Authorization, Accept",
+      });
+      return res.status(500).json({ error: "Conversion script not found" });
+    }
+    const quality = parseInt(req.body.quality) || 85;
+    const maxDimension = parseInt(req.body.maxDimension) || 4096;
+    const results: Array<{
+      originalName: string;
+      outputFilename: string;
+      size: number;
+      success: boolean;
+      error?: string;
+      downloadPath?: string;
+    }> = [];
+    const files = req.files as Array<Express.Multer.File>;
+    for (const file of files) {
+      try {
+        const inputPath = path.join(tmpDir, file.originalname);
+        const outputPath = path.join(
+          tmpDir,
+          file.originalname.replace(/\.(heic|heif)$/i, ".gif")
+        );
+        await fs.writeFile(inputPath, file.buffer);
+        const pythonArgs = [
+          scriptPath,
+          inputPath,
+          outputPath,
+          "--quality",
+          String(quality),
+          "--max-dimension",
+          String(maxDimension),
+        ];
+        await new Promise<void>((resolve, reject) => {
+          const python = spawn("/opt/venv/bin/python", pythonArgs);
+          python.on("error", (err: Error) => {
+            console.error("HEIF->GIF batch: failed to start python:", err);
+            reject(err);
+          });
+          python.on("close", (code: number) => {
+            if (code === 0) {
+              resolve();
+            } else {
+              reject(new Error("Conversion failed"));
+            }
+          });
+        });
+        const fileExists = await fs
+          .access(outputPath)
+          .then(() => true)
+          .catch(() => false);
+        if (!fileExists) {
+          throw new Error("Output file not created");
+        }
+        const outputBuffer = await fs.readFile(outputPath);
+        const outputFilename = path.basename(outputPath);
+        const base64Data = outputBuffer.toString("base64");
+        results.push({
+          originalName: file.originalname,
+          outputFilename,
+          size: outputBuffer.length,
+          success: true,
+          downloadPath: `data:image/gif;base64,${base64Data}`,
+        });
+      } catch (err) {
+        results.push({
+          originalName: file.originalname,
+          outputFilename: "",
+          size: 0,
+          success: false,
+          error: "The file is corrupted or not a valid HEIF image",
+        });
+      }
+    }
+    res.set({
+      "Access-Control-Allow-Origin": "*",
+      "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
+      "Access-Control-Allow-Headers": "Content-Type, Authorization, Accept",
+    });
+    res.json({ success: true, results });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Unknown error";
+    res.set({
+      "Access-Control-Allow-Origin": "*",
+      "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
+      "Access-Control-Allow-Headers": "Content-Type, Authorization, Accept",
+    });
+    res.status(500).json({ error: message });
+  } finally {
+    await fs
+      .rm(tmpDir, { recursive: true, force: true })
+      .catch(() => undefined);
+  }
+});
+
 // Route: HEIC to WEBP (Single) - OPTIONS for CORS preflight
 app.options("/convert/heic-to-webp/single", (req, res) => {
   res.set({
