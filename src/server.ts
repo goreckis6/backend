@@ -10324,6 +10324,528 @@ app.post(
   }
 );
 
+// Route: JPG to WebP (Single) - OPTIONS for CORS preflight
+app.options("/convert/jpg-to-webp/single", (req, res) => {
+  res.set({
+    "Access-Control-Allow-Origin": "*",
+    "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
+    "Access-Control-Allow-Headers": "Content-Type, Authorization, Accept",
+    "Access-Control-Max-Age": "86400",
+  });
+  res.sendStatus(200);
+});
+
+// Route: JPG to WebP (Single)
+app.post(
+  "/convert/jpg-to-webp/single",
+  upload.single("file"),
+  async (req, res) => {
+    // Set CORS headers
+    res.set({
+      "Access-Control-Allow-Origin": "*",
+      "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
+      "Access-Control-Allow-Headers": "Content-Type, Authorization, Accept",
+    });
+
+    console.log("JPG->WebP single conversion request");
+
+    const tmpDir = path.join(os.tmpdir(), `jpg-webp-${Date.now()}`);
+
+    try {
+      const file = req.file;
+      if (!file) {
+        res.set({
+          "Access-Control-Allow-Origin": "*",
+          "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
+          "Access-Control-Allow-Headers": "Content-Type, Authorization, Accept",
+        });
+        return res.status(400).json({ error: "No file uploaded" });
+      }
+
+      try {
+        await fs.mkdir(tmpDir, { recursive: true });
+      } catch (mkdirError) {
+        console.error(
+          "JPG to WebP: Failed to create temp directory:",
+          mkdirError
+        );
+        res.set({
+          "Access-Control-Allow-Origin": "*",
+          "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
+          "Access-Control-Allow-Headers": "Content-Type, Authorization, Accept",
+        });
+        return res.status(500).json({
+          error: "Failed to create temporary directory",
+          details:
+            mkdirError instanceof Error ? mkdirError.message : "Unknown error",
+        });
+      }
+
+      const inputPath = path.join(tmpDir, file.originalname);
+      const outputPath = path.join(
+        tmpDir,
+        file.originalname.replace(/\.(jpg|jpeg)$/i, ".webp")
+      );
+
+      try {
+        await fs.writeFile(inputPath, file.buffer);
+      } catch (writeError) {
+        console.error("JPG to WebP: Failed to write input file:", writeError);
+        res.set({
+          "Access-Control-Allow-Origin": "*",
+          "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
+          "Access-Control-Allow-Headers": "Content-Type, Authorization, Accept",
+        });
+        await fs
+          .rm(tmpDir, { recursive: true, force: true })
+          .catch(() => undefined);
+        return res.status(500).json({
+          error: "Failed to write input file",
+          details:
+            writeError instanceof Error ? writeError.message : "Unknown error",
+        });
+      }
+
+      const scriptPath = path.join(
+        __dirname,
+        "..",
+        "scripts",
+        "jpg_to_webp.py"
+      );
+      console.log("JPG to WebP: Executing Python script:", scriptPath);
+      console.log("JPG to WebP: Input file:", inputPath);
+      console.log("JPG to WebP: Output file:", outputPath);
+
+      try {
+        await fs.access(scriptPath);
+        console.log("JPG to WebP: Script exists");
+      } catch (error) {
+        console.error("JPG to WebP: Script does not exist:", scriptPath);
+        res.set({
+          "Access-Control-Allow-Origin": "*",
+          "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
+          "Access-Control-Allow-Headers": "Content-Type, Authorization, Accept",
+        });
+        return res.status(500).json({ error: "Conversion script not found" });
+      }
+
+      // WebP conversion parameters
+      const maxDimension = parseInt(req.body.maxDimension) || 4096;
+      const quality = parseInt(req.body.quality) || 90; // WebP quality 0-100
+      const method = parseInt(req.body.method) || 6; // WebP method 0-6
+
+      const pythonArgs = [
+        scriptPath,
+        inputPath,
+        outputPath,
+        "--quality",
+        String(quality),
+        "--max-dimension",
+        String(maxDimension),
+        "--method",
+        String(method),
+      ];
+
+      const python = spawn("/opt/venv/bin/python", pythonArgs);
+
+      let stdout = "";
+      let stderr = "";
+
+      python.on("error", async (error: Error) => {
+        console.error("JPG to WebP: Failed to start Python process:", error);
+        if (!res.headersSent) {
+          res.set({
+            "Access-Control-Allow-Origin": "*",
+            "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
+            "Access-Control-Allow-Headers":
+              "Content-Type, Authorization, Accept",
+          });
+          res.status(500).json({
+            error: "Failed to start conversion process",
+            details: error.message,
+          });
+        }
+        await fs
+          .rm(tmpDir, { recursive: true, force: true })
+          .catch(() => undefined);
+      });
+
+      python.stdout.on("data", (data: Buffer) => {
+        stdout += data.toString();
+        console.log("JPG to WebP stdout:", data.toString());
+      });
+
+      python.stderr.on("data", (data: Buffer) => {
+        stderr += data.toString();
+        console.log("JPG to WebP stderr:", data.toString());
+      });
+
+      const timeout = setTimeout(async () => {
+        console.error("JPG to WebP: Conversion timeout after 5 minutes");
+        python.kill();
+        if (!res.headersSent) {
+          res.set({
+            "Access-Control-Allow-Origin": "*",
+            "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
+            "Access-Control-Allow-Headers":
+              "Content-Type, Authorization, Accept",
+          });
+          res.status(500).json({
+            error: "Conversion timeout. The file may be too large or complex.",
+          });
+        }
+        await fs
+          .rm(tmpDir, { recursive: true, force: true })
+          .catch(() => undefined);
+      }, 5 * 60 * 1000);
+
+      python.on("close", async (code: number) => {
+        clearTimeout(timeout);
+        console.log("JPG to WebP: Python script finished with code:", code);
+        console.log("JPG to WebP: stdout:", stdout);
+        console.log("JPG to WebP: stderr:", stderr);
+
+        try {
+          if (!res.headersSent) {
+            if (
+              code === 0 &&
+              (await fs
+                .access(outputPath)
+                .then(() => true)
+                .catch(() => false))
+            ) {
+              const outputBuffer = await fs.readFile(outputPath);
+              console.log(
+                "JPG to WebP: Output file size:",
+                outputBuffer.length
+              );
+              res.set({
+                "Content-Type": "image/webp",
+                "Content-Disposition": `attachment; filename="${path.basename(
+                  outputPath
+                )}"`,
+                "Access-Control-Allow-Origin": "*",
+                "Access-Control-Allow-Methods":
+                  "GET, POST, PUT, DELETE, OPTIONS",
+                "Access-Control-Allow-Headers":
+                  "Content-Type, Authorization, Accept",
+              });
+              res.send(outputBuffer);
+            } else {
+              console.error(
+                "JPG to WebP conversion failed. Code:",
+                code,
+                "Stderr:",
+                stderr
+              );
+
+              // Sanitize error message - remove file paths and technical details
+              let userFriendlyError =
+                "The file is corrupted or not a valid JPG image";
+              if (
+                stderr.includes("UnidentifiedImageError") ||
+                stderr.includes("cannot identify image file") ||
+                stderr.includes("PIL.UnidentifiedImageError")
+              ) {
+                userFriendlyError =
+                  "The file is corrupted or not a valid JPG image";
+              } else if (stderr.includes("ERROR:")) {
+                // Extract error message but remove file paths
+                const errorMatch = stderr.match(/ERROR: (.+)/);
+                if (errorMatch) {
+                  const errorMsg = errorMatch[1];
+                  // Remove file paths (anything starting with /tmp, /opt, etc.)
+                  userFriendlyError =
+                    errorMsg
+                      .replace(/\/[^\s]+/g, "")
+                      .replace(/File path:.*/g, "")
+                      .replace(/File header:.*/g, "")
+                      .trim() ||
+                    "The file is corrupted or not a valid JPG image";
+                }
+              }
+
+              res.set({
+                "Access-Control-Allow-Origin": "*",
+                "Access-Control-Allow-Methods":
+                  "GET, POST, PUT, DELETE, OPTIONS",
+                "Access-Control-Allow-Headers":
+                  "Content-Type, Authorization, Accept",
+              });
+              res.status(500).json({ error: userFriendlyError });
+            }
+          }
+        } catch (error) {
+          console.error("Error handling conversion result (WebP):", error);
+          if (!res.headersSent) {
+            res.set({
+              "Access-Control-Allow-Origin": "*",
+              "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
+              "Access-Control-Allow-Headers":
+                "Content-Type, Authorization, Accept",
+            });
+            res.status(500).json({
+              error: "Conversion failed",
+              details: error instanceof Error ? error.message : "Unknown error",
+            });
+          }
+        } finally {
+          await fs
+            .rm(tmpDir, { recursive: true, force: true })
+            .catch(() => undefined);
+        }
+      });
+    } catch (error) {
+      console.error("JPG to WebP conversion error:", error);
+      const message = error instanceof Error ? error.message : "Unknown error";
+      res.set({
+        "Access-Control-Allow-Origin": "*",
+        "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
+        "Access-Control-Allow-Headers": "Content-Type, Authorization, Accept",
+      });
+      res.status(500).json({ error: message });
+    }
+  }
+);
+
+// Route: JPG to WebP (Batch) - OPTIONS for CORS preflight
+app.options("/convert/jpg-to-webp/batch", (req, res) => {
+  res.set({
+    "Access-Control-Allow-Origin": "*",
+    "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
+    "Access-Control-Allow-Headers": "Content-Type, Authorization, Accept",
+    "Access-Control-Max-Age": "86400",
+  });
+  res.sendStatus(200);
+});
+
+// Route: JPG to WebP (Batch)
+app.post(
+  "/convert/jpg-to-webp/batch",
+  conversionTimeout(20 * 60 * 1000),
+  uploadBatch,
+  async (req, res) => {
+    res.set({
+      "Access-Control-Allow-Origin": "*",
+      "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
+      "Access-Control-Allow-Headers": "Content-Type, Authorization, Accept",
+    });
+
+    console.log("JPG->WebP batch conversion request");
+
+    const tmpDir = path.join(os.tmpdir(), `jpg-webp-batch-${Date.now()}`);
+
+    try {
+      const files = req.files as Express.Multer.File[];
+      if (!files || files.length === 0) {
+        res.set({
+          "Access-Control-Allow-Origin": "*",
+          "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
+          "Access-Control-Allow-Headers": "Content-Type, Authorization, Accept",
+        });
+        return res.status(400).json({ error: "No files uploaded" });
+      }
+
+      await fs.mkdir(tmpDir, { recursive: true });
+
+      const results: any[] = [];
+
+      const maxDimension = parseInt(req.body.maxDimension) || 4096;
+      const quality = parseInt(req.body.quality) || 90;
+      const method = parseInt(req.body.method) || 6;
+
+      for (const file of files) {
+        try {
+          const inputPath = path.join(tmpDir, file.originalname);
+          const outputPath = path.join(
+            tmpDir,
+            file.originalname.replace(/\.(jpg|jpeg)$/i, ".webp")
+          );
+
+          await fs.writeFile(inputPath, file.buffer);
+
+          const scriptPath = path.join(
+            __dirname,
+            "..",
+            "scripts",
+            "jpg_to_webp.py"
+          );
+          try {
+            await fs.access(scriptPath);
+          } catch {
+            results.push({
+              originalName: file.originalname,
+              outputFilename: "",
+              size: 0,
+              success: false,
+              error: "Conversion script not found",
+            });
+            continue;
+          }
+
+          const pythonArgs = [
+            scriptPath,
+            inputPath,
+            outputPath,
+            "--quality",
+            String(quality),
+            "--max-dimension",
+            String(maxDimension),
+            "--method",
+            String(method),
+          ];
+          const python = spawn("/opt/venv/bin/python", pythonArgs);
+
+          let stdout = "";
+          let stderr = "";
+
+          python.stdout.on("data", (d: Buffer) => {
+            stdout += d.toString();
+          });
+          python.stderr.on("data", (d: Buffer) => {
+            stderr += d.toString();
+          });
+
+          // Add timeout for each file conversion (3 minutes per file in batch)
+          let timeoutCleared = false;
+          let timeout: NodeJS.Timeout;
+
+          await new Promise<void>((resolve) => {
+            timeout = setTimeout(() => {
+              if (!timeoutCleared) {
+                timeoutCleared = true;
+                python.kill();
+                results.push({
+                  originalName: file.originalname,
+                  outputFilename: "",
+                  size: 0,
+                  success: false,
+                  error:
+                    "Conversion timeout. The file may be too large or complex.",
+                });
+                resolve();
+              }
+            }, 3 * 60 * 1000); // 3 minutes per file
+
+            python.on("close", async (code: number) => {
+              if (timeoutCleared) return; // Already handled by timeout
+              clearTimeout(timeout);
+              try {
+                if (
+                  code === 0 &&
+                  (await fs
+                    .access(outputPath)
+                    .then(() => true)
+                    .catch(() => false))
+                ) {
+                  const outputBuffer = await fs.readFile(outputPath);
+                  results.push({
+                    originalName: file.originalname,
+                    outputFilename: path.basename(outputPath),
+                    size: outputBuffer.length,
+                    success: true,
+                    downloadPath: `data:image/webp;base64,${outputBuffer.toString(
+                      "base64"
+                    )}`,
+                  });
+                } else {
+                  // Sanitize error message - remove file paths and technical details
+                  let userFriendlyError =
+                    "The file is corrupted or not a valid JPG image";
+                  if (
+                    stderr.includes("UnidentifiedImageError") ||
+                    stderr.includes("cannot identify image file") ||
+                    stderr.includes("PIL.UnidentifiedImageError")
+                  ) {
+                    userFriendlyError =
+                      "The file is corrupted or not a valid JPG image";
+                  } else if (stderr.includes("ERROR:")) {
+                    // Extract error message but remove file paths
+                    const errorMatch = stderr.match(/ERROR: (.+)/);
+                    if (errorMatch) {
+                      const errorMsg = errorMatch[1];
+                      // Remove file paths (anything starting with /tmp, /opt, etc.)
+                      userFriendlyError =
+                        errorMsg
+                          .replace(/\/[^\s]+/g, "")
+                          .replace(/File path:.*/g, "")
+                          .replace(/File header:.*/g, "")
+                          .trim() ||
+                        "The file is corrupted or not a valid JPG image";
+                    }
+                  } else if (code !== 0) {
+                    userFriendlyError =
+                      "The file is corrupted or not a valid JPG image";
+                  }
+
+                  results.push({
+                    originalName: file.originalname,
+                    outputFilename: "",
+                    size: 0,
+                    success: false,
+                    error: userFriendlyError,
+                  });
+                }
+              } catch (err) {
+                results.push({
+                  originalName: file.originalname,
+                  outputFilename: "",
+                  size: 0,
+                  success: false,
+                  error: "The file is corrupted or not a valid JPG image",
+                });
+              } finally {
+                resolve();
+              }
+            });
+
+            python.on("error", (err) => {
+              if (timeoutCleared) return;
+              clearTimeout(timeout);
+              timeoutCleared = true;
+              results.push({
+                originalName: file.originalname,
+                outputFilename: "",
+                size: 0,
+                success: false,
+                error: "Conversion failed. Please try again.",
+              });
+              resolve();
+            });
+          });
+        } catch (error) {
+          results.push({
+            originalName: file.originalname,
+            outputFilename: "",
+            size: 0,
+            success: false,
+            error: "The file is corrupted or not a valid JPG image",
+          });
+        }
+      }
+
+      res.set({
+        "Access-Control-Allow-Origin": "*",
+        "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
+        "Access-Control-Allow-Headers": "Content-Type, Authorization, Accept",
+      });
+      res.json({ success: true, results });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Unknown error";
+      res.set({
+        "Access-Control-Allow-Origin": "*",
+        "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
+        "Access-Control-Allow-Headers": "Content-Type, Authorization, Accept",
+      });
+      res.status(500).json({ error: message });
+    } finally {
+      await fs
+        .rm(tmpDir, { recursive: true, force: true })
+        .catch(() => undefined);
+    }
+  }
+);
+
 // Route: HEIC to GIF (Single) - OPTIONS for CORS preflight
 app.options("/convert/heic-to-gif/single", (req, res) => {
   res.set({
