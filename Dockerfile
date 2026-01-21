@@ -24,6 +24,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     python3 \
     python3-pip \
     python3-venv \
+    wkhtmltopdf \
+    xvfb \
     && rm -rf /var/lib/apt/lists/*
 
 # Set environment variables for Python and ensure Ghostscript is in PATH
