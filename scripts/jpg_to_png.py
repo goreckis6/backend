@@ -24,16 +24,18 @@ def convert_jpg_to_png(
     jpg_file: str,
     output_file: str,
     max_dimension: int = 4096,
-    compression_level: int = 6
+    compression_level: int = 9,
+    optimize_palette: bool = True
 ) -> bool:
     """
-    Convert JPG to PNG format
+    Convert JPG to PNG format with optimized compression
     
     Args:
         jpg_file: Input JPG file path
         output_file: Output PNG file path
         max_dimension: Maximum width or height (downscale if larger)
-        compression_level: PNG compression level (0-9, default 6)
+        compression_level: PNG compression level (0-9, default 9 for max compression)
+        optimize_palette: If True, convert images with <256 colors to palette mode (PNG-8)
     
     Returns:
         bool: True if conversion successful, False otherwise
@@ -109,15 +111,39 @@ def convert_jpg_to_png(
         if out_dir:
             os.makedirs(out_dir, exist_ok=True)
 
-        # Save as PNG with lossless compression
+        # Optimize for smaller file size
+        # If image has <=256 colors, convert to palette mode (PNG-8) for smaller files
+        if optimize_palette and img.mode in ["RGB", "RGBA"]:
+            # Check if we can use palette mode
+            try:
+                # Quantize to 256 colors to check if it's worth it
+                quantized = img.quantize(colors=256, method=Image.Quantize.MEDIANCUT)
+                
+                # Get unique color count - getcolors returns list of (count, color) tuples
+                color_info = quantized.getcolors(maxcolors=257)  # Get up to 257 to check if <=256
+                if color_info and len(color_info) <= 256:
+                    # Convert to palette mode for smaller file size
+                    img = quantized.convert("P")
+                    print(f"Converted to palette mode with {len(color_info)} unique colors")
+                else:
+                    print(f"Image has {len(color_info) if color_info else 'many'} colors, keeping RGB mode")
+            except Exception as e:
+                print(f"Palette optimization skipped: {e}")
+
+        # Save as PNG with maximum compression
         # PNG compression_level: 0 (no compression) to 9 (max compression)
-        # Default 6 is a good balance between speed and file size
-        img.save(
-            output_file,
-            format="PNG",
-            compress_level=compression_level,
-            optimize=True  # Optimize PNG compression
-        )
+        # Use 9 for maximum file size reduction
+        save_kwargs = {
+            "format": "PNG",
+            "compress_level": compression_level,
+            "optimize": True  # Optimize PNG compression
+        }
+        
+        # For palette mode, add additional optimization
+        if img.mode == "P":
+            save_kwargs["compress_level"] = 9  # Force max compression for palette
+        
+        img.save(output_file, **save_kwargs)
         
         output_size = os.path.getsize(output_file)
         print(f"PNG saved successfully: {output_size} bytes")
@@ -137,15 +163,18 @@ def main():
     parser.add_argument("output_file", help="Output PNG file path")
     parser.add_argument("--max-dimension", type=int, default=4096,
                         help="Maximum width or height (default: 4096)")
-    parser.add_argument("--compression", type=int, default=6, choices=range(0, 10),
-                        help="PNG compression level 0-9 (default: 6)")
+    parser.add_argument("--compression", type=int, default=9, choices=range(0, 10),
+                        help="PNG compression level 0-9 (default: 9 for max compression)")
+    parser.add_argument("--no-optimize-palette", action="store_true",
+                        help="Disable palette optimization (keep RGB/RGBA mode)")
     args = parser.parse_args()
 
     ok = convert_jpg_to_png(
         args.jpg_file,
         args.output_file,
         args.max_dimension,
-        args.compression
+        args.compression,
+        optimize_palette=not args.no_optimize_palette
     )
     sys.exit(0 if ok else 1)
 

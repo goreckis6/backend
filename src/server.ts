@@ -9915,7 +9915,7 @@ app.post(
 
       // PNG conversion parameters
       const maxDimension = parseInt(req.body.maxDimension) || 4096;
-      const compression = parseInt(req.body.compression) || 6; // PNG compression level 0-9
+      const compression = parseInt(req.body.compression) || 9; // PNG compression level 0-9 (default 9 for max compression)
 
       const pythonArgs = [
         scriptPath,
@@ -10132,7 +10132,7 @@ app.post(
       const results: any[] = [];
 
       const maxDimension = parseInt(req.body.maxDimension) || 4096;
-      const compression = parseInt(req.body.compression) || 6;
+      const compression = parseInt(req.body.compression) || 9; // PNG compression level 0-9 (default 9 for max compression)
 
       for (const file of files) {
         try {
