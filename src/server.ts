@@ -11577,6 +11577,227 @@ app.post(
   }
 );
 
+// Route: JPG to TIFF (Single) - OPTIONS for CORS preflight
+app.options("/convert/jpg-to-tiff/single", (req, res) => {
+  res.set({
+    "Access-Control-Allow-Origin": "*",
+    "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
+    "Access-Control-Allow-Headers": "Content-Type, Authorization, Accept",
+    "Access-Control-Max-Age": "86400",
+  });
+  res.sendStatus(200);
+});
+
+// Route: JPG to TIFF (Single) - Using Sharp
+app.post(
+  "/convert/jpg-to-tiff/single",
+  upload.single("file"),
+  async (req, res) => {
+    // Set CORS headers
+    res.set({
+      "Access-Control-Allow-Origin": "*",
+      "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
+      "Access-Control-Allow-Headers": "Content-Type, Authorization, Accept",
+    });
+
+    console.log("JPG->TIFF single conversion request");
+
+    try {
+      const file = req.file;
+      if (!file) {
+        res.set({
+          "Access-Control-Allow-Origin": "*",
+          "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
+          "Access-Control-Allow-Headers": "Content-Type, Authorization, Accept",
+        });
+        return res.status(400).json({ error: "No file uploaded" });
+      }
+
+      // TIFF conversion parameters
+      const maxDimension = parseInt(req.body.maxDimension) || 4096;
+      const compression = req.body.compression || "lzw"; // lzw, zip, jpeg, none
+      const quality = parseInt(req.body.quality) || 100; // For JPEG compression (0-100)
+
+      // Convert using Sharp
+      let sharpInstance = sharp(file.buffer);
+
+      // Get image metadata
+      const metadata = await sharpInstance.metadata();
+      const width = metadata.width || 0;
+      const height = metadata.height || 0;
+
+      // Resize if needed
+      if (width > maxDimension || height > maxDimension) {
+        sharpInstance = sharpInstance.resize(maxDimension, maxDimension, {
+          fit: "inside",
+          withoutEnlargement: true,
+        });
+      }
+
+      // Convert to TIFF
+      // Sharp supports: lzw, zip, jpeg, webp, zstd, jp2 compression
+      const tiffOptions: any = {};
+      if (compression === "lzw") {
+        tiffOptions.compression = "lzw";
+      } else if (compression === "zip") {
+        tiffOptions.compression = "deflate";
+      } else if (compression === "jpeg") {
+        tiffOptions.compression = "jpeg";
+        tiffOptions.quality = quality;
+      } else {
+        tiffOptions.compression = "lzw"; // Default to LZW
+      }
+
+      const tiffBuffer = await sharpInstance
+        .tiff(tiffOptions)
+        .toBuffer();
+
+      // Set response headers
+      res.set({
+        "Content-Type": "image/tiff",
+        "Content-Disposition": `attachment; filename="${file.originalname.replace(/\.(jpg|jpeg)$/i, ".tiff")}"`,
+        "Access-Control-Allow-Origin": "*",
+        "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
+        "Access-Control-Allow-Headers": "Content-Type, Authorization, Accept",
+      });
+
+      res.send(tiffBuffer);
+    } catch (error) {
+      console.error("JPG to TIFF conversion error:", error);
+      const message =
+        error instanceof Error
+          ? error.message
+          : "Conversion failed. The file may be corrupted or not a valid JPG image.";
+      res.set({
+        "Access-Control-Allow-Origin": "*",
+        "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
+        "Access-Control-Allow-Headers": "Content-Type, Authorization, Accept",
+      });
+      res.status(500).json({ error: message });
+    }
+  }
+);
+
+// Route: JPG to TIFF (Batch) - OPTIONS for CORS preflight
+app.options("/convert/jpg-to-tiff/batch", (req, res) => {
+  res.set({
+    "Access-Control-Allow-Origin": "*",
+    "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
+    "Access-Control-Allow-Headers": "Content-Type, Authorization, Accept",
+    "Access-Control-Max-Age": "86400",
+  });
+  res.sendStatus(200);
+});
+
+// Route: JPG to TIFF (Batch) - Using Sharp
+app.post(
+  "/convert/jpg-to-tiff/batch",
+  conversionTimeout(20 * 60 * 1000),
+  uploadBatch,
+  async (req, res) => {
+    res.set({
+      "Access-Control-Allow-Origin": "*",
+      "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
+      "Access-Control-Allow-Headers": "Content-Type, Authorization, Accept",
+    });
+
+    console.log("JPG->TIFF batch conversion request");
+
+    try {
+      const files = req.files as Express.Multer.File[];
+      if (!files || files.length === 0) {
+        res.set({
+          "Access-Control-Allow-Origin": "*",
+          "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
+          "Access-Control-Allow-Headers": "Content-Type, Authorization, Accept",
+        });
+        return res.status(400).json({ error: "No files uploaded" });
+      }
+
+      const results: any[] = [];
+
+      // TIFF conversion parameters
+      const maxDimension = parseInt(req.body.maxDimension) || 4096;
+      const compression = req.body.compression || "lzw"; // lzw, zip, jpeg, none
+      const quality = parseInt(req.body.quality) || 100; // For JPEG compression
+
+      for (const file of files) {
+        try {
+          let sharpInstance = sharp(file.buffer);
+
+          // Get image metadata
+          const metadata = await sharpInstance.metadata();
+          const width = metadata.width || 0;
+          const height = metadata.height || 0;
+
+          // Resize if needed
+          if (width > maxDimension || height > maxDimension) {
+            sharpInstance = sharpInstance.resize(maxDimension, maxDimension, {
+              fit: "inside",
+              withoutEnlargement: true,
+            });
+          }
+
+          // Convert to TIFF
+          const tiffOptions: any = {};
+          if (compression === "lzw") {
+            tiffOptions.compression = "lzw";
+          } else if (compression === "zip") {
+            tiffOptions.compression = "deflate";
+          } else if (compression === "jpeg") {
+            tiffOptions.compression = "jpeg";
+            tiffOptions.quality = quality;
+          } else {
+            tiffOptions.compression = "lzw"; // Default to LZW
+          }
+
+          const tiffBuffer = await sharpInstance
+            .tiff(tiffOptions)
+            .toBuffer();
+
+          results.push({
+            originalName: file.originalname,
+            outputFilename: file.originalname.replace(/\.(jpg|jpeg)$/i, ".tiff"),
+            size: tiffBuffer.length,
+            success: true,
+            downloadPath: `data:image/tiff;base64,${tiffBuffer.toString("base64")}`,
+          });
+        } catch (error) {
+          console.error(
+            `JPG to TIFF batch conversion error for ${file.originalname}:`,
+            error
+          );
+          results.push({
+            originalName: file.originalname,
+            outputFilename: "",
+            size: 0,
+            success: false,
+            error:
+              error instanceof Error
+                ? error.message
+                : "The file is corrupted or not a valid JPG image",
+          });
+        }
+      }
+
+      res.set({
+        "Access-Control-Allow-Origin": "*",
+        "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
+        "Access-Control-Allow-Headers": "Content-Type, Authorization, Accept",
+      });
+      res.json({ success: true, results });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Unknown error";
+      res.set({
+        "Access-Control-Allow-Origin": "*",
+        "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
+        "Access-Control-Allow-Headers": "Content-Type, Authorization, Accept",
+      });
+      res.status(500).json({ error: message });
+    }
+  }
+);
+
 // Route: HEIC to GIF (Single) - OPTIONS for CORS preflight
 app.options("/convert/heic-to-gif/single", (req, res) => {
   res.set({
