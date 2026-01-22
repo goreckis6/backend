@@ -11861,7 +11861,6 @@ app.post(
       
       const gifBuffer = await sharpInstance
         .gif({
-          palette: true,
           colours: paletteColors,
           dither: quality < 80 ? 1.0 : 0.0, // Dithering for lower quality
         })
@@ -11956,7 +11955,6 @@ app.post(
           // Convert to GIF
           const gifBuffer = await sharpInstance
             .gif({
-              palette: true,
               colours: paletteColors,
               dither: quality < 80 ? 1.0 : 0.0,
             })
